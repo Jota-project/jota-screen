@@ -12,3 +12,4 @@ spotify/
 *.log
 .env
 tv-kiosk.service
+remote/idle.json

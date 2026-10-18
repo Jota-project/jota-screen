@@ -139,6 +139,31 @@ tool('tv_toast', 'Show a short notification card in the top-right corner over wh
   { title: z.string().max(120), text: z.string().max(400).optional(), icon: z.string().max(8).optional().describe('One emoji'), seconds: z.number().min(2).max(120).optional() },
   async (a) => out(await cmd({ t: 'toast', title: a.title, text: a.text, icon: a.icon, seconds: a.seconds }), 'Shown'));
 
+tool('tv_activity',
+  'Live Activity on the TV: a small black pill at the top centre, above whatever is showing (idle screen, web, fullscreen video), updated in real time — like Apple Live Activities. ' +
+  'It expands briefly when created or updated (unless quiet), then stays compact. op=set creates/updates (same id = update), op=end removes, clear removes all, list shows them. ' +
+  'Use seconds for a countdown timer (expands and pulses when it ends), elapsed for a running stopwatch, progress 0-1 for a progress ring, value for short text on the right (e.g. "2-1", "12 min"). ' +
+  'Keep title short (2-4 words). Use ttl to auto-remove. Prefer this over toasts for things that last (timers, deliveries, a task in progress, a match score).',
+  {
+    op: z.enum(['set', 'end', 'clear', 'list']).optional(),
+    id: z.string().max(40).optional().describe('Stable id to update/end it later, e.g. "pasta-timer"'),
+    title: z.string().max(80).optional(), subtitle: z.string().max(140).optional(),
+    icon: z.string().max(8).optional().describe('One emoji'), accent: z.string().max(9).optional().describe('Hex colour, e.g. #ff9f0a'),
+    seconds: z.number().optional().describe('Countdown length in seconds'), elapsed: z.number().optional().describe('Stopwatch: seconds already elapsed'),
+    progress: z.number().min(0).max(1).nullable().optional(), value: z.string().max(16).optional(),
+    priority: z.number().min(-10).max(10).optional(), quiet: z.boolean().optional().describe('Update without expanding'),
+    ttl: z.number().optional().describe('Auto-remove after N seconds'), doneText: z.string().max(140).optional().describe('Subtitle when a countdown ends'),
+  },
+  async (a) => out(await cmd({ t: 'activity', ...a })));
+
+tool('tv_idle',
+  'The TV idle screen (animated background by time of day or by the colours of the song playing, big clock, weather for Elche, now playing). ' +
+  'op=show opens it now; op=get returns its settings and current profile; op=set changes settings: mode (auto|day|evening|night|cinema), ' +
+  'bed/wake ("HH:MM", fixed sleep schedule), perDay + week {mon:{bed,wake},…} for a per-weekday schedule, idleMin (minutes without use before it opens itself, 0 = never), ' +
+  'dimMin (at night, minutes until only a faint clock remains), music (show Spotify), city/lat/lon.',
+  { op: z.enum(['show', 'get', 'set']), cfg: z.record(z.any()).optional() },
+  async ({ op, cfg }) => out(await cmd({ t: 'idle', op, cfg })));
+
 tool('tv_events', 'Read events sent from the stage page (ticked tasks, slide changes, custom tv.emit). Pass the last value as `since` to get only new ones.',
   { since: z.number().int().optional() },
   async ({ since }) => out(await api('GET', '/api/events?since=' + (since || 0))));

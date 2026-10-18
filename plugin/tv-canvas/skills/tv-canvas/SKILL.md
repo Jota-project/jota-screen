@@ -31,6 +31,10 @@ Los fotogramas de vídeo con DRM salen negros en las capturas; es normal. Si la 
 - `tv_show_html`: tu propia página a pantalla completa (≈1280×720 px, fondo oscuro, letra grande, legible desde el sofá). Disponible `tv.onData(fn)`, `tv.emit(nombre, obj)`, `tv.close()`. Solo recursos https; no puede llamar a otros servicios.
 - `tv_events` lee lo que ocurre en la tele (tareas marcadas, diapositivas). `tv_close` vuelve a lo anterior.
 
+## Reposo y Live Activities
+- La tele vuelve sola a la **pantalla en reposo** (fondo animado según la hora o los colores de la canción, reloj, tiempo de Elche, «ahora suena») tras unos minutos sin uso. `tv_nav home` o `tv_idle op:show` la abren; `tv_idle op:get|set` lee o cambia sus ajustes (modo, horario de sueño fijo o por día, minutos sin uso, atenuado nocturno).
+- `tv_activity`: píldora en vivo arriba en el centro, por encima de todo (reposo, webs, vídeo a pantalla completa). Para cosas que duran: temporizadores (`seconds`), cronómetros (`elapsed`), progreso (`progress` 0-1), marcadores o estados (`value`). Usa un `id` estable para actualizarla (`quiet` para no expandirla) y `op:end` cuando acabe. Título de 2-4 palabras, un emoji en `icon` y un color en `accent`.
+
 ## Criterio
 - Al terminar un recordatorio o una presentación, cierra con `tv_close` si ya no hace falta.
 - No interrumpas un vídeo en marcha con pantallas completas salvo que lo pidan: usa `tv_toast`.

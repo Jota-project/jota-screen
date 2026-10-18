@@ -1,15 +1,16 @@
-<!doctype html>
-<html lang="es"><meta charset="utf-8"><title>Salón</title>
+<!doctype html><html lang="es"><meta charset="utf-8"><title>Salón</title>
+<!-- Arranque del kiosco: en cuanto el servidor del mando responde, pasa a la pantalla en reposo. -->
 <style>
-  html,body{height:100%;margin:0;background:#0e1116;color:#e8eaed;font-family:system-ui,sans-serif}
-  body{display:grid;place-items:center;text-align:center}
-  h1{font-size:5vw;margin:0 0 .3em;font-weight:600}
-  p{font-size:2vw;margin:0;color:#9aa3ad}
-  #t{font-size:3vw;margin-top:1em;font-variant-numeric:tabular-nums}
+  html,body{height:100%;margin:0;background:#000;color:rgba(255,255,255,.4);font-family:system-ui,sans-serif;cursor:none}
+  body{display:grid;place-items:center}
+  #t{font-size:16vh;font-weight:200;font-variant-numeric:tabular-nums;letter-spacing:-.04em}
 </style>
-<div><h1>Salón listo</h1><p>Pantalla base funcionando</p><div id="t"></div></div>
+<div id="t"></div>
 <script>
-  const f=()=>document.getElementById('t').textContent=new Date().toLocaleTimeString('es-ES');
-  f();setInterval(f,1000);
-</script>
-</html>
+  const f = () => document.getElementById('t').textContent = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+  f(); setInterval(f, 1000);
+  const IDLE = 'http://127.0.0.1:8787/idle.html';
+  (function tryIdle() {
+    fetch(IDLE, { mode: 'no-cors', cache: 'no-store' }).then(() => location.replace(IDLE)).catch(() => setTimeout(tryIdle, 3000));
+  })();
+</script></html>

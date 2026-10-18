@@ -75,6 +75,14 @@ body{position:fixed;inset:0;width:100%;background:radial-gradient(120% 60% at 50
 .sw::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:transform .2s}
 .sw[aria-pressed=true]{background:var(--ac)}
 .sw[aria-pressed=true]::after{transform:translateX(20px)}
+.seg{display:flex;gap:4px;background:var(--bg);border:1px solid var(--line);border-radius:14px;padding:3px;grid-column:1/-1}
+.seg button{flex:1;height:36px;border:0;border-radius:11px;background:transparent;color:var(--dim);font:600 13.5px system-ui,-apple-system,sans-serif;touch-action:manipulation}
+.seg button[aria-pressed=true]{background:var(--s3);color:var(--tx)}
+.tm,.sel{height:38px;border-radius:12px;border:1px solid var(--line);background:var(--bg);color:var(--tx);font:600 15px system-ui,-apple-system,sans-serif;padding:0 10px;-webkit-appearance:none;appearance:none;touch-action:manipulation;color-scheme:dark}
+.tms{display:flex;gap:8px;align-items:center}
+.wk{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px 10px;align-items:center;padding:4px 2px 10px}
+.wk span{color:var(--dim);font-size:13.5px;font-weight:600;width:38px}
+.wk .tm{width:100%}
 .acts{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:4px 0 16px}
 .acts .bt{display:flex;align-items:center;justify-content:center;gap:8px;height:48px;font-size:14px;border-radius:15px}
 .acts .bt svg{width:20px;height:20px}
@@ -257,6 +265,20 @@ body{position:fixed;inset:0;width:100%;background:radial-gradient(120% 60% at 50
   <div class="fld"><span>Desplazamiento natural<small>El contenido sigue a tus dedos</small></span><button class="sw" id="swNat" aria-pressed="true" aria-label="Desplazamiento natural"></button></div>
   <div class="fld"><span>Vibración al tocar</span><button class="sw" id="swHap" aria-pressed="true" aria-label="Vibración"></button></div>
   <div class="fld" id="fsRow"><span>Mando a pantalla completa</span><button class="sw" id="swFs" aria-pressed="false" aria-label="Pantalla completa"></button></div>
+  <div class="sh">Pantalla en reposo</div>
+  <div class="fld" style="border-top:0"><div class="seg" id="idMode">
+    <button data-m="auto">Auto</button><button data-m="day">Día</button><button data-m="evening">Tarde</button><button data-m="night">Noche</button><button data-m="cinema">Cine</button>
+  </div></div>
+  <div class="fld"><span>Hora de dormir<small>Acostarse · levantarse. De noche el reposo queda en negro y tenue</small></span>
+    <div class="tms"><input type="time" class="tm" id="idBed" aria-label="Acostarse"><input type="time" class="tm" id="idWake" aria-label="Levantarse"></div></div>
+  <div class="fld"><span>Distinto cada día</span><button class="sw" id="idPer" aria-pressed="false" aria-label="Horario por día"></button></div>
+  <div class="wk" id="idWeek" hidden></div>
+  <div class="fld"><span>Pasar al reposo tras</span><select class="sel" id="idIdle">
+    <option value="0">Nunca</option><option value="2">2 min</option><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
+  <div class="fld"><span>De noche, solo la hora tras</span><select class="sel" id="idDim">
+    <option value="0">Nunca</option><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
+  <div class="fld"><span>Música en el reposo</span><button class="sw" id="idMus" aria-pressed="true" aria-label="Música en el reposo"></button></div>
+  <div class="acts" style="grid-template-columns:1fr;margin-top:8px"><button class="bt" id="idShow" type="button">Ver el reposo ahora</button></div>
   <div class="sh">Dispositivos con acceso</div>
   <div id="devs"></div>
   <div class="foot" style="margin-top:2px;text-align:left">Para invitar a alguien: que abra esta misma dirección sin enlace y escriba el código que verá en la tele.</div>
@@ -462,7 +484,7 @@ shade.addEventListener('pointerdown', e => { e.preventDefault(); closeSheet(); }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-click]'); if (!b) return;
   buzz(7);
-  ({ kb: () => openSheet('kbS'), go: () => openSheet('goS'), ag: () => openSheet('agS'), sp: spButton, more: () => { refreshSet(); refreshDevs(); openSheet('setS'); } })[b.dataset.a]();
+  ({ kb: () => openSheet('kbS'), go: () => openSheet('goS'), ag: () => openSheet('agS'), sp: spButton, more: () => { refreshSet(); refreshDevs(); idleLoad(); openSheet('setS'); } })[b.dataset.a]();
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet && document.activeElement !== kin) closeSheet(); });
 const vv = window.visualViewport;
@@ -603,6 +625,39 @@ $('#swFs').addEventListener('click', () => {
   setTimeout(refreshSet, 250);
 });
 setInterval(() => { if (sheet && sheet.id === 'setS') refreshSet(); }, 1000);
+
+/* ── pantalla en reposo ── */
+const DAYN = [['mon', 'Lun'], ['tue', 'Mar'], ['wed', 'Mié'], ['thu', 'Jue'], ['fri', 'Vie'], ['sat', 'Sáb'], ['sun', 'Dom']];
+let icfg = null, iT = 0;
+function idlePaint() {
+  if (!icfg) return;
+  $('#idMode').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === icfg.mode));
+  $('#idBed').value = icfg.bed; $('#idWake').value = icfg.wake;
+  $('#idPer').setAttribute('aria-pressed', !!icfg.perDay);
+  $('#idIdle').value = String(icfg.idleMin); $('#idDim').value = String(icfg.dimMin);
+  if (![...$('#idIdle').options].some(o => o.value === String(icfg.idleMin))) $('#idIdle').add(new Option(icfg.idleMin + ' min', icfg.idleMin, true, true));
+  $('#idMus').setAttribute('aria-pressed', !!icfg.music);
+  const wk = $('#idWeek'); wk.hidden = !icfg.perDay; wk.textContent = '';
+  if (icfg.perDay) for (const [k, n] of DAYN) {
+    const w = icfg.week[k] || {};
+    const l = document.createElement('span'); l.textContent = n;
+    const a = Object.assign(document.createElement('input'), { type: 'time', className: 'tm', value: w.bed || icfg.bed }); a.setAttribute('aria-label', n + ' acostarse');
+    const b = Object.assign(document.createElement('input'), { type: 'time', className: 'tm', value: w.wake || icfg.wake }); b.setAttribute('aria-label', n + ' levantarse');
+    const chg = () => { icfg.week[k] = { bed: a.value, wake: b.value }; idleSave(); };
+    a.addEventListener('change', chg); b.addEventListener('change', chg);
+    wk.append(l, a, b);
+  }
+}
+async function idleLoad() { const r = await rpc({ t: 'idle', op: 'get' }); if (r && r.cfg) { icfg = r.cfg; idlePaint(); } }
+function idleSave() { clearTimeout(iT); iT = setTimeout(async () => { const r = await rpc({ t: 'idle', op: 'set', cfg: icfg }); if (r && r.cfg) icfg = r.cfg; }, 300); }
+$('#idMode').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || !icfg) return; buzz(7); icfg.mode = b.dataset.m; idlePaint(); idleSave(); });
+$('#idBed').addEventListener('change', e => { if (icfg && e.target.value) { icfg.bed = e.target.value; idleSave(); } });
+$('#idWake').addEventListener('change', e => { if (icfg && e.target.value) { icfg.wake = e.target.value; idleSave(); } });
+$('#idPer').addEventListener('click', () => { if (!icfg) return; icfg.perDay = !icfg.perDay; idlePaint(); idleSave(); });
+$('#idIdle').addEventListener('change', e => { if (icfg) { icfg.idleMin = +e.target.value; idleSave(); } });
+$('#idDim').addEventListener('change', e => { if (icfg) { icfg.dimMin = +e.target.value; idleSave(); } });
+$('#idMus').addEventListener('click', () => { if (!icfg) return; icfg.music = !icfg.music; idlePaint(); idleSave(); });
+$('#idShow').addEventListener('click', () => { buzz(7); cmd({ t: 'idle', op: 'show' }); closeSheet(); });
 
 connect();
 </script>

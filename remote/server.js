@@ -16,10 +16,10 @@ const ROOT = __dirname;
 const PUB = path.join(ROOT, 'public');
 const PORT = Number(process.env.TV_PORT) || 8787;
 const CDP_PORT = Number(process.env.TV_CDP_PORT) || 9222;
-const HOME_URL = process.env.TV_HOME_URL || 'file://' + path.join(os.homedir(), 'tv', 'home.html');
 const DEBUG = !!process.env.TV_DEBUG;
 const NO_POINTER = !!process.env.TV_NO_POINTER;
 const SELF = `http://127.0.0.1:${PORT}`;
+const HOME_URL = process.env.TV_HOME_URL || SELF + '/idle.html'; // la pantalla en reposo
 const STAGE_DIR = path.join(os.homedir(), 'tv', 'stage');
 fs.mkdirSync(STAGE_DIR, { recursive: true });
 // OpenClaw (agente). Se llama por su CLI: así no hace falta tocar ningún secreto.
@@ -250,6 +250,7 @@ const cdp = {
         this.pages.set(t.targetId, t);
         if (m.method === 'Target.targetCreated' || !this.targetId) this.activate(t.targetId);
         if (t.targetId === this.targetId) {
+          if (t.url !== state.url && idle) idle.onNav(t.url);
           state.title = t.title; state.url = t.url; broadcast();
           // al cambiar de página dentro de Spotify (o llegar a él) se repasa el retoque
           if (this.session && /^https:\/\/open\.spotify\.com\//.test(t.url) && !process.env.TV_SPOTIFY_BANNER)
@@ -688,6 +689,12 @@ async function spotify(m) {
   } catch (e) { return { error: e.message }; }
 }
 
+// ───────────────────────── pantalla en reposo y Live Activities (idle.js)
+const idle = require('./idle')({
+  ROOT, PUB, SELF, cdp, nav, spApi, spReady: () => !!(sp.clientId && sp.refresh), state,
+  stageKind: () => stage.kind, log: (...a) => console.log(...a),
+});
+
 // preguntar al agente (OpenClaw) y enseñar lo entendido en la tele; la respuesta vuelve por el mismo WebSocket
 let askBusy = false;
 function agentText(out) {
@@ -715,6 +722,7 @@ async function ask(text, ws) {
 async function run(m, ws) {
   if (!m || typeof m !== 'object') return { error: 'mensaje no válido' };
   if (DEBUG) console.log('cmd', JSON.stringify(m));
+  if (!['state', 'devices', 'activity', 'idle'].includes(m.t)) idle.touch();
   try {
     switch (m.t) {
       case 'present': return await present(m);
@@ -732,6 +740,8 @@ async function run(m, ws) {
       case 'devices': return { devices: listDevices() };
       case 'revoke': return revokeDevice(String(m.dev || ''));
       case 'spotify': return await spotify(m);
+      case 'idle': return await idle.run(m);
+      case 'activity': return idle.activity(m);
       case 'key': return key(String(m.k));
       case 'text': cdp.fire('Input.insertText', { text: String(m.v ?? '').slice(0, 2000) }); return { ok: 1 };
       case 'nav': return await nav(m.url);
@@ -766,6 +776,8 @@ const CSP = "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-i
 // páginas del escenario: pueden cargar imágenes, fuentes, vídeo y librerías de internet, pero no hablar con otros servicios
 const STAGE_CSP = "default-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' https:; " +
   "img-src * data: blob:; media-src * data: blob:; font-src * data:; connect-src 'self'; base-uri 'none'; form-action 'none'";
+const IDLE_CSP = "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; " +
+  "script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws:; base-uri 'none'; form-action 'none'";
 // solo el navegador de la propia tele (bucle local, sin pasar por el proxy de Tailscale)
 function isLocalTV(req) {
   const a = req.socket.remoteAddress || '';
@@ -844,11 +856,16 @@ function handler(req, res) {
     let buf; try { buf = fs.readFileSync(path.join(STAGE_DIR, sm[1] + '.html')); } catch { return send(res, 404, 'no encontrado'); }
     return send(res, 200, req.method === 'HEAD' ? '' : buf, { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'Content-Security-Policy': STAGE_CSP });
   }
+  if (p === '/idle/art') { // carátulas de Spotify servidas desde aquí, para poder sacar sus colores
+    if (!isLocalTV(req)) return send(res, 403, 'solo desde la tele');
+    return idle.art(req, res, url, send);
+  }
   const a = assets.get(p);
   if (!a) return send(res, 404, 'no encontrado');
-  const h = { 'Content-Type': a.type, ETag: a.etag, 'Cache-Control': p === '/index.html' || /^\/(tpl-|tv-stage|stage\.css)/.test(p) ? 'no-cache' : 'public, max-age=86400' };
+  const h = { 'Content-Type': a.type, ETag: a.etag, 'Cache-Control': p === '/index.html' || /^\/(tpl-|tv-stage|tv-island|idle|stage\.css)/.test(p) ? 'no-cache' : 'public, max-age=86400' };
   if (p === '/index.html') h['Content-Security-Policy'] = CSP;
   else if (p.startsWith('/tpl-')) h['Content-Security-Policy'] = STAGE_CSP;
+  else if (p === '/idle.html') h['Content-Security-Policy'] = IDLE_CSP;
   if (req.headers['if-none-match'] === a.etag) return send(res, 304, '', h);
   if (a.gz && /\bgzip\b/.test(req.headers['accept-encoding'] || '')) { h['Content-Encoding'] = 'gzip'; h.Vary = 'Accept-Encoding'; return send(res, 200, req.method === 'HEAD' ? '' : a.gz, h); }
   send(res, 200, req.method === 'HEAD' ? '' : a.buf, h);
@@ -859,6 +876,10 @@ const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxP
 function onUpgrade(req, socket, head) {
   const ip = clientIp(req);
   const url = new URL(req.url, 'http://x');
+  if (url.pathname === '/idle-ws') { // datos de la pantalla en reposo (solo la tele)
+    if (!isLocalTV(req)) return socket.destroy();
+    return idle.upgrade(req, socket, head);
+  }
   if (url.pathname === '/stage-ws') { // canal de las páginas del escenario (solo la tele, sin token)
     if (!isLocalTV(req)) return socket.destroy();
     return stageWss.handleUpgrade(req, socket, head, ws => stageWss.emit('connection', ws));
@@ -894,6 +915,7 @@ wss.on('connection', (ws, req) => {
         if (m.id !== undefined && ws.readyState === WebSocket.OPEN && !(r && r.data)) ws.send(JSON.stringify({ t: 'res', id: m.id, r }));
       }).catch(() => {});
     }
+    idle.touch();
     ptrLine(s);                                                         // "m dx dy", "w dx dy", "c 1", "b 1 1"...
   });
   ws.send(JSON.stringify(publicState()));

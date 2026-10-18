@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Salón</title>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@200..700&display=swap">
+<style>
+@property --c1{syntax:'<color>';inherits:true;initial-value:#0b1430}
+@property --c2{syntax:'<color>';inherits:true;initial-value:#13213f}
+@property --c3{syntax:'<color>';inherits:true;initial-value:#1b1240}
+@property --c4{syntax:'<color>';inherits:true;initial-value:#081a2a}
+@property --base{syntax:'<color>';inherits:true;initial-value:#05070c}
+@property --veil{syntax:'<number>';inherits:true;initial-value:.2}
+:root{--ease:cubic-bezier(.32,.72,0,1);--fg:#fff;--mut:rgba(255,255,255,.66)}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden;background:#000;cursor:none}
+body{font-family:"Inter","SF Pro Display",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--fg);
+  -webkit-font-smoothing:antialiased;font-feature-settings:"tnum" 1,"cv11" 1,"ss01" 1}
+
+/* ── fondo: manchas de color que derivan despacio (gradientes, sin filtros: barato para la GPU) */
+#bg{position:fixed;inset:0;background:var(--base);transition:--c1 3.5s,--c2 3.5s,--c3 3.5s,--c4 3.5s,--base 3.5s,--veil 3.5s;overflow:hidden}
+.b{position:absolute;width:95vmax;height:95vmax;border-radius:50%;will-change:transform;transition:opacity 3.5s;
+  background:radial-gradient(circle at 50% 50%,var(--c) 0%,color-mix(in srgb,var(--c) 55%,transparent) 30%,transparent 66%)}
+.b1{--c:var(--c1);left:-38vmax;top:-46vmax;animation:d1 46s ease-in-out infinite alternate}
+.b2{--c:var(--c2);right:-42vmax;top:-30vmax;animation:d2 58s ease-in-out infinite alternate}
+.b3{--c:var(--c3);left:-20vmax;bottom:-55vmax;animation:d3 52s ease-in-out infinite alternate}
+.b4{--c:var(--c4);right:-30vmax;bottom:-50vmax;animation:d4 64s ease-in-out infinite alternate}
+@keyframes d1{to{transform:translate(28vw,22vh) scale(1.18)}}
+@keyframes d2{to{transform:translate(-30vw,30vh) scale(.88)}}
+@keyframes d3{to{transform:translate(34vw,-26vh) scale(1.12)}}
+@keyframes d4{to{transform:translate(-22vw,-34vh) scale(1.22)}}
+.playing .b{animation-duration:26s,26s}
+.playing .b1{animation-name:d1,breathe;animation-duration:30s,4.2s;animation-timing-function:ease-in-out}
+@keyframes breathe{50%{opacity:.82}}
+#veil{position:fixed;inset:0;background:rgba(0,0,0,var(--veil));pointer-events:none}
+#grain{position:fixed;inset:-50%;opacity:.06;pointer-events:none;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.dark .b{opacity:0}
+.dark #grain{opacity:0}
+
+/* ── contenido; deriva unos píxeles a lo largo de media hora (anti-quemado) */
+#ui{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;animation:drift 1800s ease-in-out infinite alternate;transition:opacity 2s}
+@keyframes drift{0%{transform:translate(-1.4vw,-1.2vh)}50%{transform:translate(1.2vw,.8vh)}100%{transform:translate(-.6vw,1.4vh)}}
+#top{margin-top:15.5vh;transition:margin-top 1s var(--ease),opacity 2s,color 2s;display:flex;align-items:center;gap:1.4vw;font-size:2.6vh;font-weight:500;letter-spacing:-.005em;color:rgba(255,255,255,.9)}
+.acts #top{margin-top:21vh}
+#top .sep{width:4px;height:4px;border-radius:50%;background:currentColor;opacity:.5}
+#wx{display:flex;align-items:center;gap:.6vw}
+#wx svg{width:3.4vh;height:3.4vh}
+#clock{font-size:26vh;font-weight:200;letter-spacing:-.045em;line-height:.95;margin-top:.6vh;text-shadow:0 2px 40px rgba(0,0,0,.18);
+  transition:font-size 2s var(--ease),color 2s,opacity 2s;display:flex;align-items:baseline}
+#clock .col{opacity:.82;margin:0 .02em;transform:translateY(-.06em)}
+#sub{margin-top:1.6vh;font-size:2.1vh;font-weight:450;color:var(--mut);display:flex;gap:1.6vw;transition:opacity 2s}
+#sub span{display:flex;align-items:center;gap:.4vw}
+
+/* ── ahora suena */
+#np{position:absolute;bottom:7vh;left:50%;transform:translateX(-50%);width:min(54vw,760px);display:flex;align-items:center;gap:1.6vw;
+  padding:1.6vh 1.8vh;border-radius:3.6vh;background:rgba(255,255,255,.09);border:1px solid rgba(255,255,255,.14);
+  -webkit-backdrop-filter:blur(26px) saturate(150%);backdrop-filter:blur(26px) saturate(150%);
+  box-shadow:0 20px 60px rgba(0,0,0,.28);transition:opacity 1.2s var(--ease),transform 1.2s var(--ease)}
+#np.off{opacity:0;transform:translate(-50%,3vh)}
+#art{position:relative;flex:none;width:13vh;height:13vh;border-radius:1.6vh;overflow:hidden;box-shadow:0 10px 30px rgba(0,0,0,.35);background:rgba(255,255,255,.08)}
+#art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity 1.2s}
+#meta{flex:1;min-width:0}
+#np .k{font-size:1.6vh;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:.7vw}
+#np .tt{font-size:3vh;font-weight:650;letter-spacing:-.015em;margin-top:.5vh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#np .ar{font-size:2.3vh;color:rgba(255,255,255,.7);margin-top:.2vh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#pb{display:flex;align-items:center;gap:1vw;margin-top:1.3vh;font-size:1.6vh;color:rgba(255,255,255,.55)}
+#pb .tr{flex:1;height:.5vh;border-radius:1vh;background:rgba(255,255,255,.18);overflow:hidden}
+#pb .tr i{display:block;height:100%;width:0;background:rgba(255,255,255,.9);border-radius:1vh}
+.eq{display:inline-flex;align-items:flex-end;gap:2px;height:1.6vh}
+.eq i{width:3px;height:30%;background:currentColor;border-radius:2px}
+.playing .eq i{animation:eq 1s ease-in-out infinite}
+.eq i:nth-child(2){animation-delay:-.4s!important}.eq i:nth-child(3){animation-delay:-.7s!important}
+@keyframes eq{0%,100%{height:25%}50%{height:100%}}
+
+/* ── noche: negro, tenue, nada llamativo */
+.night #top,.night #sub{color:rgba(255,255,255,.34)}
+.night #clock{color:rgba(255,255,255,.42);text-shadow:none;font-size:22vh}
+.night #np{background:transparent;border-color:transparent;box-shadow:none;-webkit-backdrop-filter:none;backdrop-filter:none;opacity:.5;width:auto;padding:0}
+.night #art{width:6vh;height:6vh;border-radius:.9vh;box-shadow:none;filter:grayscale(.4) brightness(.7)}
+.night #np .k,.night #pb{display:none}
+.night #np .tt{font-size:2.2vh;margin:0}.night #np .ar{font-size:1.8vh}
+.dim #top,.dim #sub,.dim #np{opacity:0!important}
+.dim #clock{color:rgba(255,255,255,.2);font-size:16vh}
+.cinema #top,.cinema #sub{opacity:.0}
+.cinema #clock{font-size:12vh;color:rgba(255,255,255,.25)}
+.cinema #np{opacity:0!important}
+</style></head><body class="dark">
+<div id="bg"><i class="b b1"></i><i class="b b2"></i><i class="b b3"></i><i class="b b4"></i></div>
+<div id="veil"></div><div id="grain"></div>
+<main id="ui">
+  <div id="top"><span id="date"></span><span class="sep"></span><span id="wx"></span></div>
+  <div id="clock"><span id="hh">--</span><span class="col">:</span><span id="mm">--</span></div>
+  <div id="sub"></div>
+  <div id="np" class="off">
+    <div id="art"></div>
+    <div id="meta">
+      <div class="k"><span class="eq"><i></i><i></i><i></i></span><span id="npk">Ahora suena</span></div>
+      <div class="tt" id="npt"></div><div class="ar" id="npa"></div>
+      <div id="pb"><span id="pc">0:00</span><span class="tr"><i id="pf"></i></span><span id="pd">0:00</span></div>
+    </div>
+  </div>
+</main>
+<script src="/tv-island.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const B = document.body, BG = $('bg');
+let D = { profile: 'day', weather: null, music: null, acts: [], cfg: { dimMin: 20 } }, off = 0, lastEvent = Date.now();
+
+// ── reloj
+const fmtDate = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' });
+const fmtHM = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Madrid' });
+const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+function clock() {
+  const d = new Date(), [h, m] = fmtHM.format(d).split(':');
+  $('hh').textContent = h; $('mm').textContent = m;
+  $('date').textContent = cap(fmtDate.format(d));
+  progress();
+  dimCheck();
+  setTimeout(clock, 1000 - (Date.now() % 1000) + 10);
+}
+
+// ── tiempo
+const I = {
+  sun: '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M2.5 12h2.2M19.3 12h2.2M5.3 5.3l1.6 1.6M17.1 17.1l1.6 1.6M5.3 18.7l1.6-1.6M17.1 6.9l1.6-1.6"/>',
+  moon: '<path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/>',
+  cloud: '<path d="M7 18.5h10.5a4 4 0 0 0 .4-8 6 6 0 0 0-11.5 1.6A3.3 3.3 0 0 0 7 18.5z"/>',
+  part: '<path d="M8.5 6.2a3.6 3.6 0 0 1 5.6 1.6"/><path d="M8 3v1.4M3.6 7.6H5M4.6 4.2l1 1"/><path d="M8 20h9.5a3.6 3.6 0 0 0 .3-7.2 5.4 5.4 0 0 0-10.4 1.5A2.9 2.9 0 0 0 8 20z"/>',
+  rain: '<path d="M7 15h10.5a4 4 0 0 0 .4-8 6 6 0 0 0-11.5 1.6A3.3 3.3 0 0 0 7 15z"/><path d="M8.5 18l-1 2.5M12.5 18l-1 2.5M16.5 18l-1 2.5"/>',
+  storm: '<path d="M7 14.5h10.5a4 4 0 0 0 .4-8 6 6 0 0 0-11.5 1.6A3.3 3.3 0 0 0 7 14.5z"/><path d="M12.5 15.5l-2 3.5h3l-2 3.5"/>',
+  fog: '<path d="M4 9h16M6 13h12M4 17h16"/>',
+  snow: '<path d="M7 14.5h10.5a4 4 0 0 0 .4-8 6 6 0 0 0-11.5 1.6A3.3 3.3 0 0 0 7 14.5z"/><path d="M9 18.5h.01M12 20h.01M15 18.5h.01"/>',
+};
+function wmo(c, day) {
+  if (c === 0) return [day ? 'sun' : 'moon', 'Despejado'];
+  if (c <= 2) return [day ? 'part' : 'cloud', c === 1 ? 'Casi despejado' : 'Parcialmente nuboso'];
+  if (c === 3) return ['cloud', 'Nublado'];
+  if (c <= 48) return ['fog', 'Niebla'];
+  if (c <= 57) return ['rain', 'Llovizna'];
+  if (c <= 67) return ['rain', 'Lluvia'];
+  if (c <= 77) return ['snow', 'Nieve'];
+  if (c <= 82) return ['rain', 'Chubascos'];
+  if (c <= 86) return ['snow', 'Chubascos de nieve'];
+  return ['storm', 'Tormenta'];
+}
+const svg = k => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${I[k]}</svg>`;
+function weather() {
+  const w = D.weather;
+  if (!w) { $('wx').textContent = ''; $('sub').textContent = ''; return; }
+  const [ic, txt] = wmo(w.code, w.isDay);
+  $('wx').innerHTML = `${svg(ic)}<span>${w.temp}°</span>`;
+  $('wx').title = txt;
+  const parts = [`<span>${txt}</span>`, `<span>Máx ${w.max}° · Mín ${w.min}°</span>`];
+  if (w.rainNext >= 30) parts.push(`<span>${svg('rain')}Lluvia ${w.rainNext}% próximas horas</span>`);
+  else if (Math.abs(w.feels - w.temp) >= 3) parts.push(`<span>Sensación ${w.feels}°</span>`);
+  $('sub').innerHTML = parts.join('');
+  $('sub').querySelectorAll('svg').forEach(s => { s.style.width = s.style.height = '2.4vh'; });
+}
+
+// ── paletas
+const PAL = {
+  dawn:    ['#f19a7c', '#f3c58a', '#a985d8', '#4c62c9', '#130f22', .18],
+  day:     ['#2f6fe0', '#1aa39d', '#7556f0', '#123a8a', '#06101f', .16],
+  golden:  ['#ff8656', '#f4b85a', '#cf4f78', '#463895', '#160c18', .2],
+  evening: ['#2b2370', '#5a2c74', '#13336a', '#0d1340', '#04050c', .34],
+  night:   ['#000', '#000', '#000', '#000', '#000', 1],
+};
+let artPal = null;
+function timePal() {
+  const w = D.weather, now = Date.now();
+  if (D.profile === 'evening') return PAL.evening;
+  if (w && w.sunrise) {
+    if (Math.abs(now - w.sunrise) < 75 * 60e3) return PAL.dawn;
+    if (now > w.sunset - 90 * 60e3 && now < w.sunset + 40 * 60e3) return PAL.golden;
+  }
+  return PAL.day;
+}
+function applyPalette() {
+  const dark = D.profile === 'night' || D.profile === 'cinema';
+  B.classList.toggle('dark', dark);
+  let p = dark ? PAL.night : timePal();
+  if (!dark && artPal && D.music) p = [...artPal.map(c => tone(c, D.profile === 'evening' ? .32 : .54)), tone(artPal[0], .07), D.profile === 'evening' ? .32 : .14];
+  ['--c1', '--c2', '--c3', '--c4', '--base'].forEach((k, i) => BG.style.setProperty(k, p[i]));
+  BG.style.setProperty('--veil', p[5]);
+}
+
+// ── colores de la carátula
+function rgb2hsl(r, g, b) {
+  r /= 255; g /= 255; b /= 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), l = (mx + mn) / 2;
+  if (mx === mn) return [0, 0, l];
+  const d = mx - mn, s = l > .5 ? d / (2 - mx - mn) : d / (mx + mn);
+  const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+  return [h * 60, s, l];
+}
+function tone(c, L) { // misma tonalidad, luminosidad acotada (los fondos no deben deslumbrar)
+  const [h, s, l] = c; return `hsl(${h.toFixed(0)} ${Math.min(92, Math.max(38, s * 115)).toFixed(0)}% ${(Math.min(l, L) * 100).toFixed(0)}%)`;
+}
+function extract(img) {
+  const N = 36, cv = document.createElement('canvas'); cv.width = cv.height = N;
+  const x = cv.getContext('2d', { willReadFrequently: true }); x.drawImage(img, 0, 0, N, N);
+  const d = x.getImageData(0, 0, N, N).data, bk = new Map();
+  for (let i = 0; i < d.length; i += 4) {
+    const [h, s, l] = rgb2hsl(d[i], d[i + 1], d[i + 2]);
+    if (l < .07 || l > .94) continue;
+    const k = Math.round(h / 20) + ':' + Math.round(s * 3) + ':' + Math.round(l * 4);
+    const e = bk.get(k) || { n: 0, h: 0, s: 0, l: 0, hx: 0, hy: 0 };
+    e.n += 1 + s * 2.5; e.s += s; e.l += l; e.hx += Math.cos(h * Math.PI / 180); e.hy += Math.sin(h * Math.PI / 180); e.c = (e.c || 0) + 1;
+    bk.set(k, e);
+  }
+  const cand = [...bk.values()].map(e => [((Math.atan2(e.hy, e.hx) * 180 / Math.PI) + 360) % 360, e.s / e.c, e.l / e.c, e.n]).sort((a, b) => b[3] - a[3]);
+  const out = [];
+  for (const c of cand) {
+    if (out.every(o => Math.min(Math.abs(o[0] - c[0]), 360 - Math.abs(o[0] - c[0])) > 22 || Math.abs(o[2] - c[2]) > .25)) out.push(c);
+    if (out.length === 4) break;
+  }
+  if (!out.length) return null;
+  while (out.length < 4) { const b = out[out.length % out.length]; out.push([(b[0] + 25 * out.length) % 360, b[1] * .8, b[2] * .7]); }
+  return out;
+}
+
+// ── ahora suena
+let artUrl = '';
+const mmss = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+function music() {
+  const m = D.music, np = $('np');
+  const show = !!m && (m.playing || Date.now() - (m.at + off) < 10 * 60e3);
+  np.classList.toggle('off', !show);
+  B.classList.toggle('playing', !!(m && m.playing));
+  if (!m) { artPal = null; applyPalette(); return; }
+  $('npt').textContent = m.title; $('npa').textContent = m.artist + (m.album ? ' — ' + m.album : '');
+  $('npk').textContent = m.playing ? 'Ahora suena' : 'En pausa';
+  if (m.art && m.art !== artUrl) {
+    artUrl = m.art;
+    const img = new Image();
+    img.onload = () => {
+      const box = $('art'), olds = [...box.children];
+      img.style.opacity = 0; box.appendChild(img);
+      requestAnimationFrame(() => { img.style.opacity = 1; });
+      setTimeout(() => olds.forEach(o => o.remove()), 1300);
+      try { artPal = extract(img); } catch { artPal = null; }
+      applyPalette();
+    };
+    img.src = '/idle/art?u=' + encodeURIComponent(m.art);
+  }
+  progress();
+}
+function progress() {
+  const m = D.music; if (!m || !m.duration) return;
+  const p = Math.min(m.duration, m.progress + (m.playing ? Date.now() - (m.at + off) : 0));
+  $('pc').textContent = mmss(p); $('pd').textContent = mmss(m.duration);
+  $('pf').style.width = (p / m.duration * 100).toFixed(2) + '%';
+}
+
+// ── perfil y atenuado nocturno
+function profile() {
+  for (const p of ['day', 'evening', 'night', 'cinema']) B.classList.toggle(p, D.profile === p);
+  window.TVIsland && TVIsland.dim(D.profile === 'night' || D.profile === 'cinema' ? .6 : 1);
+  applyPalette();
+}
+function dimCheck() {
+  const n = D.profile === 'night', mins = Number(D.cfg?.dimMin) || 0;
+  const playing = D.music && D.music.playing;
+  B.classList.toggle('dim', n && mins > 0 && !playing && !D.acts.length && Date.now() - lastEvent > mins * 60e3);
+}
+
+// ── datos del servidor
+function onData(m) {
+  const prevKey = JSON.stringify([D.music && [D.music.title, D.music.playing], D.acts.map(a => a.updated), D.profile]);
+  off = Date.now() - m.now;
+  D = m;
+  if (JSON.stringify([D.music && [D.music.title, D.music.playing], D.acts.map(a => a.updated), D.profile]) !== prevKey) lastEvent = Date.now();
+  profile(); weather(); music();
+  B.classList.toggle('acts', !!(D.acts && D.acts.length));
+  window.TVIsland && TVIsland.render(D.acts || [], m.now);
+}
+function connect() {
+  const ws = new WebSocket('ws://' + location.host + '/idle-ws');
+  ws.onmessage = e => { try { const m = JSON.parse(e.data); if (m.t === 'idle') onData(m); } catch {} };
+  ws.onclose = () => setTimeout(connect, 1500);
+}
+// sin servidor también funciona: reloj y fondo según la hora
+D.profile = (h => h >= 8 && h < 20 ? 'day' : 'evening')(new Date().getHours());
+profile(); clock(); connect();
+setInterval(applyPalette, 5 * 60e3); // amanecer / atardecer cambian con la hora
+</script>
+</body></html>
