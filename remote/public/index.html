@@ -122,6 +122,20 @@ body{position:fixed;inset:0;width:100%;background:radial-gradient(120% 60% at 50
 .spIt .c{font-size:12px;color:var(--dim);font-variant-numeric:tabular-nums}
 .spIt.dn{background:rgba(255,255,255,.05);border-radius:10px}
 .spEmpty{color:var(--dim);font-size:13.5px;padding:14px 2px}
+.spIt .im{display:grid;place-items:center;color:var(--dim);font-size:18px}
+.spIt .im.lk,.spPl .cv.lk{background:linear-gradient(135deg,#4b1fd1,#8e7cf0 55%,#bfe6d6);color:#fff}
+.spIt.off{opacity:.45}
+.spMini{width:40px;height:40px;border-radius:50%;border:1px solid var(--line);background:rgba(255,255,255,.04);color:var(--tx);display:grid;place-items:center;touch-action:manipulation}
+.spMini svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.spBack{border:0;background:transparent;color:var(--spA,var(--ac));font:600 14.5px system-ui,-apple-system,sans-serif;padding:8px 2px;touch-action:manipulation}
+.spPl{display:flex;gap:14px;align-items:center;margin:4px 0 12px}
+.spPl .cv{flex:none;width:112px;height:112px;border-radius:14px;background:var(--s3) center/cover no-repeat;box-shadow:0 10px 26px rgba(0,0,0,.45);display:grid;place-items:center;font-size:40px;color:var(--dim)}
+.spPl .m{min-width:0}.spPl .n{font-size:19px;font-weight:700;line-height:1.2}
+.spPl .b{font-size:13px;color:var(--dim);margin-top:4px}
+.spPl .d{font-size:12.5px;color:var(--dim);margin-top:6px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.spPlA{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px}
+.spPlA .bt{height:46px;font-size:15px}
+.spMore{width:100%;height:44px;margin-top:8px;font-size:14px}
 .spLogin{margin-top:12px;padding:14px;border-radius:16px;background:rgba(255,255,255,.06);border:1px solid var(--line);font-size:13.5px;color:var(--dim);display:grid;gap:10px}
 .spLogin[hidden]{display:none}
 .spLogin a{height:44px;border-radius:14px;display:grid;place-items:center;background:#1ed760;color:#06120a;font-weight:700;text-decoration:none}
@@ -184,6 +198,7 @@ body{position:fixed;inset:0;width:100%;background:radial-gradient(120% 60% at 50
 <symbol id="i-heart" viewBox="0 0 24 24"><path d="M12 20s-7.5-4.4-7.5-10A4.3 4.3 0 0 1 12 7.4 4.3 4.3 0 0 1 19.5 10c0 5.6-7.5 10-7.5 10z"/></symbol>
 <symbol id="i-shuf" viewBox="0 0 24 24"><path d="M3.5 7h3.2c2.2 0 3.5 1 4.7 3l1.2 2c1.2 2 2.5 3 4.7 3h3.2M17.5 4.5l3 2.5-3 2.5M3.5 17h3.2c1.4 0 2.4-.4 3.3-1.2M14.6 8.2c.9-.8 1.9-1.2 3.2-1.2M17.5 14.5l3 2.5-3 2.5"/></symbol>
 <symbol id="i-rep" viewBox="0 0 24 24"><path d="M4.5 11V9.5A2.5 2.5 0 0 1 7 7h12.5M16.5 4l3 3-3 3M19.5 13v1.5A2.5 2.5 0 0 1 17 17H4.5M7.5 20l-3-3 3-3"/></symbol>
+<symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5.5v13M5.5 12h13"/></symbol>
 <symbol id="i-spot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M7.2 9.6c3.2-1 7-.7 9.8 1M7.8 12.7c2.6-.8 5.6-.5 8 .9M8.4 15.6c2.1-.6 4.3-.4 6.2.7"/></symbol>
 <symbol id="i-prev" viewBox="0 0 24 24"><path d="M6.5 5.5v13M18 6v12l-9-6z" fill="currentColor"/></symbol>
 <symbol id="i-next" viewBox="0 0 24 24"><path d="M17.5 5.5v13M6 6v12l9-6z" fill="currentColor"/></symbol>
@@ -643,49 +658,101 @@ spin.addEventListener('keydown', e => {
   spin.value = ''; $('#spT').textContent = 'Buscando…'; $('#spA').textContent = v; spin.blur();
   rpc({ t: 'spotify', a: 'search_play', query: v, type: 'track' }).then(r => { if (r && r.error) { pill(r.error); spPaint(spN); } });
 });
-/* listas: a continuación, playlists y recientes */
+/* listas: a continuación, playlists (con su detalle) y recientes */
 const spCache = {};
-$('#spTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; buzz(7); spTab = b.dataset.tab; spLoadTab(); });
+let spDetail = null; // playlist abierta: {uri, head, items, next, loading}
+$('#spTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; buzz(7); if (spTab === b.dataset.tab && b.dataset.tab === 'playlists') spDetail = null; spTab = b.dataset.tab; spLoadTab(); });
 async function spLoadTab() {
   $('#spTabs').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === spTab));
   if (spTab === 'queue') return spList();
-  if (spCache[spTab]) spList(); else { $('#spList').innerHTML = '<div class="spEmpty">Cargando…</div>'; }
+  if (spTab === 'playlists' && spDetail) return spList();
+  if (spCache[spTab]) spList(); else spMsg('Cargando…');
   const r = await rpc({ t: 'spotify', a: spTab === 'playlists' ? 'playlists' : 'recent' });
   spCache[spTab] = r && r.items ? r.items : { error: r && r.error || 'error' };
   if (spCache[spTab].error && /403|scope|permis|Insufficient/i.test(spCache[spTab].error)) $('#spLogin').hidden = false;
-  spList();
+  if (!(spTab === 'playlists' && spDetail)) spList();
+}
+const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
+function spMsg(t) { const box = $('#spList'); box.textContent = ''; box.appendChild(el('div', 'spEmpty', t)); }
+function spCover(x, cls) {
+  const im = el('div', cls || 'im');
+  const src = typeof x.image === 'string' ? x.image : x.image && (x.image.m || x.image.s);
+  if (x.liked) { im.classList.add('lk'); im.textContent = '♥'; }
+  else if (src) im.style.backgroundImage = `url("${src}")`;
+  else im.textContent = '♪';
+  return im;
+}
+const spPlay = (o, label) => rpc({ t: 'spotify', ...o }).then(r => pill(r && r.error ? r.error : label || 'Reproduciendo'));
+function spRow(x, sub, onTap, extra) {
+  const it = el('div', 'spIt' + (x.playable === false ? ' off' : ''));
+  const tx = el('div', 'tx'); tx.append(el('div', 'a', x.name), el('div', 'b', sub || ''));
+  it.append(spCover(x), tx, extra || el('div', 'c', x.duration ? mmss(x.duration) : ''));
+  it.addEventListener('click', e => { if (e.target.closest('.spMini')) return; buzz(10); it.classList.add('dn'); setTimeout(() => it.classList.remove('dn'), 250); onTap(); });
+  return it;
+}
+function spMiniBtn(icon, label, fn) {
+  const b = el('button', 'spMini'); b.setAttribute('aria-label', label);
+  b.innerHTML = `<svg><use href="#${icon}"/></svg>`;
+  b.addEventListener('click', e => { e.stopPropagation(); buzz(10); fn(); });
+  return b;
 }
 function spList() {
   const box = $('#spList'); box.textContent = '';
-  let items, sub, play;
+  if (spTab === 'playlists' && spDetail) return spRenderDetail(box);
+  let items;
   if (spTab === 'queue') {
     items = (spN && spN.queue) || [];
-    sub = x => x.artist; // dentro de la playlist/álbum que suena, para no perder lo que viene después
-    play = x => spN && spN.context && /^(playlist|album)$/.test(spN.context.type) ? { a: 'uri', uri: spN.context.uri, offset: x.uri } : { a: 'uri', uri: x.uri };
-  } else {
-    const c = spCache[spTab]; if (!c) return;
-    if (c.error) { box.innerHTML = '<div class="spEmpty"></div>'; box.firstChild.textContent = /403|scope|permis|Insufficient/i.test(c.error) ? 'Falta volver a conectar Spotify.' : c.error; return; }
-    items = c; sub = x => x.by + (x.count ? ' · ' + x.count + ' canciones' : ''); play = x => ({ a: 'uri', uri: x.uri });
+    if (!items.length) return spMsg('No hay nada en cola.');
+    // dentro de la playlist/álbum que suena, para no perder lo que viene después
+    for (const x of items) box.appendChild(spRow(x, x.artist, () => spPlay(spN && spN.context && /^(playlist|album)$/.test(spN.context.type) ? { a: 'uri', uri: spN.context.uri, offset: x.uri } : { a: 'uri', uri: x.uri })));
+    return;
   }
-  if (!items.length) { const d = document.createElement('div'); d.className = 'spEmpty'; d.textContent = spTab === 'queue' ? 'No hay nada en cola.' : 'Nada por aquí.'; box.appendChild(d); return; }
-  for (const x of items) {
-    const it = document.createElement('div'); it.className = 'spIt';
-    const im = document.createElement('div'); im.className = 'im'; const src = typeof x.image === 'string' ? x.image : x.image && x.image.s; if (src) im.style.backgroundImage = `url("${src}")`;
-    const tx = document.createElement('div'); tx.className = 'tx';
-    const a = document.createElement('div'); a.className = 'a'; a.textContent = x.name;
-    const b = document.createElement('div'); b.className = 'b'; b.textContent = sub(x) || '';
-    tx.append(a, b);
-    const c = document.createElement('div'); c.className = 'c'; c.textContent = x.duration ? mmss(x.duration) : '';
-    it.append(im, tx, c);
-    it.addEventListener('click', () => { buzz(10); it.classList.add('dn'); setTimeout(() => it.classList.remove('dn'), 250); const o = play(x);
-      rpc({ t: 'spotify', ...o }).then(r => {
-        if (r && r.error && o.offset) return rpc({ t: 'spotify', a: 'uri', uri: x.uri }); // no estaba en esa lista: solo la canción
-        return r;
-      }).then(r => pill(r && r.error ? r.error : 'Reproduciendo')); });
-    box.appendChild(it);
+  const c = spCache[spTab]; if (!c) return;
+  if (c.error) return spMsg(/403|scope|permis|Insufficient/i.test(c.error) ? 'Falta volver a conectar Spotify.' : c.error);
+  if (!c.length) return spMsg('Nada por aquí.');
+  if (spTab === 'playlists') {
+    for (const x of c) box.appendChild(spRow(x, [x.by, x.count != null ? x.count + ' canciones' : ''].filter(Boolean).join(' · '),
+      () => spOpenPl(x), spMiniBtn('i-shuf', 'Reproducir en aleatorio', () => spPlay({ a: 'uri', uri: x.uri, shuffle: true, total: x.count }, 'Aleatorio: ' + x.name))));
+  } else {
+    for (const x of c) box.appendChild(spRow(x, x.by, () => spPlay({ a: 'uri', uri: x.uri }),
+      spMiniBtn('i-plus', 'Añadir a la cola', () => spPlay({ a: 'queue_add', uri: x.uri }, 'Añadida a la cola'))));
   }
 }
-
+async function spOpenPl(x) {
+  spDetail = { uri: x.uri, head: x, items: [], next: 0, loading: true };
+  spList(); $('#spList').scrollIntoView({ block: 'nearest' });
+  await spMore();
+}
+async function spMore() {
+  const d = spDetail; if (!d || d.next === null) return;
+  d.loading = true; if (spTab === 'playlists') spList();
+  const r = await rpc({ t: 'spotify', a: 'playlist', uri: d.uri, offset: d.next });
+  if (spDetail !== d) return;
+  d.loading = false;
+  if (r.error) { d.error = r.error; d.next = null; }
+  else { for (const [k, v] of Object.entries(r)) if (k !== 'items' && v !== null && v !== undefined) d.head[k] = v; d.items.push(...(r.items || [])); d.next = r.next; }
+  if (spTab === 'playlists') spList();
+}
+function spRenderDetail(box) {
+  const d = spDetail, h = d.head;
+  const back = el('button', 'spBack', '‹ Playlists'); back.addEventListener('click', () => { buzz(7); spDetail = null; spList(); });
+  const hd = el('div', 'spPl');
+  const meta = el('div', 'm');
+  meta.append(el('div', 'n', h.name), el('div', 'b', [h.by, h.count != null ? h.count + ' canciones' : ''].filter(Boolean).join(' · ')));
+  if (h.description) meta.appendChild(el('div', 'd', h.description));
+  hd.append(spCover(h, 'cv'), meta);
+  const acts = el('div', 'spPlA');
+  const pb = el('button', 'bt big', 'Reproducir'); pb.addEventListener('click', () => { buzz(10); spPlay({ a: 'uri', uri: d.uri, shuffle: false }, 'Reproduciendo ' + h.name); });
+  const sb = el('button', 'bt', 'Aleatorio'); sb.addEventListener('click', () => { buzz(10); spPlay({ a: 'uri', uri: d.uri, shuffle: true, total: h.count }, 'Aleatorio: ' + h.name); });
+  acts.append(pb, sb);
+  box.append(back, hd, acts);
+  if (d.error) return box.appendChild(el('div', 'spEmpty', d.error));
+  if (h.canList === false) return box.appendChild(el('div', 'spEmpty', h.note || 'No se pueden ver sus canciones.'));
+  d.items.forEach((x, i) => box.appendChild(spRow(x, x.by, () => spPlay({ a: 'uri', uri: d.uri, offset: x.uri }),
+    spMiniBtn('i-plus', 'Añadir a la cola', () => spPlay({ a: 'queue_add', uri: x.uri }, 'Añadida a la cola')))));
+  if (d.loading) box.appendChild(el('div', 'spEmpty', 'Cargando…'));
+  else if (d.next !== null) { const m = el('button', 'bt spMore', 'Cargar más'); m.addEventListener('click', () => { buzz(7); spMore(); }); box.appendChild(m); }
+}
 /* emparejar: el código sale en la tele; con él este dispositivo recibe su propio acceso */
 const pairV = $('#pairV'), p1 = $('#p1'), p2 = $('#p2'), pCode = $('#pCode'), pMsg = $('#pMsg');
 const P_HELP = 'Pide acceso y escribe el código que aparecerá en la tele.';

@@ -573,6 +573,9 @@ const SP_DEVICE = process.env.TV_SPOTIFY_DEVICE || 'Salón';
 const PUBLIC_URL = (process.env.TV_PUBLIC_URL || 'https://green-house.tailf2c275.ts.net:8443').replace(/\/+$/, '');
 const SP_SCOPE = 'user-read-playback-state user-modify-playback-state user-read-currently-playing ' +
   'user-read-recently-played playlist-read-private playlist-read-collaborative user-library-read user-library-modify';
+const spImg = (list, want) => { const s = [...(list || [])].sort((a, b) => (a.width || 0) - (b.width || 0)); return (s.find(i => (i.width || 0) >= want) || s[s.length - 1] || {}).url || null; };
+let spMeId = '';
+async function spMe() { if (!spMeId) spMeId = (await spApi('GET', '/me')).id; return spMeId; }
 const spHasScopes = () => !!sp.scope && SP_SCOPE.split(' ').every(x => sp.scope.split(' ').includes(x));
 let sp = {}; try { sp = JSON.parse(fs.readFileSync(SP_FILE, 'utf8')); } catch {}
 const spSave = () => fs.writeFileSync(SP_FILE, JSON.stringify(sp), { mode: 0o600 });
@@ -643,7 +646,7 @@ async function spotify(m) {
       const dev = await spDevice();
       return { connected: true, device: dev ? { name: dev.name, active: dev.is_active, volume: dev.volume_percent } : null, ...spInfo(await spApi('GET', '/me/player')) };
     }
-    const noDev = ['now', 'queue', 'playlists', 'recent'].includes(a); // lecturas: no necesitan el altavoz
+    const noDev = ['now', 'queue', 'playlists', 'playlist', 'recent'].includes(a); // lecturas: no necesitan el altavoz
     const dev = noDev ? null : await spDevice();
     if (!noDev && !dev) return { error: `el dispositivo «${SP_DEVICE}» no aparece en Spotify (¿está en marcha spotifyd?)` };
     const q = dev ? `?device_id=${encodeURIComponent(dev.id)}` : '';
@@ -677,11 +680,20 @@ async function spotify(m) {
         }
         const w = /^https:\/\/open\.spotify\.com\/(?:intl-[a-z]+\/)?(track|album|playlist|artist|show|episode)\/([A-Za-z0-9]{22})/.exec(uri);
         if (w) uri = `spotify:${w[1]}:${w[2]}`;
-        const mm = /^spotify:(track|album|playlist|artist|show|episode):[A-Za-z0-9]{22}$/.exec(uri);
+        if (uri === 'liked' || uri === 'spotify:collection') uri = `spotify:user:${await spMe()}:collection`; // «Tus me gusta»
+        const mm = /^spotify:(track|album|playlist|artist|show|episode):[A-Za-z0-9]{22}$/.exec(uri) || /^spotify:user:[\w.-]+:(collection)$/.exec(uri);
         if (!mm) return { error: 'enlace o URI de Spotify no válido' };
         await wake();
-        const off = /^spotify:(track|episode):[A-Za-z0-9]{22}$/.test(m.offset || '') ? { offset: { uri: m.offset } } : {};
-        await spApi('PUT', '/me/player/play' + q, mm[1] === 'track' || mm[1] === 'episode' ? { uris: [uri] } : { context_uri: uri, ...off });
+        const single = mm[1] === 'track' || mm[1] === 'episode';
+        let off = {};
+        if (/^spotify:(track|episode):[A-Za-z0-9]{22}$/.test(m.offset || '')) off = { offset: { uri: m.offset } };
+        else if (m.shuffle && Number(m.total) > 1) off = { offset: { position: Math.floor(Math.random() * Math.min(Number(m.total), 10000)) } }; // aleatorio: empieza en cualquiera
+        if (m.shuffle !== undefined && !single) await spApi('PUT', `/me/player/shuffle?state=${!!m.shuffle}&device_id=${encodeURIComponent(dev.id)}`).catch(() => {});
+        try { await spApi('PUT', '/me/player/play' + q, single ? { uris: [uri] } : { context_uri: uri, ...off }); }
+        catch (e) {
+          if (!off.offset) throw e; // con offset puede fallar si la canción no está en esa lista: se reintenta sin él
+          await spApi('PUT', '/me/player/play' + q, { context_uri: uri });
+        }
         spNow.kick();
         return { uri, ...(await after()) };
       }
@@ -715,8 +727,41 @@ async function spotify(m) {
       }
       case 'queue': { const n = await spNow.poll(true); return { queue: n?.queue || [] }; }
       case 'playlists': {
-        const j = await spApi('GET', '/me/playlists?limit=40');
-        return { items: (j.items || []).filter(Boolean).map(p => ({ name: p.name, uri: p.uri, by: p.owner?.display_name || '', image: (p.images || []).slice(-1)[0]?.url || (p.images || [])[0]?.url || null, count: p.items?.total ?? p.tracks?.total ?? null })) };
+        const me = await spMe();
+        const out = [];
+        for (let off = 0; off < 200; off += 50) { // todas (hasta 200)
+          const j = await spApi('GET', `/me/playlists?limit=50&offset=${off}`);
+          out.push(...(j.items || []).filter(Boolean));
+          if (!j.next) break;
+        }
+        let liked = null;
+        try { const t = await spApi('GET', '/me/tracks?limit=1'); liked = { name: 'Tus me gusta', uri: 'liked', by: 'Canciones que te gustan', image: null, liked: true, count: t.total ?? null, canList: true }; } catch {}
+        return { items: [...(liked ? [liked] : []), ...out.map(p => ({
+          name: p.name, uri: p.uri, by: p.owner?.display_name || '', image: spImg(p.images, 300),
+          count: p.items?.total ?? p.tracks?.total ?? null, canList: p.owner?.id === me || !!p.collaborative,
+        }))] };
+      }
+      case 'playlist': { // abrir una playlist (o «Tus me gusta») y ver sus canciones
+        const off = Math.max(0, Number(m.offset) || 0), lim = 50;
+        const map = t => t && ({ name: t.name, by: (t.artists || []).map(x => x.name).join(', ') || t.show?.name || '', uri: t.uri,
+          image: spImg(t.album?.images || t.images, 64), duration: t.duration_ms || 0, explicit: !!t.explicit, playable: t.is_playable !== false && !t.is_local });
+        if (m.uri === 'liked') {
+          const j = await spApi('GET', `/me/tracks?limit=${lim}&offset=${off}`);
+          return { name: 'Tus me gusta', by: 'Canciones que te gustan', uri: 'liked', image: null, liked: true, count: j.total, canList: true,
+            items: (j.items || []).map(x => map(x.track)).filter(Boolean), next: j.next ? off + lim : null };
+        }
+        const id = (/^spotify:playlist:([A-Za-z0-9]{22})$/.exec(m.uri || '') || [])[1];
+        if (!id) return { error: 'playlist no válida' };
+        const p = await spApi('GET', `/playlists/${id}?fields=name,description,images,owner(id,display_name),collaborative,followers(total),items(total)`);
+        const head = { name: p.name, by: p.owner?.display_name || '', uri: m.uri, image: spImg(p.images, 640), description: (p.description || '').replace(/<[^>]+>/g, ''),
+          count: p.items?.total ?? null, followers: p.followers?.total ?? null };
+        try {
+          const j = await spApi('GET', `/playlists/${id}/items?limit=${lim}&offset=${off}&additional_types=track,episode`);
+          return { ...head, canList: true, count: j.total ?? head.count, items: (j.items || []).map(x => map(x.item || x.track)).filter(Boolean), next: j.next ? off + lim : null };
+        } catch (e) {
+          // desde febrero de 2026, Spotify no deja leer las canciones de listas de otros (sí reproducirlas)
+          return { ...head, canList: false, items: [], next: null, note: 'Spotify no deja ver las canciones de las listas de otras personas, pero puedes reproducirla.' };
+        }
       }
       case 'recent': {
         const j = await spApi('GET', '/me/player/recently-played?limit=30');
