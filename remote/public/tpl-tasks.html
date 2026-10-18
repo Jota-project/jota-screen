@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Tareas</title><link rel="stylesheet" href="/stage.css">
+<style>
+main{height:100%;display:grid;grid-template-rows:auto 1fr;padding:6vh 7vw 5vh;gap:3.2vh}
+header .k{font-size:clamp(14px,1.5vw,20px);letter-spacing:.18em;text-transform:uppercase;color:var(--acc);font-weight:600}
+header h1{font-size:clamp(34px,4.6vw,64px);font-weight:750;letter-spacing:-.02em;margin-top:.5vh}
+header .sub{font-size:clamp(16px,1.7vw,24px);margin-top:.6vh}
+.bar{height:6px;border-radius:9px;background:var(--line);margin-top:2.2vh;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--acc),var(--ok));border-radius:9px;transition:width .6s var(--ease)}
+.list{display:flex;flex-direction:column;gap:1.4vh;overflow:auto;padding-right:.5vw;scrollbar-width:none}
+.it{display:flex;align-items:center;gap:1.8vw;padding:2vh 2vw;border-radius:20px;background:rgba(255,255,255,.04);border:1px solid var(--line);
+  opacity:0;animation:rise .5s var(--ease) forwards;cursor:pointer;transition:background .25s,transform .25s}
+.it:hover{background:rgba(255,255,255,.07);transform:translateX(4px)}
+.ck{flex:none;width:clamp(26px,3vw,40px);aspect-ratio:1;border-radius:50%;border:2.5px solid var(--mut);display:grid;place-items:center;transition:all .3s var(--ease)}
+.ck svg{width:62%;stroke:#07110c;stroke-width:3.4;fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:24;stroke-dashoffset:24;transition:stroke-dashoffset .4s .1s var(--ease)}
+.it.done .ck{background:var(--ok);border-color:var(--ok);animation:pop .4s var(--ease)}
+.it.done .ck svg{stroke-dashoffset:0}
+.tx{flex:1;font-size:clamp(20px,2.5vw,36px);font-weight:560;line-height:1.2;transition:color .3s,opacity .3s}
+.it.done .tx{color:var(--mut);text-decoration:line-through;text-decoration-thickness:2px;opacity:.7}
+.meta{display:flex;gap:.8vw;align-items:center}
+.tag{font-size:clamp(13px,1.3vw,18px);padding:.5vh 1vw;border-radius:99px;border:1px solid var(--line);color:var(--mut)}
+.due{font-size:clamp(14px,1.5vw,20px);color:var(--warn);font-weight:600}
+.empty{margin:auto;text-align:center;font-size:clamp(20px,2.4vw,34px)}
+</style></head><body>
+<main><header><div class="k" id="k"></div><h1 id="t"></h1><div class="sub mut" id="s"></div><div class="bar"><i id="p"></i></div></header>
+<div class="list" id="l"></div></main>
+<script src="/tv-stage.js"></script>
+<script>
+const $=id=>document.getElementById(id);
+const CHECK='<svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg>';
+let seen=new Set();
+tv.onData(d=>{
+  const items=Array.isArray(d.items)?d.items:[];
+  $('k').textContent=d.kicker||'Tareas';
+  $('t').textContent=d.title||'Pendientes';
+  $('s').textContent=d.subtitle||'';
+  const done=items.filter(i=>i.done).length;
+  $('p').style.width=(items.length?done/items.length*100:0)+'%';
+  const l=$('l');
+  if(!items.length){l.innerHTML='<div class="empty mut">Nada pendiente</div>';return;}
+  // actualiza sin recrear lo que ya estaba, para que las animaciones de marcar se vean
+  const byId=new Map([...l.children].map(e=>[e.dataset.id,e]));
+  const keep=new Set();
+  items.forEach((i,n)=>{
+    const id=String(i.id??n); keep.add(id);
+    let el=byId.get(id);
+    if(!el){
+      el=document.createElement('div');el.className='it';el.dataset.id=id;
+      el.style.animationDelay=(seen.size?0:n*70)+'ms';
+      el.innerHTML='<div class="ck">'+CHECK+'</div><div class="tx"></div><div class="meta"></div>';
+      el.onclick=()=>tv.emit('toggle',{id:i.id??n});
+      l.appendChild(el);seen.add(id);
+    }
+    el.classList.toggle('done',!!i.done);
+    el.querySelector('.tx').textContent=i.text||'';
+    const m=el.querySelector('.meta');m.textContent='';
+    if(i.tag){const g=document.createElement('span');g.className='tag';g.textContent=i.tag;m.appendChild(g);}
+    if(i.due){const g=document.createElement('span');g.className='due';g.textContent=i.due;m.appendChild(g);}
+  });
+  for(const [id,el] of byId) if(!keep.has(id)) el.remove();
+});
+</script></body></html>

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="es"><meta charset="utf-8"><title>Salón</title>
+<style>
+  html,body{height:100%;margin:0;background:#0e1116;color:#e8eaed;font-family:system-ui,sans-serif}
+  body{display:grid;place-items:center;text-align:center}
+  h1{font-size:5vw;margin:0 0 .3em;font-weight:600}
+  p{font-size:2vw;margin:0;color:#9aa3ad}
+  #t{font-size:3vw;margin-top:1em;font-variant-numeric:tabular-nums}
+</style>
+<div><h1>Salón listo</h1><p>Pantalla base funcionando</p><div id="t"></div></div>
+<script>
+  const f=()=>document.getElementById('t').textContent=new Date().toLocaleTimeString('es-ES');
+  f();setInterval(f,1000);
+</script>
+</html>

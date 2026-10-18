@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "tv-canvas": {
+      "command": "node",
+      "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/server.js"],
+      "env": {
+        "TV_URL": "https://green-house.tailf2c275.ts.net:8443",
+        "TV_TOKEN": "${TV_TOKEN}"
+      }
+    }
+  }
+}

@@ -1,0 +1,11 @@
+[global]
+backend = "pulseaudio"
+device_name = "Salón"
+device_type = "t_v"
+bitrate = 320
+volume_controller = "softvol"
+initial_volume = 70
+volume_normalisation = true
+use_mpris = true
+cache_path = "/home/sito/.cache/spotifyd"
+max_cache_size = 2000000000

@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mando">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<link rel="icon" href="/icon-180.png">
+<title>Mando</title>
+<style>
+:root{--bg:#0b0d10;--s1:#12161b;--s2:#181d24;--s3:#222a35;--line:rgba(255,255,255,.07);--tx:#e9ecf0;--dim:#8a93a0;--ac:#8ba7ff;--ok:#5ad19a;--warn:#f0b35a;--bad:#ef6a6a;--r:24px;--b:clamp(46px,7.2vh,62px);--kb:0px}
+*{box-sizing:border-box;margin:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;background:var(--bg);color:var(--tx);font:500 15px/1.3 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;overflow:hidden;overscroll-behavior:none;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-font-smoothing:antialiased}
+body{position:fixed;inset:0;width:100%;background:radial-gradient(120% 60% at 50% -8%,#1b2234 0%,var(--bg) 62%)}
+.app{position:fixed;inset:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:auto 1fr auto;gap:12px;padding:max(12px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left))}
+
+/* cabecera */
+.top{display:flex;align-items:center;gap:10px;min-height:34px;padding:0 4px;min-width:0}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--warn);flex:none;box-shadow:0 0 0 4px rgba(240,179,90,.14);transition:background .3s,box-shadow .3s}
+.dot.ok{background:var(--ok);box-shadow:0 0 0 4px rgba(90,209,154,.12)}
+.dot.bad{background:var(--bad);box-shadow:0 0 0 4px rgba(239,106,106,.14)}
+.ttl{min-width:0;flex:1;display:flex;flex-direction:column;overflow:hidden}
+.t1{font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.t2{font-size:12px;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* touchpad */
+.pad{position:relative;border-radius:var(--r);background:linear-gradient(180deg,var(--s2),var(--s1));border:1px solid var(--line);box-shadow:inset 0 1px 0 rgba(255,255,255,.04),0 14px 34px -16px rgba(0,0,0,.7);overflow:hidden;touch-action:none;transition:border-color .2s}
+.pad::before{content:"";position:absolute;inset:0;background-image:radial-gradient(rgba(255,255,255,.08) 1px,transparent 1.3px);background-size:26px 26px;-webkit-mask-image:radial-gradient(closest-side,#000 35%,transparent 100%);mask-image:radial-gradient(closest-side,#000 35%,transparent 100%);pointer-events:none}
+.pad.on{border-color:rgba(139,167,255,.3)}
+.hint{position:absolute;inset:0;display:grid;place-content:center;text-align:center;color:var(--dim);font-size:14px;line-height:1.8;pointer-events:none;transition:opacity .5s;padding:0 24px}
+.hint b{color:var(--tx);font-weight:600}
+.hint.off{opacity:0}
+.rip{position:absolute;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;background:radial-gradient(circle,rgba(139,167,255,.42),rgba(139,167,255,0) 70%);pointer-events:none;animation:rip .45s ease-out forwards}
+@keyframes rip{from{transform:scale(.3);opacity:1}to{transform:scale(1.5);opacity:0}}
+
+/* controles */
+.ctl{display:grid;gap:10px}
+.row{display:grid;grid-template-columns:repeat(var(--n,5),1fr);gap:10px}
+.row.m{grid-template-columns:1fr 1.7fr 1fr}
+.bt{height:var(--b);border-radius:19px;background:var(--s2);border:1px solid var(--line);color:var(--tx);display:grid;place-items:center;font:inherit;font-weight:600;letter-spacing:.2px;transition:transform .08s,background .15s,opacity .2s;touch-action:none;cursor:pointer}
+.bt.dn{transform:scale(.94);background:var(--s3)}
+.bt svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.bt.big{background:linear-gradient(180deg,#a3b9ff,#7d95f2);color:#0b0d10;border-color:transparent}
+.bt.big.dn{background:linear-gradient(180deg,#8fa8f8,#6b84e6)}
+.bt.big svg{width:28px;height:28px}
+#pp .i-pause{display:none}
+#pp[data-m="1"] .i-pause{display:block}
+#pp[data-m="1"] .i-play{display:none}
+#pp[data-m="-1"]{opacity:.6}
+.live{opacity:1}
+
+/* hojas */
+.shade{position:fixed;inset:0;background:rgba(0,0,0,.55);opacity:0;pointer-events:none;transition:opacity .2s;z-index:5}
+.shade.on{opacity:1;pointer-events:auto}
+.sheet{position:fixed;left:0;right:0;bottom:var(--kb);z-index:6;margin:0 auto;max-width:640px;background:#12161c;border:1px solid var(--line);border-bottom:0;border-radius:28px 28px 0 0;padding:12px 16px max(16px,env(safe-area-inset-bottom));transform:translateY(110%);transition:transform .24s cubic-bezier(.2,.8,.2,1),bottom .12s;touch-action:pan-y;max-height:86%;overflow:auto}
+.sheet.on{transform:none}
+.grab{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.18);margin:0 auto 14px}
+.in{width:100%;height:52px;border-radius:17px;border:1px solid var(--line);background:var(--bg);color:var(--tx);font:500 17px system-ui,-apple-system,sans-serif;padding:0 16px;outline:none;-webkit-user-select:text;user-select:text;touch-action:manipulation;-webkit-appearance:none}
+.in:focus{border-color:rgba(139,167,255,.55)}
+.in::placeholder{color:#5d6672}
+.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+.keys .bt{height:46px;border-radius:15px;font-size:14px}
+.keys .bt.ac{background:rgba(139,167,255,.16);color:var(--ac);border-color:rgba(139,167,255,.25)}
+.sh{font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:var(--dim);margin:6px 2px 8px}
+.fld{display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px 14px;padding:11px 2px;border-top:1px solid var(--line)}
+.fld:first-of-type{border-top:0}
+.fld small{display:block;color:var(--dim);font-weight:500;font-size:12.5px;margin-top:2px}
+.fld input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--ac);height:28px;touch-action:pan-y}
+.sw{width:50px;height:30px;border-radius:15px;background:var(--s3);border:0;position:relative;transition:background .2s;touch-action:manipulation}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:transform .2s}
+.sw[aria-pressed=true]{background:var(--ac)}
+.sw[aria-pressed=true]::after{transform:translateX(20px)}
+.acts{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin:4px 0 16px}
+.acts .bt{display:flex;align-items:center;justify-content:center;gap:8px;height:48px;font-size:14px;border-radius:15px}
+.acts .bt svg{width:20px;height:20px}
+.np{text-align:center;padding:4px 8px 0}
+.n1{font-size:19px;font-weight:700;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.n2{font-size:14.5px;color:var(--dim);margin-top:3px;min-height:1.3em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#spS .row{margin-bottom:6px}#spS .bt.big{height:var(--b)}
+#spS .in{margin-top:6px}
+.pairV{position:fixed;inset:0;z-index:20;background:var(--bg);display:grid;place-items:center;padding:24px}
+.pairV[hidden]{display:none}
+.pc[hidden]{display:none}
+.pc{width:min(100%,380px);text-align:center;display:grid;gap:14px}
+.pc svg.lg{width:54px;height:54px;margin:0 auto;stroke:var(--ac);fill:none;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+.pc h1{font-size:26px;letter-spacing:-.01em}
+.pc p{color:var(--dim);font-size:15.5px;line-height:1.4;min-height:2.8em}
+.pc p.err{color:#ff9d8f}
+.pc .in.code{text-align:center;font-size:34px;letter-spacing:.5em;padding-left:.5em;font-variant-numeric:tabular-nums;height:68px}
+.pc .bt{height:54px;font-size:16px}
+.pc .bt.ghost{background:transparent;border-color:transparent;color:var(--dim);height:44px;font-size:14px}
+.dv{height:36px;padding:0 14px;font-size:13px;border-radius:12px;display:block}
+.dv.sure{background:rgba(255,120,100,.18);border-color:rgba(255,120,100,.4);color:#ff9d8f}
+.rep{min-height:54px;margin-top:12px;padding:0 4px;font-size:17px;line-height:1.35;color:var(--tx)}
+.rep small{color:var(--dim);font-size:13px}
+.rep.wait{color:var(--dim)}.rep.wait::after{content:"";display:inline-block;width:.9em;height:.9em;margin-left:.5em;vertical-align:-.1em;border-radius:50%;border:2px solid var(--dim);border-right-color:transparent;animation:spn .8s linear infinite}
+@keyframes spn{to{transform:rotate(360deg)}}
+.foot{text-align:center;color:var(--dim);font-size:12.5px;margin-top:12px;font-variant-numeric:tabular-nums}
+.pill{position:fixed;left:50%;top:max(60px,calc(env(safe-area-inset-top) + 48px));transform:translate(-50%,-12px);background:rgba(30,36,46,.92);border:1px solid var(--line);border-radius:999px;padding:8px 16px;font-size:14px;font-weight:600;opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:7;-webkit-backdrop-filter:blur(12px);backdrop-filter:blur(12px)}
+.pill.on{opacity:1;transform:translate(-50%,0)}
+
+/* tablet / horizontal */
+@media (orientation:landscape) and (min-width:640px){
+  .app{grid-template-columns:minmax(0,1fr) minmax(300px,34vw);grid-template-rows:auto 1fr;column-gap:18px;row-gap:14px}
+  .pad{grid-column:1;grid-row:1/3}
+  .top{grid-column:2;grid-row:1;align-items:flex-start;padding-top:6px}
+  .dot{margin-top:9px}
+  .t1{font-size:22px;line-height:1.2;white-space:normal;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+  .t2{font-size:14px;margin-top:4px}
+  .ctl{grid-column:2;grid-row:2;align-content:end;--b:clamp(54px,11vh,74px)}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-back" viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></symbol>
+<symbol id="i-fwd" viewBox="0 0 24 24"><path d="M9 5l7 7-7 7"/></symbol>
+<symbol id="i-home" viewBox="0 0 24 24"><path d="M3.5 11.2L12 4l8.5 7.2M6 9.8V19h12V9.8"/></symbol>
+<symbol id="i-reload" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.4-5.5M19.5 4.5v4.2h-4.2"/></symbol>
+<symbol id="i-kb" viewBox="0 0 24 24"><rect x="2.5" y="6" width="19" height="12" rx="3"/><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M7.5 14h9"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c3 3.3 3 13.7 0 17M12 3.5c-3 3.3-3 13.7 0 17"/></symbol>
+<symbol id="i-fs" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></symbol>
+<symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10.5-6.5z" fill="currentColor"/></symbol>
+<symbol id="i-pause" viewBox="0 0 24 24"><path d="M8.5 5.5v13M15.5 5.5v13" stroke-width="3.2"/></symbol>
+<symbol id="i-seekb" viewBox="0 0 24 24"><path d="M11 7.5L5.5 12l5.5 4.5M18.5 7.5L13 12l5.5 4.5"/></symbol>
+<symbol id="i-seekf" viewBox="0 0 24 24"><path d="M13 7.5l5.5 4.5-5.5 4.5M5.5 7.5L11 12l-5.5 4.5"/></symbol>
+<symbol id="i-vd" viewBox="0 0 24 24"><path d="M4 9.8v4.4h3.4L12 18V6L7.4 9.8z"/><path d="M15.4 9.6a3.4 3.4 0 0 1 0 4.8"/></symbol>
+<symbol id="i-vu" viewBox="0 0 24 24"><path d="M4 9.8v4.4h3.4L12 18V6L7.4 9.8z"/><path d="M15.2 9.6a3.4 3.4 0 0 1 0 4.8M17.8 7.2a7 7 0 0 1 0 9.6"/></symbol>
+<symbol id="i-vm" viewBox="0 0 24 24"><path d="M4 9.8v4.4h3.4L12 18V6L7.4 9.8z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></symbol>
+<symbol id="i-enter" viewBox="0 0 24 24"><path d="M19.5 6v5a2.5 2.5 0 0 1-2.5 2.5H5M9 9.5l-4 4 4 4"/></symbol>
+<symbol id="i-bksp" viewBox="0 0 24 24"><path d="M9.5 6.5H19a1.5 1.5 0 0 1 1.5 1.5v8a1.5 1.5 0 0 1-1.5 1.5H9.5L3.5 12z"/><path d="M12.5 10l4 4M16.5 10l-4 4"/></symbol>
+<symbol id="i-tab" viewBox="0 0 24 24"><path d="M4 12h13M13 8l4 4-4 4M20 6.5v11"/></symbol>
+<symbol id="i-up" viewBox="0 0 24 24"><path d="M6 14.5l6-6 6 6"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></symbol>
+<symbol id="i-spot" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M7.2 9.6c3.2-1 7-.7 9.8 1M7.8 12.7c2.6-.8 5.6-.5 8 .9M8.4 15.6c2.1-.6 4.3-.4 6.2.7"/></symbol>
+<symbol id="i-prev" viewBox="0 0 24 24"><path d="M6.5 5.5v13M18 6v12l-9-6z" fill="currentColor"/></symbol>
+<symbol id="i-next" viewBox="0 0 24 24"><path d="M17.5 5.5v13M6 6v12l9-6z" fill="currentColor"/></symbol>
+<symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9zM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></symbol>
+<symbol id="i-set" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+</defs></svg>
+
+<main class="app">
+  <header class="top">
+    <i class="dot" id="dot"></i>
+    <div class="ttl"><div class="t1" id="t1">Conectando…</div><div class="t2" id="t2"></div></div>
+  </header>
+
+  <section class="pad" id="pad" aria-label="Touchpad">
+    <div class="hint" id="hint"><div><b>Desliza</b> para mover<br><b>Toca</b> para hacer clic<br><b>Dos dedos</b> para desplazar</div></div>
+  </section>
+
+  <section class="ctl">
+    <div class="row" style="--n:5">
+      <button class="bt" data-a="back" aria-label="Atrás"><svg><use href="#i-back"/></svg></button>
+      <button class="bt" data-a="home" aria-label="Inicio"><svg><use href="#i-home"/></svg></button>
+      <button class="bt" data-a="kb" data-click aria-label="Teclado"><svg><use href="#i-kb"/></svg></button>
+      <button class="bt" data-a="go" data-click aria-label="Ir a una dirección"><svg><use href="#i-globe"/></svg></button>
+      <button class="bt" data-a="fs" aria-label="Pantalla completa del vídeo"><svg><use href="#i-fs"/></svg></button>
+    </div>
+    <div class="row m">
+      <button class="bt" data-a="skb" data-rep aria-label="Retroceder"><svg><use href="#i-seekb"/></svg></button>
+      <button class="bt big" id="pp" data-a="pp" data-m="-1" aria-label="Reproducir o pausar"><svg class="i-play"><use href="#i-play"/></svg><svg class="i-pause"><use href="#i-pause"/></svg></button>
+      <button class="bt" data-a="skf" data-rep aria-label="Adelantar"><svg><use href="#i-seekf"/></svg></button>
+    </div>
+    <div class="row" style="--n:3">
+      <button class="bt" data-a="vd" data-rep aria-label="Bajar volumen"><svg><use href="#i-vd"/></svg></button>
+      <button class="bt" data-a="vm" aria-label="Silenciar"><svg><use href="#i-vm"/></svg></button>
+      <button class="bt" data-a="vu" data-rep aria-label="Subir volumen"><svg><use href="#i-vu"/></svg></button>
+    </div>
+    <div class="row" style="--n:4">
+      <button class="bt" data-a="sp" data-click aria-label="Spotify"><svg><use href="#i-spot"/></svg></button>
+      <button class="bt" data-url="https://www.netflix.com">Netflix</button>
+      <button class="bt" data-a="ag" data-click aria-label="Pedir algo al agente"><svg><use href="#i-spark"/></svg></button>
+      <button class="bt" data-a="more" data-click aria-label="Ajustes"><svg><use href="#i-set"/></svg></button>
+    </div>
+  </section>
+</main>
+
+<div class="shade" id="shade"></div>
+<div class="pill" id="pill"></div>
+
+<!-- teclado -->
+<div class="sheet" id="kbS" role="dialog" aria-label="Teclado">
+  <div class="grab"></div>
+  <input class="in" id="kin" placeholder="Escribe aquí; sale en la tele" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
+  <div class="keys">
+    <button class="bt" data-a="k:Escape">Esc</button>
+    <button class="bt" data-a="k:Tab" aria-label="Tabulador"><svg><use href="#i-tab"/></svg></button>
+    <button class="bt" data-a="k:Backspace" data-rep aria-label="Borrar"><svg><use href="#i-bksp"/></svg></button>
+    <button class="bt ac" data-a="k:Enter" aria-label="Intro"><svg><use href="#i-enter"/></svg></button>
+    <button class="bt" data-a="k:ArrowLeft" data-rep aria-label="Izquierda"><svg><use href="#i-back"/></svg></button>
+    <button class="bt" data-a="k:ArrowUp" data-rep aria-label="Arriba"><svg><use href="#i-up"/></svg></button>
+    <button class="bt" data-a="k:ArrowDown" data-rep aria-label="Abajo"><svg><use href="#i-down"/></svg></button>
+    <button class="bt" data-a="k:ArrowRight" data-rep aria-label="Derecha"><svg><use href="#i-fwd"/></svg></button>
+  </div>
+</div>
+
+<!-- dirección -->
+<div class="sheet" id="goS" role="dialog" aria-label="Ir a una dirección">
+  <div class="grab"></div>
+  <input class="in" id="gin" placeholder="Dirección o búsqueda" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+</div>
+
+<!-- emparejar -->
+<div class="pairV" id="pairV" hidden>
+  <div class="pc">
+    <svg class="lg" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2.5"/><path d="M9 20.5h6M12 17v3.5"/></svg>
+    <h1>Mando del salón</h1>
+    <p id="pMsg">Pide acceso y escribe el código que aparecerá en la tele.</p>
+    <div id="p1" class="pc">
+      <input class="in" id="pName" placeholder="Tu nombre (opcional)" maxlength="24" autocomplete="given-name" autocapitalize="words" enterkeyhint="go">
+      <button class="bt big" id="pGo">Pedir código en la tele</button>
+    </div>
+    <div id="p2" class="pc" hidden>
+      <input class="in code" id="pCode" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="····" autocomplete="one-time-code" aria-label="Código de 4 cifras">
+      <button class="bt ghost" id="pBack">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- spotify -->
+<div class="sheet" id="spS" role="dialog" aria-label="Spotify">
+  <div class="grab"></div>
+  <div class="np"><div class="n1" id="spT">—</div><div class="n2" id="spA"></div></div>
+  <div class="row" style="--n:3;margin-top:12px">
+    <button class="bt" data-sp="prev" aria-label="Anterior"><svg><use href="#i-prev"/></svg></button>
+    <button class="bt big" data-sp="playpause" aria-label="Reproducir o pausar"><svg class="i-play"><use href="#i-play"/></svg></button>
+    <button class="bt" data-sp="next" aria-label="Siguiente"><svg><use href="#i-next"/></svg></button>
+  </div>
+  <div class="fld"><span>Volumen de Spotify</span><span id="spV">—</span><input type="range" id="rSp" min="0" max="100" step="1"></div>
+  <input class="in" id="spin" placeholder="Busca y reproduce: artista, canción…" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+</div>
+
+<!-- agente -->
+<div class="sheet" id="agS" role="dialog" aria-label="Pedir algo al agente">
+  <div class="grab"></div>
+  <input class="in" id="agin" placeholder="Pídele algo al agente…" autocomplete="off" autocorrect="on" spellcheck="true" enterkeyhint="send">
+  <div class="rep" id="rep"><small>Para dictar, usa el micrófono del teclado.</small></div>
+</div>
+
+<!-- ajustes -->
+<div class="sheet" id="setS" role="dialog" aria-label="Ajustes">
+  <div class="grab"></div>
+  <div class="acts">
+    <button class="bt" data-a="reload"><svg><use href="#i-reload"/></svg>Recargar</button>
+    <button class="bt" data-a="fwd"><svg><use href="#i-fwd"/></svg>Adelante</button>
+  </div>
+  <div class="sh">Puntero</div>
+  <div class="fld"><span>Velocidad</span><span id="vSpeed">1.6×</span><input type="range" id="rSpeed" min="0.6" max="3.2" step="0.1"></div>
+  <div class="fld"><span>Desplazamiento</span><span id="vScroll">1.0×</span><input type="range" id="rScroll" min="0.4" max="2.6" step="0.1"></div>
+  <div class="fld"><span>Desplazamiento natural<small>El contenido sigue a tus dedos</small></span><button class="sw" id="swNat" aria-pressed="true" aria-label="Desplazamiento natural"></button></div>
+  <div class="fld"><span>Vibración al tocar</span><button class="sw" id="swHap" aria-pressed="true" aria-label="Vibración"></button></div>
+  <div class="fld" id="fsRow"><span>Mando a pantalla completa</span><button class="sw" id="swFs" aria-pressed="false" aria-label="Pantalla completa"></button></div>
+  <div class="sh">Dispositivos con acceso</div>
+  <div id="devs"></div>
+  <div class="foot" style="margin-top:2px;text-align:left">Para invitar a alguien: que abra esta misma dirección sin enlace y escriba el código que verá en la tele.</div>
+  <div class="foot" id="foot">—</div>
+</div>
+
+<script>
+'use strict';
+const $ = s => document.querySelector(s);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+};
+
+/* ── acceso: el token viaja en la URL (?t=…) y se recuerda ── */
+let token = new URLSearchParams(location.search).get('t') || store.get('token', '');
+function addManifest() {
+  if (!token || document.querySelector('link[rel=manifest]')) return;
+  const m = document.createElement('link'); m.rel = 'manifest'; m.href = '/manifest.webmanifest?t=' + encodeURIComponent(token);
+  document.head.appendChild(m);
+}
+if (token) { store.set('token', token); addManifest(); }
+
+const cfg = Object.assign({ speed: 1.6, scroll: 1, natural: true, haptic: true }, store.get('cfg', {}));
+const saveCfg = () => store.set('cfg', cfg);
+const buzz = n => { if (cfg.haptic && navigator.vibrate) navigator.vibrate(n || 8); };
+
+/* ── conexión ── */
+let ws, tries = 0, rtt = 0, lastState = null;
+const dot = $('#dot'), t1 = $('#t1'), t2 = $('#t2');
+const send = s => { if (ws && ws.readyState === 1) ws.send(s); };
+const pend = new Map(); let rid = 0;
+const rpc = o => new Promise(res => {                  // orden con respuesta
+  const id = ++rid; pend.set(id, res); cmd({ ...o, id });
+  setTimeout(() => { if (pend.delete(id)) res({ error: 'sin respuesta' }); }, 20000);
+});
+const cmd = o => send(JSON.stringify(o));
+
+function paintDot() {
+  const up = ws && ws.readyState === 1;
+  dot.className = 'dot' + (up ? (rtt && rtt > 150 ? ' bad' : ' ok') : '');
+}
+function connect() {
+  if (!token) { showPair(); return; }
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}/ws?t=${encodeURIComponent(token)}`);
+  ws.onopen = () => { tries = 0; paintDot(); ping(); };
+  ws.onmessage = e => {
+    const d = e.data;
+    if (d.charCodeAt(0) === 112) { const r = performance.now() - parseFloat(d.slice(1)); rtt = rtt ? rtt * 0.6 + r * 0.4 : r; paintDot(); return; }
+    try { const j = JSON.parse(d); if (j.t === 'ask') onAsk(j); else if (j.t === 'res') { const f = pend.get(j.id); if (f) { pend.delete(j.id); f(j.r || {}); } } else onState(j); } catch {}
+  };
+  ws.onclose = ev => {
+    paintDot();
+    if (ev.code === 4001) { store.set('token', ''); store.set('devid', ''); token = ''; showPair('Se ha retirado el acceso de este dispositivo. Pídelo de nuevo.'); return; }
+    t1.textContent = 'Reconectando…'; t2.textContent = '';
+    setTimeout(connect, Math.min(2000, 250 * ++tries));
+  };
+  ws.onerror = () => {};
+}
+function ping() { if (ws && ws.readyState === 1 && !document.hidden) send('p' + performance.now()); }
+setInterval(ping, 2000);
+document.addEventListener('visibilitychange', () => { if (!document.hidden && (!ws || ws.readyState > 1)) connect(); });
+
+let pillT;
+function pill(txt) { const p = $('#pill'); p.textContent = txt; p.classList.add('on'); clearTimeout(pillT); pillT = setTimeout(() => p.classList.remove('on'), 1100); }
+function onState(s) {
+  if (s.t !== 'state') return;
+  if (!s.cdp) { t1.textContent = 'Navegador no disponible'; t2.textContent = ''; }
+  else if (!s.host) { t1.textContent = 'Inicio'; t2.textContent = ''; }
+  else { t1.textContent = s.title || s.host; t2.textContent = s.host; }
+  $('#pp').dataset.m = s.media;
+  if (lastState && s.vol !== null && (s.vol !== lastState.vol || s.muted !== lastState.muted)) pill(s.muted ? 'Silenciado' : 'Volumen ' + s.vol + '%');
+  lastState = s;
+}
+
+/* ── touchpad ── */
+const pad = $('#pad'), hint = $('#hint');
+const P = new Map();
+let ax = 0, ay = 0, sxa = 0, sya = 0, raf = 0;
+let downT = 0, moved = 0, maxN = 0, twoT = 0, twoMoved = 0, rcDone = false, dragging = false, tdArm = false, lastTap = 0;
+let svy = 0, inertia = 0;
+const r2 = n => Math.round(n * 100) / 100;
+const hintSeen = store.get('hint', false);
+if (hintSeen) hint.classList.add('off');
+
+function flush() {
+  raf = 0;
+  if (ax || ay) { send('m ' + r2(ax) + ' ' + r2(ay)); ax = ay = 0; }
+  if (sxa || sya) { send('w ' + r2(sxa) + ' ' + r2(sya)); sxa = sya = 0; }
+}
+const sched = () => { if (!raf) raf = requestAnimationFrame(flush); };
+function stopInertia() { if (inertia) { cancelAnimationFrame(inertia); inertia = 0; } }
+function startInertia() {
+  stopInertia();
+  let v = svy;                                   // px por ms ya con el signo final
+  if (Math.abs(v) < 0.35) return;
+  let last = performance.now();
+  const step = t => {
+    const dt = Math.min(40, t - last); last = t;
+    sya += v * dt; v *= Math.pow(0.0035, dt / 1000);   // frena en ~0,9 s
+    sched();
+    inertia = Math.abs(v) > 0.03 ? requestAnimationFrame(step) : 0;
+  };
+  inertia = requestAnimationFrame(step);
+}
+function ripple(x, y) {
+  const b = pad.getBoundingClientRect(), r = document.createElement('i');
+  r.className = 'rip'; r.style.left = (x - b.left) + 'px'; r.style.top = (y - b.top) + 'px';
+  r.addEventListener('animationend', () => r.remove()); pad.appendChild(r);
+}
+function click(btn, p) { send('c ' + btn); buzz(btn === 3 ? 14 : 9); ripple(p.x, p.y); }
+
+pad.addEventListener('pointerdown', e => {
+  e.preventDefault();
+  try { pad.setPointerCapture(e.pointerId); } catch {}
+  P.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
+  if (!hintSeen && !hint.classList.contains('off')) { hint.classList.add('off'); store.set('hint', true); }
+  if (P.size === 1) {
+    stopInertia(); downT = e.timeStamp; moved = 0; maxN = 1; dragging = false; svy = 0;
+    tdArm = e.timeStamp - lastTap < 240; pad.classList.add('on');
+  } else if (P.size === 2) { maxN = 2; twoT = e.timeStamp; twoMoved = 0; rcDone = false; svy = 0; }
+});
+pad.addEventListener('pointermove', e => {
+  const p = P.get(e.pointerId); if (!p) return;
+  const dx = e.clientX - p.x, dy = e.clientY - p.y, dt = Math.max(1, e.timeStamp - p.t);
+  p.x = e.clientX; p.y = e.clientY; p.t = e.timeStamp;
+  if (P.size === 1) {
+    moved += Math.abs(dx) + Math.abs(dy);
+    if (tdArm && !dragging && moved > 6) { dragging = true; send('b 1 1'); }
+    const g = cfg.speed * (1 + Math.min(Math.hypot(dx, dy) / dt / 1.1, 2.6));   // aceleración según la velocidad
+    ax += dx * g; ay += dy * g; sched();
+  } else if (P.size === 2) {
+    twoMoved += Math.abs(dx) + Math.abs(dy);
+    const k = (cfg.natural ? -1 : 1) * cfg.scroll * 0.5;                          // cada dedo aporta la mitad
+    sxa += dx * k; sya += dy * k; sched();
+    svy = svy * 0.6 + (dy * k / dt) * 0.4;
+  }
+});
+function up(e) {
+  const p = P.get(e.pointerId); if (!p) return;
+  const n = P.size; P.delete(e.pointerId);
+  const ok = e.type === 'pointerup';
+  if (n === 1) {
+    pad.classList.remove('on');
+    if (dragging) { send('b 1 0'); dragging = false; }
+    else if (ok && maxN === 1 && e.timeStamp - downT < 240 && moved < 9) { click(1, p); lastTap = e.timeStamp; }
+    maxN = 0;
+  } else if (n === 2) {
+    if (ok && !rcDone && e.timeStamp - twoT < 280 && twoMoved < 10) { rcDone = true; click(3, p); }
+    else if (twoMoved > 14) startInertia();
+  }
+}
+pad.addEventListener('pointerup', up);
+pad.addEventListener('pointercancel', up);
+pad.addEventListener('contextmenu', e => e.preventDefault());
+document.addEventListener('touchmove', e => { if (!e.target.closest('.sheet,.pairV')) e.preventDefault(); }, { passive: false });
+document.addEventListener('gesturestart', e => e.preventDefault());
+
+/* ── botones ── */
+const ACT = {
+  home: () => cmd({ t: 'home' }), back: () => cmd({ t: 'back' }), fwd: () => cmd({ t: 'forward' }), reload: () => cmd({ t: 'reload' }),
+  fs: () => cmd({ t: 'fs' }), pp: () => cmd({ t: 'pp' }),
+  skb: () => cmd({ t: 'key', k: 'ArrowLeft' }), skf: () => cmd({ t: 'key', k: 'ArrowRight' }),
+  vd: () => cmd({ t: 'vol', d: 'down' }), vu: () => cmd({ t: 'vol', d: 'up' }), vm: () => cmd({ t: 'vol', d: 'mute' }),
+};
+function fire(b) {
+  const a = b.dataset.a;
+  if (b.dataset.url) return cmd({ t: 'nav', url: b.dataset.url });
+  if (a && a.startsWith('k:')) return cmd({ t: 'key', k: a.slice(2) });
+  if (ACT[a]) ACT[a]();
+}
+let repT = 0, repI = 0, cur = null;
+function stopRep() { clearTimeout(repT); clearInterval(repI); if (cur) { cur.classList.remove('dn'); cur = null; } }
+document.addEventListener('pointerdown', e => {
+  const b = e.target.closest('.bt'); if (!b || b.hasAttribute('data-click') || !(b.dataset.a || b.dataset.url)) return;
+  e.preventDefault();                                   // no robar el foco al campo de texto
+  stopRep(); cur = b; b.classList.add('dn'); buzz(7); fire(b);
+  if (b.hasAttribute('data-rep')) repT = setTimeout(() => { repI = setInterval(() => fire(b), 85); }, 380);
+});
+['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, stopRep));
+document.addEventListener('mousedown', e => { if (e.target.closest('.keys')) e.preventDefault(); });
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+/* ── hojas ── */
+const spin = $('#spin'), shade = $('#shade'), kin = $('#kin'), gin = $('#gin'), agin = $('#agin'), rep = $('#rep');
+let sheet = null;
+function openSheet(id) {
+  closeSheet();
+  sheet = $('#' + id); sheet.classList.add('on'); shade.classList.add('on');
+  if (id === 'kbS') { kin.value = ''; kin.focus(); }
+  if (id === 'goS') { gin.value = ''; gin.focus(); }
+  if (id === 'agS') { agin.value = ''; agin.focus(); }
+  if (id === 'spS') { spin.value = ''; spRefresh(); }
+}
+function closeSheet() {
+  if (!sheet) return;
+  sheet.classList.remove('on'); shade.classList.remove('on');
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  sheet = null;
+}
+shade.addEventListener('pointerdown', e => { e.preventDefault(); closeSheet(); });
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-click]'); if (!b) return;
+  buzz(7);
+  ({ kb: () => openSheet('kbS'), go: () => openSheet('goS'), ag: () => openSheet('agS'), sp: spButton, more: () => { refreshSet(); refreshDevs(); openSheet('setS'); } })[b.dataset.a]();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet && document.activeElement !== kin) closeSheet(); });
+const vv = window.visualViewport;
+if (vv) {                                              // subir la hoja por encima del teclado del móvil
+  const upd = () => document.documentElement.style.setProperty('--kb', Math.max(0, innerHeight - vv.height - vv.offsetTop) + 'px');
+  vv.addEventListener('resize', upd); vv.addEventListener('scroll', upd);
+}
+
+/* teclado: el texto sale tal cual por la tele; borrar y teclas especiales como pulsaciones */
+function flushText() { const v = kin.value; if (v) { cmd({ t: 'text', v }); kin.value = ''; } }
+kin.addEventListener('beforeinput', e => { if (e.inputType === 'deleteContentBackward' && !kin.value) cmd({ t: 'key', k: 'Backspace' }); });
+kin.addEventListener('input', e => { if (!e.isComposing) flushText(); });
+kin.addEventListener('compositionend', flushText);
+kin.addEventListener('keydown', e => {
+  if (['Enter', 'Tab', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && !e.isComposing) {
+    e.preventDefault(); flushText(); cmd({ t: 'key', k: e.key });
+  }
+});
+gin.addEventListener('keydown', e => {
+  if (e.key !== 'Enter') return;
+  e.preventDefault(); const v = gin.value.trim();
+  if (v) { cmd({ t: 'nav', url: v }); closeSheet(); }
+});
+
+/* agente: el texto (escrito o dictado con el teclado) va a OpenClaw; la respuesta llega por el WebSocket */
+function onAsk(j) {
+  if (j.stage === 'thinking') { rep.className = 'rep wait'; rep.textContent = 'Pensando'; return; }
+  rep.className = 'rep'; rep.textContent = j.reply || 'No he recibido respuesta.'; buzz(12);
+}
+agin.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.isComposing) return;
+  e.preventDefault(); const v = agin.value.trim();
+  if (!v) return;
+  cmd({ t: 'ask', text: v }); agin.value = ''; rep.className = 'rep wait'; rep.textContent = 'Pensando';
+});
+
+/* spotify: primer toque abre la web de Spotify en la tele (y deja «Salón» como altavoz); si ya está abierta, abre el panel de control */
+function spButton() {
+  if (lastState && lastState.host === 'open.spotify.com') return openSheet('spS');
+  cmd({ t: 'nav', url: 'https://open.spotify.com/' }); cmd({ t: 'spotify', a: 'activate' });
+  pill('Abriendo Spotify en la tele');
+}
+/* panel de reproducción del dispositivo «Salón» */
+let spBusy = false, spVolT = 0;
+function spPaint(r) {
+  if (r.error) { $('#spT').textContent = 'Spotify no disponible'; $('#spA').textContent = r.error; return; }
+  $('#spT').textContent = r.title || (r.status || '—');
+  $('#spA').textContent = [r.artist, r.status === 'en pausa' ? 'en pausa' : ''].filter(Boolean).join(' · ');
+  const v = r.volume ?? r.device?.volume; if (typeof v === 'number' && !spVolT) { $('#rSp').value = v; $('#spV').textContent = v + ' %'; }
+  const pl = $('#spS .big'); pl.querySelector('use').setAttribute('href', r.status === 'reproduciendo' ? '#i-pause' : '#i-play');
+}
+async function spDo(o) { if (spBusy) return; spBusy = true; try { spPaint(await rpc({ t: 'spotify', ...o })); } finally { spBusy = false; } }
+const spRefresh = () => spDo({ a: 'status' });
+document.addEventListener('click', e => { const b = e.target.closest('[data-sp]'); if (b) { buzz(8); spDo({ a: b.dataset.sp }); } });
+$('#rSp').addEventListener('input', e => {
+  $('#spV').textContent = e.target.value + ' %';
+  clearTimeout(spVolT); spVolT = setTimeout(() => { spVolT = 0; rpc({ t: 'spotify', a: 'volume', v: +e.target.value }); }, 250);
+});
+spin.addEventListener('keydown', e => {
+  if (e.key !== 'Enter' || e.isComposing) return;
+  e.preventDefault(); const v = spin.value.trim(); if (!v) return;
+  spin.value = ''; $('#spT').textContent = 'Buscando…'; $('#spA').textContent = v; spin.blur();
+  spDo({ a: 'search_play', query: v, type: 'track' });
+});
+setInterval(() => { if (sheet && sheet.id === 'spS' && !document.hidden && !spVolT) spRefresh(); }, 4000);
+
+/* emparejar: el código sale en la tele; con él este dispositivo recibe su propio acceso */
+const pairV = $('#pairV'), p1 = $('#p1'), p2 = $('#p2'), pCode = $('#pCode'), pMsg = $('#pMsg');
+const P_HELP = 'Pide acceso y escribe el código que aparecerá en la tele.';
+let pid = null;
+const uaName = () => { const u = navigator.userAgent; return /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) ? 'iPad' : /Android/.test(u) ? (/Mobile/.test(u) ? 'Móvil Android' : 'Tablet Android') : /Mac/.test(u) ? 'Mac' : /Windows/.test(u) ? 'Windows' : 'Navegador'; };
+const pSay = (t, err) => { pMsg.textContent = t; pMsg.className = err ? 'err' : ''; };
+async function post(u, b) { try { return await (await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).json(); } catch { return { error: 'No hay conexión con el mando' }; } }
+function showPair(msg) {
+  closeSheetSafe(); pairV.hidden = false; p1.hidden = false; p2.hidden = true; pid = null;
+  $('#pName').placeholder = 'Tu nombre (' + uaName() + ')'; $('#pName').value = store.get('pname', '');
+  pSay(msg || P_HELP);
+  t1.textContent = 'Sin acceso'; t2.textContent = '';
+}
+function closeSheetSafe() { try { if (sheet) closeSheet(); } catch {} }
+async function pairGo() {
+  const typed = $('#pName').value.trim(); store.set('pname', typed);
+  pSay('Pidiendo código…');
+  const r = await post('/pair/start', { name: typed || uaName() });
+  if (r.error) return pSay(r.error, true);
+  pid = r.pid; p1.hidden = true; p2.hidden = false; pCode.value = ''; pSay('Mira la tele y escribe aquí el código de 4 cifras.'); pCode.focus();
+}
+$('#pGo').addEventListener('click', pairGo);
+$('#pName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pairGo(); } });
+$('#pBack').addEventListener('click', () => showPair());
+pCode.addEventListener('input', async () => {
+  pCode.value = pCode.value.replace(/\D/g, '').slice(0, 4);
+  if (pCode.value.length < 4) return;
+  const r = await post('/pair/confirm', { pid, code: pCode.value });
+  if (r.token) {
+    token = r.token; store.set('token', token); store.set('devid', r.id); addManifest();
+    pairV.hidden = true; tries = 0; connect(); return;
+  }
+  pCode.value = '';
+  if (r.dead || /caducado/.test(r.error || '')) return showPair(r.error);
+  pSay(r.error || 'Error', true);
+});
+
+/* dispositivos con acceso (ajustes) */
+const ago = ms => { const s = (Date.now() - ms) / 1000; return s < 90 ? 'ahora' : s < 5400 ? 'hace ' + Math.round(s / 60) + ' min' : s < 129600 ? 'hace ' + Math.round(s / 3600) + ' h' : 'hace ' + Math.round(s / 86400) + ' d'; };
+async function refreshDevs() {
+  const r = await rpc({ t: 'devices' }); const box = $('#devs'); box.textContent = '';
+  const me = store.get('devid', '');
+  for (const d of r.devices || []) {
+    const row = document.createElement('div'); row.className = 'fld';
+    const sp = document.createElement('span'); sp.textContent = d.name + (d.id === me ? ' (este)' : '');
+    const sm = document.createElement('small'); sm.textContent = 'Último uso ' + ago(d.seen); sp.appendChild(sm);
+    const b = document.createElement('button'); b.className = 'bt dv'; b.textContent = 'Quitar';
+    b.addEventListener('click', async () => {
+      if (!b.classList.contains('sure')) { b.classList.add('sure'); b.textContent = '¿Seguro?'; setTimeout(() => { b.classList.remove('sure'); b.textContent = 'Quitar'; }, 3000); return; }
+      await rpc({ t: 'revoke', dev: d.id }); refreshDevs();
+    });
+    row.append(sp, b); box.appendChild(row);
+  }
+  if (!(r.devices || []).length) { const e = document.createElement('div'); e.className = 'foot'; e.style.textAlign = 'left'; e.textContent = 'Ninguno todavía: este dispositivo entra con el enlace de acceso.'; box.appendChild(e); }
+}
+
+/* ── ajustes ── */
+function refreshSet() {
+  $('#rSpeed').value = cfg.speed; $('#vSpeed').textContent = cfg.speed.toFixed(1) + '×';
+  $('#rScroll').value = cfg.scroll; $('#vScroll').textContent = cfg.scroll.toFixed(1) + '×';
+  $('#swNat').setAttribute('aria-pressed', cfg.natural); $('#swHap').setAttribute('aria-pressed', cfg.haptic);
+  $('#swFs').setAttribute('aria-pressed', !!document.fullscreenElement);
+  $('#foot').textContent = (ws && ws.readyState === 1 ? 'Conectado' : 'Sin conexión') + (rtt ? ' · ' + Math.round(rtt) + ' ms' : '');
+}
+$('#rSpeed').addEventListener('input', e => { cfg.speed = +e.target.value; $('#vSpeed').textContent = cfg.speed.toFixed(1) + '×'; saveCfg(); });
+$('#rScroll').addEventListener('input', e => { cfg.scroll = +e.target.value; $('#vScroll').textContent = cfg.scroll.toFixed(1) + '×'; saveCfg(); });
+$('#swNat').addEventListener('click', () => { cfg.natural = !cfg.natural; saveCfg(); refreshSet(); });
+$('#swHap').addEventListener('click', () => { cfg.haptic = !cfg.haptic; saveCfg(); refreshSet(); buzz(12); });
+if (!document.documentElement.requestFullscreen) $('#fsRow').hidden = true;
+$('#swFs').addEventListener('click', () => {
+  if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {});
+  setTimeout(refreshSet, 250);
+});
+setInterval(() => { if (sheet && sheet.id === 'setS') refreshSet(); }, 1000);
+
+connect();
+</script>
+</body>
+</html>

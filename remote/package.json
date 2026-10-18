@@ -1,0 +1,8 @@
+{
+  "name": "tv-remote",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Mando web para la tele del salón",
+  "main": "server.js",
+  "dependencies": { "ws": "^8.18.0" }
+}

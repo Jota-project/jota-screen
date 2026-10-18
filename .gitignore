@@ -1,0 +1,14 @@
+node_modules/
+__pycache__/
+# secretos y estado local (nunca al repo)
+remote/token
+remote/devices.json
+remote/spotify.json
+chrome-profile/
+backup/
+tmp/
+stage/
+spotify/
+*.log
+.env
+tv-kiosk.service

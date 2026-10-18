@@ -1,0 +1,13 @@
+[Unit]
+Description=Mando web para la tele
+After=default.target
+
+[Service]
+Environment=DISPLAY=:0
+WorkingDirectory=%h/tv/remote
+ExecStart=/home/sito/.nvm/versions/node/v24.22.0/bin/node server.js
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
