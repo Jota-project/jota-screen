@@ -571,7 +571,9 @@ async function volSet(v) {
 const SP_FILE = path.join(ROOT, 'spotify.json');
 const SP_DEVICE = process.env.TV_SPOTIFY_DEVICE || 'Salón';
 const PUBLIC_URL = (process.env.TV_PUBLIC_URL || 'https://green-house.tailf2c275.ts.net:8443').replace(/\/+$/, '');
-const SP_SCOPE = 'user-read-playback-state user-modify-playback-state user-read-currently-playing';
+const SP_SCOPE = 'user-read-playback-state user-modify-playback-state user-read-currently-playing ' +
+  'user-read-recently-played playlist-read-private playlist-read-collaborative user-library-read user-library-modify';
+const spHasScopes = () => !!sp.scope && SP_SCOPE.split(' ').every(x => sp.scope.split(' ').includes(x));
 let sp = {}; try { sp = JSON.parse(fs.readFileSync(SP_FILE, 'utf8')); } catch {}
 const spSave = () => fs.writeFileSync(SP_FILE, JSON.stringify(sp), { mode: 0o600 });
 const b64u = b => b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -586,6 +588,7 @@ async function spToken(form) {
   if (!r.ok) throw new Error(j.error_description || j.error || 'token ' + r.status);
   sp.access = j.access_token; sp.expires = Date.now() + (j.expires_in - 60) * 1000;
   if (j.refresh_token) sp.refresh = j.refresh_token;
+  if (j.scope) sp.scope = j.scope;
   spSave();
 }
 async function spAccess() {
@@ -640,25 +643,26 @@ async function spotify(m) {
       const dev = await spDevice();
       return { connected: true, device: dev ? { name: dev.name, active: dev.is_active, volume: dev.volume_percent } : null, ...spInfo(await spApi('GET', '/me/player')) };
     }
-    const dev = await spDevice();
-    if (!dev) return { error: `el dispositivo «${SP_DEVICE}» no aparece en Spotify (¿está en marcha spotifyd?)` };
-    const q = `?device_id=${encodeURIComponent(dev.id)}`;
-    const wake = async () => { if (!dev.is_active) await spApi('PUT', '/me/player', { device_ids: [dev.id], play: false }); };
+    const noDev = ['now', 'queue', 'playlists', 'recent'].includes(a); // lecturas: no necesitan el altavoz
+    const dev = noDev ? null : await spDevice();
+    if (!noDev && !dev) return { error: `el dispositivo «${SP_DEVICE}» no aparece en Spotify (¿está en marcha spotifyd?)` };
+    const q = dev ? `?device_id=${encodeURIComponent(dev.id)}` : '';
+    const wake = async () => { if (dev && !dev.is_active) await spApi('PUT', '/me/player', { device_ids: [dev.id], play: false }); };
     const after = async () => { await new Promise(r => setTimeout(r, 700)); return spInfo(await spApi('GET', '/me/player')); };
     switch (a) {
       case 'activate': await spApi('PUT', '/me/player', { device_ids: [dev.id], play: false }); return { ok: 1 };
-      case 'play': await wake(); await spApi('PUT', '/me/player/play' + q); return after();
-      case 'pause': await spApi('PUT', '/me/player/pause' + q); return after();
+      case 'play': await wake(); await spApi('PUT', '/me/player/play' + q); spNow.kick(); return after();
+      case 'pause': await spApi('PUT', '/me/player/pause' + q); spNow.kick(); return after();
       case 'playpause': {
         const st = await spApi('GET', '/me/player');
-        await spApi('PUT', '/me/player/' + (st.is_playing ? 'pause' : 'play') + q); return after();
+        await spApi('PUT', '/me/player/' + (st.is_playing ? 'pause' : 'play') + q); spNow.kick(); return after();
       }
-      case 'next': await wake(); await spApi('POST', '/me/player/next' + q); return after();
-      case 'prev': await wake(); await spApi('POST', '/me/player/previous' + q); return after();
+      case 'next': await wake(); await spApi('POST', '/me/player/next' + q); spNow.kick(); return after();
+      case 'prev': await wake(); await spApi('POST', '/me/player/previous' + q); spNow.kick(); return after();
       case 'volume': {
         const v = Math.min(100, Math.max(0, Math.round(Number(m.v))));
         if (!Number.isFinite(v)) return { error: 'volumen no válido' };
-        await spApi('PUT', `/me/player/volume?volume_percent=${v}&device_id=${encodeURIComponent(dev.id)}`); return { ok: 1, volume: v };
+        await spApi('PUT', `/me/player/volume?volume_percent=${v}&device_id=${encodeURIComponent(dev.id)}`); spNow.kick(); return { ok: 1, volume: v };
       }
       case 'uri': case 'search_play': {
         let uri = String(m.uri || '').trim();
@@ -676,8 +680,52 @@ async function spotify(m) {
         const mm = /^spotify:(track|album|playlist|artist|show|episode):[A-Za-z0-9]{22}$/.exec(uri);
         if (!mm) return { error: 'enlace o URI de Spotify no válido' };
         await wake();
-        await spApi('PUT', '/me/player/play' + q, mm[1] === 'track' || mm[1] === 'episode' ? { uris: [uri] } : { context_uri: uri });
+        const off = /^spotify:(track|episode):[A-Za-z0-9]{22}$/.test(m.offset || '') ? { offset: { uri: m.offset } } : {};
+        await spApi('PUT', '/me/player/play' + q, mm[1] === 'track' || mm[1] === 'episode' ? { uris: [uri] } : { context_uri: uri, ...off });
+        spNow.kick();
         return { uri, ...(await after()) };
+      }
+      case 'now': { const n = await spNow.poll(true); return { ...(n || { empty: true }), needsLogin: !spHasScopes() }; }
+      case 'seek': {
+        const ms = Number.isFinite(+m.ms) ? +m.ms : Number.isFinite(+m.pos) ? Math.round(+m.pos * (spNow.get()?.duration || 0)) : NaN;
+        if (!Number.isFinite(ms) || ms < 0) return { error: 'posición no válida' };
+        await spApi('PUT', `/me/player/seek?position_ms=${Math.round(ms)}&device_id=${encodeURIComponent(dev.id)}`); spNow.kick(); return { ok: 1, ms: Math.round(ms) };
+      }
+      case 'shuffle': {
+        const on = m.state === undefined ? !(spNow.get()?.shuffle) : !!m.state;
+        await spApi('PUT', `/me/player/shuffle?state=${on}&device_id=${encodeURIComponent(dev.id)}`); spNow.kick(); return { ok: 1, shuffle: on };
+      }
+      case 'repeat': {
+        const order = ['off', 'context', 'track'];
+        const st = order.includes(m.state) ? m.state : order[(order.indexOf(spNow.get()?.repeat || 'off') + 1) % 3];
+        await spApi('PUT', `/me/player/repeat?state=${st}&device_id=${encodeURIComponent(dev.id)}`); spNow.kick(); return { ok: 1, repeat: st };
+      }
+      case 'like': {
+        const cur = spNow.get();
+        const uri = /^spotify:(track|episode):[A-Za-z0-9]{22}$/.test(m.uri || '') ? m.uri : cur?.track?.uri;
+        if (!uri) return { error: 'no suena nada' };
+        const on = m.state === undefined ? !(cur?.track?.uri === uri && cur.liked) : !!m.state;
+        await spApi(on ? 'PUT' : 'DELETE', '/me/library?uris=' + encodeURIComponent(uri));
+        spNow.forgetLiked(uri.split(':')[2]); spNow.kick(); return { ok: 1, liked: on };
+      }
+      case 'queue_add': {
+        const uri = String(m.uri || '');
+        if (!/^spotify:(track|episode):[A-Za-z0-9]{22}$/.test(uri)) return { error: 'URI no válida' };
+        await spApi('POST', `/me/player/queue?uri=${encodeURIComponent(uri)}&device_id=${encodeURIComponent(dev.id)}`); spNow.kick(); return { ok: 1 };
+      }
+      case 'queue': { const n = await spNow.poll(true); return { queue: n?.queue || [] }; }
+      case 'playlists': {
+        const j = await spApi('GET', '/me/playlists?limit=40');
+        return { items: (j.items || []).filter(Boolean).map(p => ({ name: p.name, uri: p.uri, by: p.owner?.display_name || '', image: (p.images || []).slice(-1)[0]?.url || (p.images || [])[0]?.url || null, count: p.items?.total ?? p.tracks?.total ?? null })) };
+      }
+      case 'recent': {
+        const j = await spApi('GET', '/me/player/recently-played?limit=30');
+        const seen = new Set(), items = [];
+        for (const x of j.items || []) {
+          const t = x.track; if (!t || seen.has(t.id)) continue; seen.add(t.id);
+          items.push({ name: t.name, by: (t.artists || []).map(a => a.name).join(', '), uri: t.uri, image: (t.album?.images || []).slice(-1)[0]?.url || null, at: x.played_at, context: x.context?.uri || null });
+        }
+        return { items: items.slice(0, 20) };
       }
       case 'search': {
         const type = ['track', 'album', 'artist', 'playlist'].includes(m.type) ? m.type : 'track';
@@ -689,9 +737,20 @@ async function spotify(m) {
   } catch (e) { return { error: e.message }; }
 }
 
+// ───────────────────────── «ahora suena» completo (nowplaying.js): reposo, mando y agente
+function spBroadcast(n) {
+  const s = JSON.stringify({ t: 'sp', now: n ? { ...n, needsLogin: !spHasScopes() } : null });
+  for (const c of wss.clients) if (c.spWatch && c.readyState === WebSocket.OPEN) c.send(s);
+}
+const spNow = require('./nowplaying')({
+  spApi, spReady: () => !!(sp.clientId && sp.refresh),
+  watching: () => idle.watching() || [...wss.clients].some(c => c.spWatch),
+  onChange: n => { idle.setMusic(n); spBroadcast(n); }, log: (...a) => console.log(...a),
+});
+
 // ───────────────────────── pantalla en reposo y Live Activities (idle.js)
 const idle = require('./idle')({
-  ROOT, PUB, SELF, cdp, nav, spApi, spReady: () => !!(sp.clientId && sp.refresh), state,
+  ROOT, PUB, SELF, cdp, nav, state, onWatch: () => spNow.poll(true).then(n => idle.setMusic(n)),
   stageKind: () => stage.kind, log: (...a) => console.log(...a),
 });
 
@@ -722,7 +781,7 @@ async function ask(text, ws) {
 async function run(m, ws) {
   if (!m || typeof m !== 'object') return { error: 'mensaje no válido' };
   if (DEBUG) console.log('cmd', JSON.stringify(m));
-  if (!['state', 'devices', 'activity', 'idle'].includes(m.t)) idle.touch();
+  if (!['state', 'devices', 'activity', 'idle', 'spwatch'].includes(m.t)) idle.touch();
   try {
     switch (m.t) {
       case 'present': return await present(m);
@@ -740,6 +799,10 @@ async function run(m, ws) {
       case 'devices': return { devices: listDevices() };
       case 'revoke': return revokeDevice(String(m.dev || ''));
       case 'spotify': return await spotify(m);
+      case 'spwatch': // el panel de Spotify del mando pide (o deja de pedir) el estado en vivo
+        if (ws) ws.spWatch = !!m.on;
+        if (m.on) { const n = await spNow.poll(true); return { now: n ? { ...n, needsLogin: !spHasScopes() } : null }; }
+        return { ok: 1 };
       case 'idle': return await idle.run(m);
       case 'activity': return idle.activity(m);
       case 'key': return key(String(m.k));
@@ -772,7 +835,7 @@ for (const f of fs.readdirSync(PUB)) {
     etag: '"' + crypto.createHash('sha1').update(buf).digest('hex').slice(0, 16) + '"',
   });
 }
-const CSP = "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data:; manifest-src 'self'; base-uri 'none'; form-action 'none'";
+const CSP = "default-src 'self'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self' ws: wss:; img-src 'self' data: https://*.scdn.co https://*.spotifycdn.com; manifest-src 'self'; base-uri 'none'; form-action 'none'";
 // páginas del escenario: pueden cargar imágenes, fuentes, vídeo y librerías de internet, pero no hablar con otros servicios
 const STAGE_CSP = "default-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' https:; " +
   "img-src * data: blob:; media-src * data: blob:; font-src * data:; connect-src 'self'; base-uri 'none'; form-action 'none'";

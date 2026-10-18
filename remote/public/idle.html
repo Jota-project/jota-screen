@@ -62,6 +62,9 @@ body{font-family:"Inter","SF Pro Display",system-ui,-apple-system,"Segoe UI",Rob
 #meta{flex:1;min-width:0}
 #np .k{font-size:1.6vh;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:rgba(255,255,255,.55);display:flex;align-items:center;gap:.7vw}
 #np .tt{font-size:3vh;font-weight:650;letter-spacing:-.015em;margin-top:.5vh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#np .nx{font-size:1.75vh;color:rgba(255,255,255,.5);margin-top:.9vh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#np .nx:empty{display:none}
+.night #np .nx{display:none}
 #np .ar{font-size:2.3vh;color:rgba(255,255,255,.7);margin-top:.2vh;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #pb{display:flex;align-items:center;gap:1vw;margin-top:1.3vh;font-size:1.6vh;color:rgba(255,255,255,.55)}
 #pb .tr{flex:1;height:.5vh;border-radius:1vh;background:rgba(255,255,255,.18);overflow:hidden}
@@ -95,7 +98,7 @@ body{font-family:"Inter","SF Pro Display",system-ui,-apple-system,"Segoe UI",Rob
     <div id="art"></div>
     <div id="meta">
       <div class="k"><span class="eq"><i></i><i></i><i></i></span><span id="npk">Ahora suena</span></div>
-      <div class="tt" id="npt"></div><div class="ar" id="npa"></div>
+      <div class="tt" id="npt"></div><div class="ar" id="npa"></div><div class="nx" id="npn"></div>
       <div id="pb"><span id="pc">0:00</span><span class="tr"><i id="pf"></i></span><span id="pd">0:00</span></div>
     </div>
   </div>
@@ -219,16 +222,19 @@ function extract(img) {
 }
 
 // ── ahora suena
-let artUrl = '';
+let artUrl = '', srvPalKey = '';
 const mmss = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
 function music() {
   const m = D.music, np = $('np');
   const show = !!m && (m.playing || Date.now() - (m.at + off) < 10 * 60e3);
   np.classList.toggle('off', !show);
   B.classList.toggle('playing', !!(m && m.playing));
-  if (!m) { artPal = null; applyPalette(); return; }
+  if (!m) { artPal = null; srvPalKey = ''; applyPalette(); return; }
   $('npt').textContent = m.title; $('npa').textContent = m.artist + (m.album ? ' — ' + m.album : '');
-  $('npk').textContent = m.playing ? 'Ahora suena' : 'En pausa';
+  const ctx = m.context && m.context.name && m.context.type !== 'album' ? ' · ' + m.context.name : '';
+  $('npk').textContent = (m.playing ? 'Ahora suena' : 'En pausa') + ctx;
+  $('npn').textContent = m.next ? 'A continuación: ' + m.next.name + ' — ' + m.next.artist : '';
+  if (Array.isArray(m.colors) && m.colors.length) { const k = JSON.stringify(m.colors); if (k !== srvPalKey) { srvPalKey = k; artPal = m.colors; applyPalette(); } }
   if (m.art && m.art !== artUrl) {
     artUrl = m.art;
     const img = new Image();
@@ -237,7 +243,7 @@ function music() {
       img.style.opacity = 0; box.appendChild(img);
       requestAnimationFrame(() => { img.style.opacity = 1; });
       setTimeout(() => olds.forEach(o => o.remove()), 1300);
-      try { artPal = extract(img); } catch { artPal = null; }
+      if (!srvPalKey) { try { artPal = extract(img); } catch { artPal = null; } } // colores del servidor si los hay
       applyPalette();
     };
     img.src = '/idle/art?u=' + encodeURIComponent(m.art);

@@ -78,16 +78,25 @@ tool('tv_volume', 'TV volume: up/down (5% per step, optional repeat), mute toggl
   });
 
 tool('tv_spotify',
-  'Control Spotify on the living-room TV (Spotify Connect device "Salón", Premium account). Actions: status (what is playing, and whether Spotify is connected), play, pause, playpause, next, prev, ' +
-  'volume (level 0-100), search_play (query + type track|album|artist|playlist: finds the best match and plays it — use this for "ponme X"), search (list candidates with URIs), uri (play a Spotify link/URI). ' +
-  'If status says Spotify is not configured/connected, tell the user in one sentence.',
+  'Control Spotify on the living-room TV (Spotify Connect device "Salón", Premium account). Actions: status (short: what is playing, connected?), ' +
+  'now (full now-playing: track, album+year, artist photo, playing context (playlist/album), queue, shuffle/repeat, liked, volume, album-art colours), ' +
+  'play, pause, playpause, next, prev, volume (level 0-100), seek (ms, or pos 0-1), shuffle (state true/false, omit to toggle), repeat (state off|context|track, omit to cycle), ' +
+  'like (save/unsave the current track to "Tus me gusta"; state true/false, omit to toggle), queue (next up), queue_add (uri of a track), playlists (the user\'s playlists), recent (recently played), ' +
+  'search_play (query + type track|album|artist|playlist: finds the best match and plays it — use this for "ponme X"), search (list candidates with URIs), uri (play a Spotify link/URI; with a playlist/album uri, offset = track uri to start there). ' +
+  'If it reports Spotify not configured/connected or missing permissions, tell the user in one sentence.',
   {
-    action: z.enum(['status', 'play', 'pause', 'playpause', 'next', 'prev', 'volume', 'search_play', 'search', 'uri']),
+    action: z.enum(['status', 'now', 'play', 'pause', 'playpause', 'next', 'prev', 'volume', 'seek', 'shuffle', 'repeat', 'like', 'queue', 'queue_add', 'playlists', 'recent', 'search_play', 'search', 'uri']),
+    ms: z.number().optional(), pos: z.number().min(0).max(1).optional(), state: z.union([z.boolean(), z.enum(['off', 'context', 'track'])]).optional(),
+    offset: z.string().max(200).optional(),
     query: z.string().max(200).optional().describe('Search text, e.g. "Rosalía Despechá" or "lofi hip hop"'),
     type: z.enum(['track', 'album', 'artist', 'playlist']).optional().describe('What to search/play; default track. Use playlist for moods/genres, artist for "algo de X".'),
     level: z.number().min(0).max(100).optional(), uri: z.string().max(200).optional(),
   },
-  async ({ action, query, type, level, uri }) => out(await cmd({ t: 'spotify', a: action, query, type, v: level, uri })));
+  async ({ action, query, type, level, uri, ms, pos, state, offset }) => {
+    const r = await cmd({ t: 'spotify', a: action, query, type, v: level, uri, ms, pos, state, offset });
+    if (action === 'now' && !r.error && r.colors) delete r.colors.hsl; // al agente le basta con los hex
+    return out(r);
+  });
 
 tool('tv_key', 'Press a key in the TV browser (e.g. Enter, Escape, ArrowDown, Tab, Backspace, Space, or a single character).',
   { key: z.string().max(20) }, async ({ key }) => out(await cmd({ t: 'key', k: key }), 'Pressed ' + key));

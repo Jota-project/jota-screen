@@ -4,5 +4,8 @@
   "private": true,
   "description": "Mando web para la tele del salón",
   "main": "server.js",
-  "dependencies": { "ws": "^8.18.0" }
+  "dependencies": {
+    "jpeg-js": "^0.4.4",
+    "ws": "^8.18.0"
+  }
 }

@@ -23,7 +23,7 @@ const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
 
 module.exports = function createIdle(o) {
-  const { ROOT, PUB, SELF, cdp, nav, spApi, spReady, state, stageKind, log = () => {} } = o;
+  const { ROOT, PUB, SELF, cdp, nav, state, stageKind, log = () => {} } = o;
   const URL_IDLE = SELF + '/idle.html';
   const CFG_FILE = path.join(ROOT, 'idle.json');
   let cfg = { ...DEFAULTS };
@@ -112,26 +112,17 @@ module.exports = function createIdle(o) {
     } catch (e) { log('tiempo:', e.message); }
   }
 
-  // ───────── música (Spotify), solo mientras el reposo está abierto
-
-  async function pollMusic() {
-    if (!cfg.music || !clients.size || !spReady()) { if (music) { music = null; push(); } return; }
-    try {
-      const j = await spApi('GET', '/me/player?additional_types=episode');
-      const it = j?.item;
-      const next = !it ? null : {
-        title: it.name, artist: (it.artists || []).map(a => a.name).join(', ') || it.show?.name || '',
-        album: it.album?.name || '', art: (it.album?.images || it.images || [])[0]?.url || '',
-        playing: !!j.is_playing, progress: j.progress_ms || 0, duration: it.duration_ms || 0, at: Date.now(),
-        device: j.device?.name || '',
-      };
-
-      // solo se empuja si cambia la canción o el estado, o el progreso se desvía (salto)
-      const drift = next && music && Math.abs((music.progress + (music.playing ? Date.now() - music.at : 0)) - next.progress) > 2500;
-      if (!next !== !music || (next && (next.title !== music.title || next.playing !== music.playing || drift))) { music = next; push(); }
-      else if (next) music = next;
-
-    } catch { /* sin conexión con Spotify: se deja como está */ }
+  // ───────── música: llega ya montada desde nowplaying.js (solo se consulta mientras el reposo está abierto)
+  function setMusic(n) {
+    const next = !cfg.music || !n || n.empty || !n.track ? null : {
+      title: n.track.name, artist: n.artist, album: n.album?.name || '', art: n.album?.image?.l || '',
+      playing: n.playing, progress: n.progress, duration: n.duration, at: n.at, device: n.device?.name || '',
+      colors: n.colors?.hsl || null, accent: n.colors?.accent || null, liked: n.liked,
+      context: n.context ? { type: n.context.type, name: n.context.name } : null,
+      next: n.queue?.[0] ? { name: n.queue[0].name, artist: n.queue[0].artist } : null,
+      artistImage: n.artistInfo?.image?.m || null,
+    };
+    music = next; push();
   }
 
   // ───────── Live Activities
@@ -253,7 +244,7 @@ module.exports = function createIdle(o) {
     ws.on('error', () => {});
     ws.on('close', () => clients.delete(ws));
     ws.send(payload());
-    pollMusic();
+    o.onWatch && o.onWatch();
   });
   const artCache = new Map();
   async function art(req, res, url, send) {
@@ -298,11 +289,10 @@ module.exports = function createIdle(o) {
   fetchWeather();
   setInterval(fetchWeather, 15 * 60e3);
   setInterval(() => { tick(); autoIdle(); }, 20_000);
-  setInterval(pollMusic, 4000);
   tick(true);
 
   return {
-    URL_IDLE, isIdle, touch, onNav, run, activity, art,
+    URL_IDLE, isIdle, touch, onNav, run, activity, art, setMusic, watching: () => clients.size > 0 && cfg.music,
     upgrade: (req, socket, head) => wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws)),
     info: () => ({ profile, idle: isIdle(state.url), acts: acts.size }),
   };
