@@ -5,7 +5,7 @@ After=default.target
 [Service]
 Environment=DISPLAY=:0
 WorkingDirectory=%h/tv/remote
-ExecStart=/home/sito/.nvm/versions/node/v24.22.0/bin/node server.js
+ExecStart=/usr/bin/node server.js
 Restart=always
 RestartSec=2
 

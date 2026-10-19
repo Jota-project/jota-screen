@@ -23,7 +23,7 @@ const HOME_URL = process.env.TV_HOME_URL || SELF + '/idle.html'; // la pantalla 
 const STAGE_DIR = path.join(os.homedir(), 'tv', 'stage');
 fs.mkdirSync(STAGE_DIR, { recursive: true });
 // OpenClaw (agente). Se llama por su CLI: así no hace falta tocar ningún secreto.
-const OC_BIN = process.env.TV_OPENCLAW || path.join(os.homedir(), '.nvm/versions/node/v24.22.0/bin/openclaw');
+const OC_BIN = process.env.TV_OPENCLAW || path.join(os.homedir(), '.npm-global/bin/openclaw');
 const OC_AGENT = process.env.TV_AGENT || 'jota';
 const OC_ENV = { ...process.env, PATH: path.dirname(OC_BIN) + ':' + (process.env.PATH || '') };
 const ASK_PREFIX = '[Voz desde el mando del salón. Responde en una sola frase corta, sin markdown ni rodeos. ' +
