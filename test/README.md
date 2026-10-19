@@ -12,6 +12,10 @@ cd remote && npm ci && cd ..
 node --test test/*.test.js test/unit/*.test.js
 ```
 
+`control.test.js` usa un **Chrome falso** (`helpers/fake-cdp.js`): habla lo justo del protocolo CDP, apunta lo que recibe
+y emite eventos como si vinieran de la página. Así se prueban teclas, texto, navegación, el código de emparejar en la tele,
+el aviso de foco y la reconexión sin tele. `spotify.test.js` arranca con estado inicial (`start({ files })`).
+
 Las capturas de la pantalla en reposo están en `e2e/` (Playwright). La CI (`.github/workflows/ci.yml`) lanza todo en cada push.
 
 Cada caso que bloquea la IP (5 fallos = 429 durante un minuto) va en su propio servidor (`access.test.js`),

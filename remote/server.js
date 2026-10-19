@@ -9,7 +9,7 @@ const path = require('node:path');
 const os = require('node:os');
 const zlib = require('node:zlib');
 const crypto = require('node:crypto');
-const { spawn, execFile } = require('node:child_process');
+const { execFile } = require('node:child_process');
 const { WebSocketServer, WebSocket } = require('ws');
 const { loadConfig } = require('./src/core/config');
 const { createLog } = require('./src/core/log');
@@ -17,6 +17,8 @@ const { readJson, writeJson } = require('./src/core/json-store');
 const { createRateLimiter } = require('./src/auth/ratelimit');
 const { createAccess } = require('./src/auth/access');
 const { createCommands } = require('./src/transport/commands');
+const { createCdp } = require('./src/tv/cdp');
+const { createPointer, createAudio, createPairScreen, PAGE_PROBE, parseProbe } = require('./src/tv/devices');
 
 // configuración (entorno y rutas): src/core/config.js
 const CFG = loadConfig();
@@ -46,26 +48,10 @@ const sessions = {
   adminCount: () => adminSockets().length,
   notifyAdmins: msg => { const s = JSON.stringify(msg); for (const c of adminSockets()) c.send(s); },
 };
-// el código de emparejar se pinta encima de lo que haya en la tele
-function pairInPage(o) {
-  const old = document.getElementById('__tvpair'); if (old) old.remove();
-  if (!o) return;
-  const host = document.fullscreenElement || document.documentElement;
-  const b = document.createElement('div'); b.id = '__tvpair';
-  b.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(5,7,10,.78);font-family:system-ui,sans-serif;color:#f3f6fb;text-align:center';
-  const c = document.createElement('div');
-  c.style.cssText = 'background:#12161c;border:1px solid rgba(255,255,255,.14);border-radius:28px;padding:44px 64px;box-shadow:0 30px 90px rgba(0,0,0,.6)';
-  const k = document.createElement('div'); k.textContent = 'Nuevo mando'; k.style.cssText = 'font-size:22px;letter-spacing:.18em;text-transform:uppercase;color:#8ba7ff;font-weight:650';
-  const n = document.createElement('div'); n.textContent = o.name + ' quiere conectarse'; n.style.cssText = 'font-size:28px;margin-top:10px;opacity:.85';
-  const d = document.createElement('div'); d.textContent = o.code.split('').join(' '); d.style.cssText = 'font-size:120px;font-weight:800;letter-spacing:.06em;margin:22px 0 6px;font-variant-numeric:tabular-nums';
-  const h = document.createElement('div'); h.textContent = 'Escribe este código en el mando'; h.style.cssText = 'font-size:22px;opacity:.6';
-  c.append(k, n, d, h); b.appendChild(c); host.appendChild(b);
-  b.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220 });
-}
-const pairShow = (code, name) => cdp.call('Runtime.evaluate', { expression: `(${pairInPage})(${JSON.stringify({ code, name })})` }).catch(() => {});
-function pairHide() { cdp.call('Runtime.evaluate', { expression: `(${pairInPage})(null)` }).catch(() => {}); }
+// el código de emparejar se pinta encima de lo que haya en la tele (src/tv/devices.js)
+const pairScreen = { ready: () => !!(cdp.ready && cdp.session), showCode: (c, n) => tvPair.showCode(c, n), hideCode: () => tvPair.hideCode() };
 acc = createAccess({ files: CFG.FILES, adminUrl: CFG.ADMIN_URL, log, sessions,
-  tv: { ready: () => !!(cdp.ready && cdp.session), showCode: pairShow, hideCode: pairHide } });
+  tv: pairScreen });
 acc.start();
 const { isMaster, tokenDev, okToken, permsOf } = acc;
 
@@ -98,16 +84,6 @@ function broadcast() {
 }
 
 // ───────────────────────── CDP (Chrome DevTools Protocol), conexión persistente
-function getJSON(url) {
-  return new Promise((resolve, reject) => {
-    http.get(url, { timeout: 2000 }, res => {
-      let d = '';
-      res.on('data', c => (d += c));
-      res.on('end', () => { try { resolve(JSON.parse(d)); } catch (e) { reject(e); } });
-    }).on('error', reject).on('timeout', function () { this.destroy(new Error('timeout')); });
-  });
-}
-
 // En la web de Spotify, la barra verde «Reproduciendo en Salón» sobra: «Salón» es la propia tele.
 // Se oculta el bloque de esa barra (nunca los controles). Con TV_SPOTIFY_BANNER=1 se deja como viene.
 function spotifyTweak() {
@@ -267,175 +243,65 @@ function focusSet(o) {                                                // guarda 
   for (const c of wss.clients) if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify(focusFor(c)));
 }
 
-const cdp = {
-  ws: null, id: 0, pending: new Map(), session: null, targetId: null, pages: new Map(), ready: false,
-
-  async connect() {
-    let v;
-    try { v = await getJSON(`http://127.0.0.1:${CDP_PORT}/json/version`); }
-    catch { return setTimeout(() => this.connect(), 2000); }
-    const ws = new WebSocket(v.webSocketDebuggerUrl, { perMessageDeflate: false });
-    this.ws = ws;
-    ws.on('open', () => {
-      this.ready = true;
-      this.send('Target.setDiscoverTargets', { discover: true });
-      log.info('CDP conectado');
-    });
-    ws.on('message', d => { try { this.onMessage(JSON.parse(d.toString())); } catch {} });
-    ws.on('error', () => {});
-    ws.on('close', () => { this.down(); setTimeout(() => this.connect(), 2000); });
-  },
-
-  down() {
-    this.ready = false; this.session = null; this.targetId = null; this.pages.clear();
-    for (const [, p] of this.pending) { clearTimeout(p.t); p.rej(new Error('cdp')); }
-    this.pending.clear();
-    state.title = ''; state.url = ''; state.media = -1; state.scroll = null;
-    focusSet(null);
+// Chrome de la tele (src/tv/cdp.js). Aquí solo lo que el mando hace con lo que pasa en la pestaña activa.
+const cdp = createCdp({ port: CDP_PORT, log, hooks: {
+  onDown() { state.title = ''; state.url = ''; state.media = -1; state.scroll = null; focusSet(null); broadcast(); },
+  onActivating() { focusSet(null); },
+  onAttached(t) {
+    if (t) { state.title = t.title; state.url = t.url; }
+    if (!CFG.SPOTIFY_BANNER) spotifyRetouch(true);
+    watchFocus();
     broadcast();
   },
+  onPage(t) {
+    if (t.url !== state.url && idle) idle.onNav(t.url);
+    state.title = t.title; state.url = t.url; broadcast();
+    // al cambiar de página dentro de Spotify (o llegar a él) se repasa el retoque
+    if (cdp.session && /^https:\/\/open\.spotify\.com\//.test(t.url) && !CFG.SPOTIFY_BANNER) spotifyRetouch(false);
+  },
+  onActiveGone(hasNext) { focusSet(null); if (!hasNext) broadcast(); },
+  onDetached() { focusSet(null); broadcast(); },
+  onBinding(name, payload) { // aviso de foco desde la página (solo de la sesión activa)
+    if (name === '__tvFocus') { try { focusSet(JSON.parse(payload)); } catch {} }
+  },
+} });
+const tvPair = createPairScreen(cdp);
 
-  send(method, params = {}, sessionId) {
-    const id = ++this.id;
-    const msg = { id, method, params };
-    if (sessionId) msg.sessionId = sessionId;
-    this.ws.send(JSON.stringify(msg));
-    return id;
-  },
+// retoques de páginas concretas: en cada documento nuevo de la pestaña activa (al engancharla) o solo en el actual
+function spotifyRetouch(everyDocument) {
+  const source = `(${spotifyTweak})()`;
+  const bad = m => e => log.error('tweak', m, e.message);
+  if (everyDocument) cdp.call('Page.addScriptToEvaluateOnNewDocument', { source }).catch(bad('addScript'));
+  cdp.call('Runtime.evaluate', { expression: source }).catch(everyDocument ? bad('eval') : () => {});
+}
 
-  call(method, params = {}, browser = false) {
-    return new Promise((res, rej) => {
-      if (!this.ready || this.ws.readyState !== WebSocket.OPEN) return rej(new Error('cdp'));
-      const sid = browser ? undefined : this.session;
-      if (!browser && !sid) return rej(new Error('nopage'));
-      const id = this.send(method, params, sid);
-      const t = setTimeout(() => { this.pending.delete(id); rej(new Error('timeout')); }, 5000);
-      this.pending.set(id, { res, rej, t });
-    });
-  },
-
-  // sin esperar respuesta (camino rápido de teclas y texto)
-  fire(method, params) {
-    if (this.ready && this.session && this.ws.readyState === WebSocket.OPEN) this.send(method, params, this.session);
-  },
-
-  onMessage(m) {
-    if (m.id && this.pending.has(m.id)) {
-      const p = this.pending.get(m.id);
-      this.pending.delete(m.id); clearTimeout(p.t);
-      return m.error ? p.rej(new Error(m.error.message)) : p.res(m.result);
-    }
-    if (!m.method) return;
-    const pr = m.params || {};
-    switch (m.method) {
-      case 'Target.targetCreated':
-      case 'Target.targetInfoChanged': {
-        const t = pr.targetInfo;
-        if (!t || t.type !== 'page' || /^(devtools|chrome-extension):/.test(t.url)) return;
-        this.pages.set(t.targetId, t);
-        if (m.method === 'Target.targetCreated' || !this.targetId) this.activate(t.targetId);
-        if (t.targetId === this.targetId) {
-          if (t.url !== state.url && idle) idle.onNav(t.url);
-          state.title = t.title; state.url = t.url; broadcast();
-          // al cambiar de página dentro de Spotify (o llegar a él) se repasa el retoque
-          if (this.session && /^https:\/\/open\.spotify\.com\//.test(t.url) && !CFG.SPOTIFY_BANNER)
-            this.call('Runtime.evaluate', { expression: `(${spotifyTweak})()` }).catch(() => {});
-        }
-        break;
-      }
-      case 'Target.targetDestroyed': {
-        this.pages.delete(pr.targetId);
-        if (pr.targetId === this.targetId) {
-          this.targetId = null; this.session = null; focusSet(null);
-          const next = [...this.pages.keys()].pop();
-          if (next) this.activate(next); else broadcast();
-        }
-        break;
-      }
-      case 'Target.detachedFromTarget':
-        if (pr.sessionId === this.session) { this.session = null; focusSet(null); broadcast(); }
-        break;
-      case 'Runtime.bindingCalled': // aviso de foco desde la página (solo de la sesión activa)
-        if (pr.name === '__tvFocus' && m.sessionId === this.session) { try { focusSet(JSON.parse(pr.payload)); } catch {} }
-        break;
-      case 'Runtime.executionContextCreated': { // el mundo aislado «tv» del marco principal, para volver a mirar el foco
-        const c = pr.context || {};
-        if (m.sessionId === this.session && c.name === 'tv' && c.auxData && c.auxData.frameId === this.targetId) this.focusCtx = c.id;
-        break;
-      }
-      case 'Runtime.executionContextsCleared':
-        if (m.sessionId === this.session) this.focusCtx = null;
-        break;
-    }
-  },
-
-  // retoques de páginas concretas (se ejecutan en cada documento nuevo de la pestaña activa)
-  tweak() {
-    const source = `(${spotifyTweak})()`;
-    const bad = m => e => log.error('tweak', m, e.message);
-    this.call('Page.addScriptToEvaluateOnNewDocument', { source }).catch(bad('addScript'));
-    this.call('Runtime.evaluate', { expression: source }).catch(bad('eval'));
-  },
-
-  // aviso de foco: el binding y el script se ponen en cada sesión nueva (al activar otra pestaña también).
-  // Van en un mundo aislado («tv»): la web no ve el binding ni puede llamarlo para inventarse un foco.
-  async watchFocus() {
-    const source = `(${focusWatch})()`, sid = this.session, tid = this.targetId;
-    const steps = [
-      () => this.call('Runtime.enable'),                              // para recibir Runtime.bindingCalled
-      () => this.call('Page.enable'),                                 // sin él, el script de documento nuevo no se ejecuta
-      () => this.call('Runtime.addBinding', { name: '__tvFocus', executionContextName: 'tv' }),
-      () => this.call('Page.addScriptToEvaluateOnNewDocument', { source, worldName: 'tv' }),
-      async () => { // el documento actual: su mundo aislado y vuelve a avisar del foco
-        const w = await this.call('Page.createIsolatedWorld', { frameId: tid, worldName: 'tv' });
-        if (this.session !== sid) return;
-        this.focusCtx = w.executionContextId;
-        await this.call('Runtime.evaluate', { expression: source, contextId: w.executionContextId });
-      },
-    ];
-    try { for (const f of steps) { if (this.session !== sid) return; await f(); } } // se aborta si cambia la sesión
-    catch (e) { log.error('foco', e.message); }
-  },
-  focusRefresh() { // vuelve a mirar el campo con foco (por si la web lo ha cambiado por su cuenta, o lo ha escrito un mando)
-    if (!this.focusCtx) return Promise.resolve();
-    return this.call('Runtime.evaluate', { expression: `(${focusWatch})()`, contextId: this.focusCtx }).catch(() => {});
-  },
-
-  async activate(id) {
-    if (this.targetId === id && this.session) return;
-    const old = this.session;
-    this.targetId = id; this.session = null; this.focusCtx = null; focusSet(null);
-    // la sesión anterior se suelta: si no, sigue enganchada con sus scripts y mandando eventos
-    if (old) this.call('Target.detachFromTarget', { sessionId: old }, true).catch(() => {});
-    try {
-      const r = await this.call('Target.attachToTarget', { targetId: id, flatten: true }, true);
-      if (this.targetId !== id) { this.call('Target.detachFromTarget', { sessionId: r.sessionId }, true).catch(() => {}); return; } // ya se activó otra
-      this.session = r.sessionId;
-      const t = this.pages.get(id);
-      if (t) { state.title = t.title; state.url = t.url; }
-      if (!CFG.SPOTIFY_BANNER) this.tweak();
-      this.watchFocus();
-      broadcast();
-    } catch {}
-  },
-};
+// aviso de foco: el binding y el script se ponen en cada sesión nueva (al activar otra pestaña también).
+// Van en un mundo aislado («tv»): la web no ve el binding ni puede llamarlo para inventarse un foco.
+async function watchFocus() {
+  const source = `(${focusWatch})()`, sid = cdp.session, tid = cdp.targetId;
+  const steps = [
+    () => cdp.call('Runtime.enable'),                              // para recibir Runtime.bindingCalled
+    () => cdp.call('Page.enable'),                                 // sin él, el script de documento nuevo no se ejecuta
+    () => cdp.call('Runtime.addBinding', { name: '__tvFocus', executionContextName: 'tv' }),
+    () => cdp.call('Page.addScriptToEvaluateOnNewDocument', { source, worldName: 'tv' }),
+    async () => { // el documento actual: su mundo aislado y vuelve a avisar del foco
+      const w = await cdp.call('Page.createIsolatedWorld', { frameId: tid, worldName: 'tv' });
+      if (cdp.session !== sid) return;
+      cdp.worlds.set('tv', w.executionContextId);
+      await cdp.call('Runtime.evaluate', { expression: source, contextId: w.executionContextId });
+    },
+  ];
+  try { for (const f of steps) { if (cdp.session !== sid) return; await f(); } } // se aborta si cambia la sesión
+  catch (e) { log.error('foco', e.message); }
+}
+function focusRefresh() { // vuelve a mirar el campo con foco (por si la web lo ha cambiado por su cuenta, o lo ha escrito un mando)
+  const ctx = cdp.worlds.get('tv');
+  if (!ctx) return Promise.resolve();
+  return cdp.call('Runtime.evaluate', { expression: `(${focusWatch})()`, contextId: ctx }).catch(() => {});
+}
 
 // ───────────────────────── puntero X real (helper en Python)
-let ptr = null;
-function startPointer() {
-  if (NO_POINTER) return;
-  ptr = spawn('python3', [path.join(ROOT, 'pointer.py')], {
-    stdio: ['pipe', 'ignore', 'inherit'], env: { ...process.env, DISPLAY: CFG.DISPLAY },
-  });
-  ptr.stdin.on('error', () => {});
-  ptr.on('exit', () => { ptr = null; setTimeout(startPointer, 1000); });
-}
-const RE_PTR = /^(?:[mw] -?\d{1,4}(?:\.\d{1,2})? -?\d{1,4}(?:\.\d{1,2})?|[bc] [1-3](?: [01])?)$/;
-function ptrLine(s) {
-  if (!RE_PTR.test(s)) return;
-  log.debug('ptr', s);
-  if (ptr && ptr.stdin.writable) ptr.stdin.write(s + '\n');
-}
+const pointer = createPointer({ script: path.join(ROOT, 'pointer.py'), display: CFG.DISPLAY, disabled: NO_POINTER, log });
 
 // ───────────────────────── acciones
 const SPECIAL = {
@@ -574,23 +440,21 @@ async function playpause() {
 }
 
 // volumen (PipeWire). Las pulsaciones seguidas se agrupan en una sola llamada.
-const WPENV = { ...process.env, XDG_RUNTIME_DIR: CFG.XDG_RUNTIME_DIR };
-const wp = args => new Promise(r => execFile('wpctl', args, { env: WPENV, timeout: 2000 }, (e, o) => r(e ? '' : o)));
+const audio = createAudio({ runtimeDir: CFG.XDG_RUNTIME_DIR });      // src/tv/devices.js
 async function volRead() {
-  const m = /Volume:\s*([\d.]+)(\s*\[MUTED\])?/.exec(await wp(['get-volume', '@DEFAULT_AUDIO_SINK@']));
-  if (m) { state.vol = Math.round(parseFloat(m[1]) * 100); state.muted = !!m[2]; }
+  const v = await audio.read();
+  if (v) { state.vol = v.vol; state.muted = v.muted; }
 }
 let volQ = 0, volRun = false;
 async function vol(d) {
-  if (d === 'mute') { await wp(['set-mute', '@DEFAULT_AUDIO_SINK@', 'toggle']); await volRead(); broadcast(); return { vol: state.vol, muted: state.muted }; }
+  if (d === 'mute') { await audio.toggleMute(); await volRead(); broadcast(); return { vol: state.vol, muted: state.muted }; }
   volQ += d === 'up' ? 1 : d === 'down' ? -1 : 0;
   if (!volRun) {
     volRun = true;
     try {
       while (volQ) {
         const n = volQ; volQ = 0;
-        const step = `${Math.abs(n) * 5}%${n > 0 ? '+' : '-'}`;
-        await wp(['set-volume', '@DEFAULT_AUDIO_SINK@', step, ...(n > 0 ? ['-l', '1.0'] : [])]);
+        await audio.step(n);
       }
       await volRead();
     } finally { volRun = false; }
@@ -757,7 +621,7 @@ async function seek(s) {
 async function volSet(v) {
   v = Math.min(100, Math.max(0, Number(v)));
   if (!Number.isFinite(v)) return { error: 'volumen no válido' };
-  await wp(['set-volume', '@DEFAULT_AUDIO_SINK@', (v / 100).toFixed(2)]);
+  await audio.set(v);
   await volRead(); broadcast();
   return { vol: state.vol, muted: state.muted };
 }
@@ -1103,7 +967,7 @@ commands.register([
   { t: 'field', run: (m, { ws }) => field(m, ws) },
   { t: 'focus', quiet: true, run: async (m, { ws }) => { // el mando avisa al abrir o cerrar el teclado; va lo guardado y, si la web ha cambiado el campo, llega otro aviso
   if (ws && typeof m.open === 'boolean') ws.kbOpen = m.open;
-  if (!ws || ws.kbOpen) await cdp.focusRefresh();               // primero se mira el campo: así no va un valor viejo
+  if (!ws || ws.kbOpen) await focusRefresh();               // primero se mira el campo: así no va un valor viejo
   if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(focusFor(ws)));
   return ws ? focusFor(ws) : { t: 'focus', kind: tvFocus.kind, placeholder: tvFocus.placeholder };
   } },
@@ -1324,7 +1188,7 @@ wss.on('connection', (ws, req) => {
     }
     idle.touch();
     if (c === 119) pollSoon();                                          // "w": scroll desde el mando, el carril se sondea más a menudo
-    ptrLine(s);                                                         // "m dx dy", "w dx dy", "c 1", "b 1 1"...
+    pointer.line(s);                                                       // "m dx dy", "w dx dy", "c 1", "b 1 1"...
   });
   ws.send(JSON.stringify(publicState()));
   ws.send(JSON.stringify(meOf(ws)));
@@ -1339,23 +1203,18 @@ setInterval(() => {
 
 // estado de la página: multimedia (reproduciendo / pausa) y posición de scroll, solo si hay alguien conectado.
 // Cada 1,5 s; durante 2 s tras cada scroll del mando, cada 250 ms. Nunca dos lecturas a la vez por CDP.
-const PAGE_PROBE = '(()=>{const v=document.querySelector("video"),e=document.scrollingElement||document.documentElement;' +
-  'return [v?(v.paused?0:1):-1,scrollY,e?e.scrollHeight:0,innerHeight]})()';
 let pollBusy = false, pollLast = 0, pollFastUntil = 0;
 function pollSoon() { pollFastUntil = Date.now() + 2000; }
-const r3 = n => Math.round(n * 1000) / 1000;
 async function pollPage() {
   if (pollBusy || !wss.clients.size || !cdp.ready || !cdp.session) return;
   pollBusy = true; pollLast = Date.now();
   try {
     const r = await cdp.call('Runtime.evaluate', { expression: PAGE_PROBE, returnByValue: true });
-    const v = r?.result?.value;
-    if (!Array.isArray(v)) return;
-    const [m, y, h, ih] = v.map(Number);
+    const pr = parseProbe(r?.result?.value);                  // src/tv/devices.js
+    if (!pr) return;
     let ch = false;
-    if (m !== state.media && Number.isFinite(m)) { state.media = m; ch = true; }
-    const max = h - ih;                                 // sin scroll (o sin dato): null y el mando no pinta el carril
-    const sc = Number.isFinite(max) && max > 4 && ih > 0 ? { pos: r3(Math.min(1, Math.max(0, y / max))), size: r3(Math.min(1, ih / h)) } : null;
+    if (pr.media !== null && pr.media !== state.media) { state.media = pr.media; ch = true; }
+    const sc = pr.scroll;                                       // sin scroll (o sin dato): null y el mando no pinta el carril
     if (JSON.stringify(sc) !== JSON.stringify(state.scroll)) { state.scroll = sc; ch = true; }
     if (ch) broadcast();
   } catch {} finally { pollBusy = false; }
@@ -1383,6 +1242,6 @@ for (const addr of bindAddrs()) {
   s.listen(PORT, addr, () => log.info(`escuchando en http://${addr}:${PORT}/ (token maestro en remote/token; nunca se escribe en el registro)`));
 }
 cdp.connect();
-startPointer();
+pointer.start();
 volRead();
 process.on('SIGTERM', () => process.exit(0));

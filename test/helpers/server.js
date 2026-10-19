@@ -25,7 +25,7 @@ function copyRemote(dst) {
   fs.symlinkSync(path.join(REMOTE, 'node_modules'), path.join(dst, 'node_modules'), 'dir');
 }
 
-async function start({ files = {} } = {}) { // files: estado inicial, { 'spotify.json': {...} }
+async function start({ files = {}, cdpPort } = {}) { // cdpPort: puerto de un Chrome falso (test/helpers/fake-cdp.js) // files: estado inicial, { 'spotify.json': {...} }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-test-'));
   const root = path.join(tmp, 'remote');
   copyRemote(root);
@@ -37,7 +37,7 @@ async function start({ files = {} } = {}) { // files: estado inicial, { 'spotify
   const proc = spawn(process.execPath, ['server.js'], {
     cwd: root,
     env: {
-      PATH: process.env.PATH, HOME: tmp, TV_PORT: String(port), TV_CDP_PORT: String(await freePort()),
+      PATH: process.env.PATH, HOME: tmp, TV_PORT: String(port), TV_CDP_PORT: String(cdpPort || await freePort()),
       TV_NO_POINTER: '1', TV_OPENCLAW: '/bin/false', XDG_RUNTIME_DIR: tmp,
     },
     stdio: ['ignore', 'pipe', 'pipe'],

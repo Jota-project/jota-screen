@@ -1,0 +1,81 @@
+'use strict';
+// Unitarias de los adaptadores de la tele (remote/src/tv).
+const { test } = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const { EventEmitter } = require('node:events');
+const R = path.join(__dirname, '..', '..', 'remote', 'src', 'tv');
+const { parseProbe, RE_PTR, createAudio, createPointer, createPairScreen } = require(path.join(R, 'devices'));
+const { createCdp } = require(path.join(R, 'cdp'));
+const { startFakeCdp } = require('../helpers/fake-cdp');
+
+test('sondeo de la página: vídeo y carril de scroll', () => {
+  assert.deepEqual(parseProbe([1, 500, 2000, 1000]), { media: 1, scroll: { pos: 0.5, size: 0.5 } });
+  assert.deepEqual(parseProbe([-1, 0, 1000, 1000]), { media: -1, scroll: null }, 'sin scroll no hay carril');
+  assert.deepEqual(parseProbe([0, 9999, 2000, 1000]).scroll.pos, 1, 'acotado a 1');
+  assert.equal(parseProbe(null), null);
+});
+
+test('puntero: solo líneas válidas llegan al helper', () => {
+  for (const ok of ['m 3 -4', 'w 0 12.5', 'c 1', 'b 1 1', 'b 3 0']) assert.ok(RE_PTR.test(ok), ok);
+  for (const bad of ['m 3', 'm 99999 1', 'c 4', 'rm -rf /', 'm 1 1\nc 1']) assert.ok(!RE_PTR.test(bad), bad);
+  const written = [];
+  const fakeProc = () => { const p = new EventEmitter(); p.stdin = Object.assign(new EventEmitter(), { writable: true, write: s => written.push(s) }); return p; };
+  const ptr = createPointer({ script: 'x.py', display: ':0', log: { debug() {} }, spawn: fakeProc });
+  ptr.start();
+  assert.equal(ptr.line('m 1 2'), true);
+  assert.equal(ptr.line('borra todo'), false);
+  assert.deepEqual(written, ['m 1 2\n']);
+  const off = createPointer({ script: 'x.py', display: ':0', disabled: true, log: { debug() {} }, spawn: () => assert.fail('no debe arrancar') });
+  off.start();
+});
+
+test('volumen: lee, sube en pasos de 5 % con tope y fija', async () => {
+  const runs = [];
+  const audio = createAudio({ runtimeDir: '/run/user/1', exec: async a => { runs.push(a.join(' ')); return a[0] === 'get-volume' ? 'Volume: 0.35 [MUTED]\n' : ''; } });
+  assert.deepEqual(await audio.read(), { vol: 35, muted: true });
+  await audio.step(2); await audio.step(-3); await audio.set(42); await audio.toggleMute();
+  assert.deepEqual(runs.slice(1), [
+    'set-volume @DEFAULT_AUDIO_SINK@ 10%+ -l 1.0', 'set-volume @DEFAULT_AUDIO_SINK@ 15%-',
+    'set-volume @DEFAULT_AUDIO_SINK@ 0.42', 'set-mute @DEFAULT_AUDIO_SINK@ toggle',
+  ]);
+  const silent = createAudio({ runtimeDir: '/x', exec: async () => '' });
+  assert.equal(await silent.read(), null, 'sin wpctl no inventa un volumen');
+});
+
+test('CDP: sin conexión o sin pestaña, las llamadas fallan al momento', async () => {
+  const cdp = createCdp({ port: 1, log: { info() {}, error() {} } });
+  await assert.rejects(cdp.call('Page.reload'), /cdp/);
+  cdp.fire('Input.insertText', { text: 'x' }); // no revienta
+  const pair = createPairScreen(cdp);
+  assert.equal(pair.ready(), false);
+});
+
+test('CDP: engancha la pestaña, avisa por los ganchos y corta las llamadas que no responden', async () => {
+  const fake = await startFakeCdp();
+  const seen = [];
+  const cdp = createCdp({ port: fake.port, log: { info() {}, error() {} }, timeoutMs: 300, retryMs: 50, hooks: {
+    onAttached: t => seen.push('attached:' + t.title), onDown: () => seen.push('down'),
+    onBinding: (n, p) => seen.push('binding:' + n + ':' + p),
+  } });
+  cdp.connect();
+  await fake.waitFor(m => m.method === 'Target.attachToTarget');
+  for (let i = 0; i < 50 && !cdp.session; i++) await new Promise(r => setTimeout(r, 10));
+  assert.equal(cdp.session, 'S-P1');
+  assert.deepEqual(seen, ['attached:Página de prueba']);
+  assert.deepEqual(await cdp.call('Page.reload'), {});
+  fake.event('Runtime.bindingCalled', { name: '__tvFocus', payload: '{}' }, 'S-P1');
+  fake.event('Runtime.bindingCalled', { name: '__tvFocus', payload: 'ajeno' }, 'OTRA');
+  fake.event('Runtime.executionContextCreated', { context: { id: 9, name: 'tv', auxData: { frameId: 'P1' } } }, 'S-P1');
+  await new Promise(r => setTimeout(r, 50));
+  assert.ok(seen.includes('binding:__tvFocus:{}') && !seen.some(x => x.includes('ajeno')));
+  assert.equal(cdp.worlds.get('tv'), 9);
+  // una llamada sin respuesta se corta por tiempo
+  cdp.send = function (method, params, sid) { return ++this.id; }; // no llega nada al Chrome falso
+  await assert.rejects(cdp.call('Runtime.evaluate', { expression: '1' }), /timeout/);
+  cdp.stop();
+  await new Promise(r => setTimeout(r, 100));
+  assert.ok(seen.includes('down'));
+  assert.equal(cdp.ready, false);
+  await fake.close();
+});
