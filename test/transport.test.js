@@ -50,6 +50,18 @@ test('reposo: CSP sin \'unsafe-inline\'; su CSS y su JS van en ficheros', async 
   }
 });
 
+test('mando: su CSS va en un fichero, sin <style> ni style= en el HTML', async () => {
+  const html = await (await s.get('/')).text();
+  assert.doesNotMatch(html, /<style\b/i, 'sin <style> en línea');
+  assert.doesNotMatch(html, /<[^>]+\sstyle\s*=/i, 'sin atributos style=');
+  assert.match(html, /<link rel="stylesheet" href="\/mando\/styles\/mando\.css">/);
+  const f = await s.get('/mando/styles/mando.css');
+  assert.equal(f.status, 200);
+  assert.match(f.headers.get('content-type'), /^text\/css/);
+  assert.equal(f.headers.get('content-security-policy'), null);
+  assert.equal(f.headers.get('cache-control'), 'no-cache');
+});
+
 test('estáticos: caché por tipo, gzip para texto y nada fuera de public/', async () => {
   const js = await s.get('/tv-island.js', { headers: { 'Accept-Encoding': 'gzip' } });
   assert.equal(js.headers.get('cache-control'), 'no-cache');
