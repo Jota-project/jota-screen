@@ -17,7 +17,7 @@ module.exports = function createPairRoutes({ acc, limiter, adminOnline, tvReady 
     if (req.method !== 'POST') return send(res, 405, '');
     if (blocked(ip)) return json(res, 429, { error: 'Demasiados intentos. Espera un minuto.' });
     const body = await readBody(req, 2048);
-    if (body === null) return send(res, 413, '');
+    if (body === null) return send(res, 413, '', { Connection: 'close' });
     let b = {}; try { b = JSON.parse(body || '{}'); } catch {}
     if (p === '/pair/info') return json(res, 200, { adminOnline: adminOnline(), tv: tvReady() });
     if (p === '/pair/start') { const r = await acc.pairing.start(ip, b.name, b.mode); return json(res, r.error && !r.noAdmin ? 429 : 200, r); }

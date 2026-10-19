@@ -7,6 +7,7 @@ const S = path.join(__dirname, '..', '..', 'remote', 'src');
 const { createHttp } = require(path.join(S, 'transport', 'http'));
 const { bindAddrs } = require(path.join(S, 'transport', 'listen'));
 const { clientIp, isLocalTV } = require(path.join(S, 'transport', 'http-util'));
+const { createStatic, cacheFor, pageCsp } = require(path.join(S, 'transport', 'static'));
 const { createTvState } = require(path.join(S, 'core', 'tv-state'));
 const { createPagePoll } = require(path.join(S, 'tv', 'page-poll'));
 
@@ -78,4 +79,27 @@ test('sondeo de la página: solo con mandos conectados, y avisa si cambia', asyn
   assert.deepEqual([state.media, state.scroll, bc], [1, { pos: 0, size: 0.5 }, 1]);
   await poll.poll();
   assert.equal(bc, 1, 'sin cambios no se difunde');
+});
+
+test('estáticos: subcarpetas sí; ocultos, enlaces simbólicos y nombres de rutas, no', () => {
+  const fs = require('node:fs'), os = require('node:os');
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-pub-'));
+  fs.mkdirSync(path.join(d, 'shared', 'fonts'), { recursive: true });
+  fs.mkdirSync(path.join(d, 'a', 'b', 'c'), { recursive: true });
+  fs.writeFileSync(path.join(d, 'index.html'), '<p>hola');
+  fs.writeFileSync(path.join(d, 'shared', 'tokens-tv.css'), ':root{--x:1}');
+  fs.writeFileSync(path.join(d, 'shared', 'fonts', 'f.woff2'), 'x');
+  fs.writeFileSync(path.join(d, 'a', 'b', 'c', 'hondo.js'), '1');
+  fs.writeFileSync(path.join(d, '.env'), 'SECRETO=1');
+  fs.symlinkSync('/etc', path.join(d, 'fuera'));
+  const st = createStatic({ dir: d });
+  assert.ok(st.has('/index.html') && st.has('/shared/tokens-tv.css') && st.has('/shared/fonts/f.woff2'));
+  assert.equal(st.get('/shared/tokens-tv.css').type, 'text/css; charset=utf-8');
+  assert.ok(!st.has('/.env') && !st.has('/fuera/hostname') && !st.has('/a/b/c/hondo.js'), 'ocultos, enlaces y más de 2 niveles fuera');
+  fs.mkdirSync(path.join(d, 'api'));
+  assert.throws(() => createStatic({ dir: d }), /public\/api choca/);
+  fs.rmSync(d, { recursive: true, force: true });
+  assert.equal(cacheFor('/shared/x.svg'), 'no-cache', 'los tokens compartidos siempre se revalidan');
+  assert.equal(cacheFor('/icon-180.png'), 'public, max-age=86400');
+  assert.equal(pageCsp('/tpl-tasks.html') !== null && pageCsp('/tpl-x.js') === null && pageCsp('/stage.css') === null, true);
 });

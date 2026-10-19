@@ -27,7 +27,7 @@ module.exports = function createApiRoutes({ limiter, auth, run, publicState, sta
     }
     if (req.method === 'POST' && url.pathname === '/api/cmd') {
       const body = await readBody(req, 1_200_000);
-      if (body === null) return send(res, 413, 'demasiado grande');
+      if (body === null) return send(res, 413, 'demasiado grande', { Connection: 'close' }); // el resto del cuerpo no se lee: se cierra la conexión
       let m; try { m = JSON.parse(body); } catch { return json(res, 400, { error: 'JSON no válido' }); }
       const r = await run(m, null, { dev: apiDev });
       return json(res, r.error ? 400 : 200, r);

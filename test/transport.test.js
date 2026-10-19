@@ -29,6 +29,17 @@ test('cada página sale con su CSP y las cabeceras de seguridad', async () => {
   assert.equal((await s.get('/no-existe.js')).status, 404);
 });
 
+test('estáticos: caché por tipo, gzip para texto y nada fuera de public/', async () => {
+  const js = await s.get('/tv-island.js', { headers: { 'Accept-Encoding': 'gzip' } });
+  assert.equal(js.headers.get('cache-control'), 'no-cache');
+  assert.equal(js.headers.get('content-encoding'), 'gzip');
+  assert.equal((await s.get('/icon-512.png')).headers.get('cache-control'), 'public, max-age=86400');
+  const etag = (await s.get('/stage.css')).headers.get('etag');
+  assert.equal((await s.get('/stage.css', { headers: { 'If-None-Match': etag } })).status, 304);
+  for (const p of ['/%2e%2e/server.js', '/..%2Fserver.js', '/shared/%2F..%2Fserver.js', '/src/core/config.js', '/token', '/node_modules/ws/package.json'])
+    assert.equal((await s.get(p)).status, 404, p);
+});
+
 test('fuera de la API y de emparejar, solo GET y HEAD', async () => {
   assert.equal((await s.get('/index.html', { method: 'POST' })).status, 405);
   const h = await s.get('/index.html', { method: 'HEAD' });
