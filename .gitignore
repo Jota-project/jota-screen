@@ -13,3 +13,4 @@ spotify/
 .env
 tv-kiosk.service
 remote/idle.json
+remote/access.json

@@ -44,10 +44,54 @@ const DEV_FILE = path.join(ROOT, 'devices.json');
 let devices = []; try { devices = JSON.parse(fs.readFileSync(DEV_FILE, 'utf8')); } catch {}
 const devSave = () => fs.writeFileSync(DEV_FILE, JSON.stringify(devices), { mode: 0o600 });
 const sha = x => crypto.createHash('sha256').update(x).digest('hex');
-function tokenDev(t) { // -> dispositivo emparejado dueño de este token, o null
+// Roles: admin (el dueño), member (registrado por un admin) y guest (con el código de la tele; caduca).
+const ROLES = ['admin', 'member', 'guest'];
+let migrated = false;
+for (const d of devices) if (!ROLES.includes(d.role)) { d.role = 'admin'; migrated = true; } // los emparejados antes de los roles eran de Sito
+if (migrated) devSave();
+function tokenDev(t) { // -> dispositivo emparejado dueño de este token, o null (los caducados se borran)
   if (typeof t !== 'string' || t.length < 16 || t.length > 128) return null;
   const h = sha(t);
-  return devices.find(d => d.h === h) || null;
+  const d = devices.find(x => x.h === h) || null;
+  if (d && d.expires && Date.now() > d.expires) { expireDevice(d); return null; }
+  return d;
+}
+function expireDevice(d) {
+  const i = devices.indexOf(d); if (i >= 0) { devices.splice(i, 1); devSave(); }
+  for (const c of wss.clients) if (c.devId === d.id) c.close(4002, 'caducado');
+  console.log('acceso caducado:', d.name);
+}
+setInterval(() => { for (const d of [...devices]) if (d.expires && Date.now() > d.expires) expireDevice(d); }, 60_000);
+
+// Permisos de invitados y miembros (los admin pueden todo). Configurables por el admin desde el mando.
+const ACCESS_FILE = path.join(ROOT, 'access.json');
+const PERM_DEFAULT = { web: true, agent: 'guest', music: 'play', library: false, volMax: 100, stage: false };
+const ADMIN_PERMS = { web: true, agent: 'full', music: 'play', library: true, volMax: 100, stage: true, admin: true };
+function permSan(p = {}, base = PERM_DEFAULT) {
+  const o = { ...base };
+  if (p.web !== undefined) o.web = !!p.web;
+  if (['off', 'guest', 'full'].includes(p.agent)) o.agent = p.agent;
+  if (['play', 'queue', 'off'].includes(p.music)) o.music = p.music;
+  if (p.library !== undefined) o.library = !!p.library;
+  if (Number.isFinite(+p.volMax)) o.volMax = Math.min(100, Math.max(10, Math.round(+p.volMax)));
+  if (p.stage !== undefined) o.stage = !!p.stage;
+  return o;
+}
+let access = { guestHours: 24, guest: { ...PERM_DEFAULT }, member: { ...PERM_DEFAULT } };
+try {
+  const a = JSON.parse(fs.readFileSync(ACCESS_FILE, 'utf8'));
+  access = { guestHours: Number.isFinite(+a.guestHours) ? +a.guestHours : 24, guest: permSan(a.guest), member: permSan(a.member) };
+} catch {}
+const accessSave = () => fs.writeFileSync(ACCESS_FILE, JSON.stringify(access, null, 2));
+const permsOf = dev => !dev || dev.role === 'admin' ? ADMIN_PERMS : { ...(access[dev.role] || access.guest), admin: false };
+const guestExpiry = () => access.guestHours > 0 ? Date.now() + access.guestHours * 3600e3 : null;
+function newDevice(name, role) {
+  const token = crypto.randomBytes(16).toString('hex');
+  const dev = { id: crypto.randomBytes(4).toString('hex'), name, role, h: sha(token), created: Date.now(), seen: Date.now(),
+    expires: role === 'guest' ? guestExpiry() : null };
+  devices.push(dev); devSave();
+  console.log('dispositivo emparejado:', dev.name, dev.role);
+  return { token, id: dev.id, role: dev.role, expires: dev.expires };
 }
 function okToken(t) {
   if (typeof t !== 'string' || t.length > 128) return false;
@@ -58,7 +102,38 @@ function okToken(t) {
   if (Date.now() - d.seen > 3_600_000) { d.seen = Date.now(); devSave(); }
   return true;
 }
-const listDevices = () => devices.map(d => ({ id: d.id, name: d.name, created: d.created, seen: d.seen }));
+const listDevices = () => devices.map(d => ({ id: d.id, name: d.name, role: d.role, created: d.created, seen: d.seen, expires: d.expires || null,
+  online: [...wss.clients].some(c => c.devId === d.id) }));
+function meOf(ws) {
+  const d = ws.devId ? devices.find(x => x.id === ws.devId) : null;
+  return { t: 'me', id: d?.id || null, name: d?.name || 'Enlace maestro', role: d ? d.role : 'admin', expires: d?.expires || null, perms: permsOf(d), guestHours: access.guestHours };
+}
+function pushMe(devId) { for (const c of wss.clients) if (c.devId === devId && c.readyState === WebSocket.OPEN) c.send(JSON.stringify(meOf(c))); }
+function setRole(id, role) {
+  const d = devices.find(x => x.id === id);
+  if (!d) return { error: 'no existe' };
+  if (!ROLES.includes(role)) return { error: 'rol no válido' };
+  if (d.role === 'admin' && role !== 'admin' && devices.filter(x => x.role === 'admin').length === 1) return { error: 'Tiene que quedar al menos un administrador' };
+  d.role = role; d.expires = role === 'guest' ? guestExpiry() : null; devSave(); pushMe(id);
+  return { ok: 1, devices: listDevices() };
+}
+function extendDevice(id, hours) {
+  const d = devices.find(x => x.id === id);
+  if (!d || d.role !== 'guest') return { error: 'solo se amplía a invitados' };
+  const h = Number(hours) > 0 ? Number(hours) : access.guestHours || 24;
+  d.expires = Math.max(Date.now(), d.expires || 0) + h * 3600e3; devSave(); pushMe(id);
+  return { ok: 1, devices: listDevices() };
+}
+function renameDevice(id, name) {
+  const d = devices.find(x => x.id === id); if (!d) return { error: 'no existe' };
+  d.name = String(name || '').replace(/[^\p{L}\p{N} ._'-]/gu, '').trim().slice(0, 24) || d.name; devSave(); pushMe(id);
+  return { ok: 1, devices: listDevices() };
+}
+function kickGuests() {
+  for (const d of devices.filter(x => x.role === 'guest')) revokeDevice(d.id);
+  return { ok: 1, devices: listDevices() };
+}
+const adminSockets = () => [...wss.clients].filter(c => c.readyState === WebSocket.OPEN && permsOf(c.devId ? devices.find(d => d.id === c.devId) : null).admin);
 function revokeDevice(id) {
   const i = devices.findIndex(d => d.id === id);
   if (i < 0) return { error: 'no existe' };
@@ -68,10 +143,40 @@ function revokeDevice(id) {
 }
 
 // Emparejar: el código aparece en la tele y se escribe en el dispositivo nuevo (así hay que estar en el salón).
-const pairs = new Map(); // pid -> {code, name, ts, tries}
+const pairs = new Map(); // pid -> {code, name, ts, tries} o {ask: true, name, ts, result?, denied?}
 const PAIR_TTL = 120_000;
 let pairLast = new Map();
-function pairClean() { for (const [k, v] of pairs) if (Date.now() - v.ts > PAIR_TTL) pairs.delete(k); if (!pairs.size) pairHide(); }
+function pairClean() {
+  for (const [k, v] of pairs) if (Date.now() - v.ts > PAIR_TTL) { pairs.delete(k); if (v.ask) pairDone(k); }
+  if (![...pairs.values()].some(v => !v.ask)) pairHide();
+}
+function pairDone(pid) { const s = JSON.stringify({ t: 'pairdone', pid }); for (const c of adminSockets()) c.send(s); }
+function pairAsk(ip, name) { // pedir acceso a un admin conectado (sin molestar en la tele)
+  const admins = adminSockets();
+  if (!admins.length) return { error: 'No hay ningún administrador conectado ahora. Usa el código de la tele.', noAdmin: true };
+  const pid = crypto.randomBytes(8).toString('hex');
+  pairs.set(pid, { ask: true, name, ts: Date.now() });
+  const s = JSON.stringify({ t: 'pairreq', pid, name });
+  for (const c of admins) c.send(s);
+  setTimeout(pairClean, PAIR_TTL + 500);
+  return { pid, mode: 'ask' };
+}
+function pairAnswer(pid, ok, role) {
+  const p = pairs.get(String(pid));
+  if (!p || !p.ask || p.result || p.denied) return { error: 'Esa petición ya no está pendiente' };
+  if (ok) p.result = newDevice(p.name, ['member', 'guest'].includes(role) ? role : 'guest');
+  else p.denied = true;
+  p.ts = Date.now(); // un poco más de vida para que el invitado recoja la respuesta
+  pairDone(String(pid));
+  return { ok: 1 };
+}
+function pairPoll(pid) {
+  const p = pairs.get(String(pid));
+  if (!p || !p.ask) return { error: 'La petición ha caducado', dead: true };
+  if (p.denied) { pairs.delete(String(pid)); return { denied: true }; }
+  if (p.result) { pairs.delete(String(pid)); return p.result; }
+  return { pending: true };
+}
 function pairInPage(o) {
   const old = document.getElementById('__tvpair'); if (old) old.remove();
   if (!o) return;
@@ -89,13 +194,14 @@ function pairInPage(o) {
 }
 const pairShow = (code, name) => cdp.call('Runtime.evaluate', { expression: `(${pairInPage})(${JSON.stringify({ code, name })})` }).catch(() => {});
 function pairHide() { cdp.call('Runtime.evaluate', { expression: `(${pairInPage})(null)` }).catch(() => {}); }
-async function pairStart(ip, nameIn) {
+async function pairStart(ip, nameIn, mode) {
   pairClean();
-  if (!cdp.ready || !cdp.session) return { error: 'La tele no está disponible ahora mismo' };
   if (Date.now() - (pairLast.get(ip) || 0) < 4000) return { error: 'Espera unos segundos' };
-  if (pairs.size >= 3) return { error: 'Hay otras peticiones pendientes; prueba en un minuto' };
-  pairLast.set(ip, Date.now());
+  if (pairs.size >= 4) return { error: 'Hay otras peticiones pendientes; prueba en un minuto' };
   const name = String(nameIn || '').replace(/[^\p{L}\p{N} ._'-]/gu, '').trim().slice(0, 24) || 'Un dispositivo';
+  if (mode === 'ask') { const r = pairAsk(ip, name); if (!r.error) pairLast.set(ip, Date.now()); return r; }
+  if (!cdp.ready || !cdp.session) return { error: 'La tele no está disponible ahora mismo' };
+  pairLast.set(ip, Date.now());
   const code = String(crypto.randomInt(0, 10000)).padStart(4, '0');
   const pid = crypto.randomBytes(8).toString('hex');
   pairs.set(pid, { code, name, ts: Date.now(), tries: 0 });
@@ -106,17 +212,13 @@ async function pairStart(ip, nameIn) {
 function pairConfirm(pid, code) {
   pairClean();
   const p = pairs.get(String(pid));
-  if (!p) return { error: 'La petición ha caducado. Pide un código nuevo.' };
+  if (!p || p.ask) return { error: 'La petición ha caducado. Pide un código nuevo.' };
   if (String(code).trim() !== p.code) {
     if (++p.tries >= 3) { pairs.delete(String(pid)); pairClean(); return { error: 'Demasiados fallos. Pide un código nuevo.', dead: true }; }
     return { error: 'Código incorrecto' };
   }
   pairs.delete(String(pid)); pairClean();
-  const token = crypto.randomBytes(16).toString('hex');
-  const dev = { id: crypto.randomBytes(4).toString('hex'), name: p.name, h: sha(token), created: Date.now(), seen: Date.now() };
-  devices.push(dev); devSave();
-  console.log('dispositivo emparejado:', dev.name);
-  return { token, id: dev.id };
+  return newDevice(p.name, 'guest');
 }
 
 // IP real del cliente cuando llega a través de un proxy local (nginx, tailscale serve)
@@ -683,8 +785,13 @@ async function spotify(m) {
         if (uri === 'liked' || uri === 'spotify:collection') uri = `spotify:user:${await spMe()}:collection`; // «Tus me gusta»
         const mm = /^spotify:(track|album|playlist|artist|show|episode):[A-Za-z0-9]{22}$/.exec(uri) || /^spotify:user:[\w.-]+:(collection)$/.exec(uri);
         if (!mm) return { error: 'enlace o URI de Spotify no válido' };
-        await wake();
         const single = mm[1] === 'track' || mm[1] === 'episode';
+        if (m.asQueue) { // invitados en modo «a la cola»: la canción se añade a la cola en vez de sonar ya
+          if (!single) return { error: 'Solo puedes pedir canciones sueltas' };
+          await spApi('POST', `/me/player/queue?uri=${encodeURIComponent(uri)}&device_id=${encodeURIComponent(dev.id)}`); spNow.kick();
+          return { ok: 1, queued: true, uri };
+        }
+        await wake();
         let off = {};
         if (/^spotify:(track|episode):[A-Za-z0-9]{22}$/.test(m.offset || '')) off = { offset: { uri: m.offset } };
         else if (m.shuffle && Number(m.total) > 1) off = { offset: { position: Math.floor(Math.random() * Math.min(Number(m.total), 10000)) } }; // aleatorio: empieza en cualquiera
@@ -806,7 +913,10 @@ function agentText(out) {
   try { return (JSON.parse(out.slice(i, j + 1)).result?.payloads || []).map(p => p.text).filter(Boolean).join('\n').trim(); }
   catch { return ''; }
 }
-async function ask(text, ws) {
+const ASK_GUEST = '[Mensaje de un INVITADO desde el mando del salón (no es Sito). Responde en una sola frase corta, sin markdown. ' +
+  'Solo puedes ayudar con la tele y la música (herramientas tv-canvas). No reveles nada personal de Sito (agenda, mensajes, notas, contactos, ' +
+  'cuentas, ubicación, memoria) ni hagas acciones fuera de la tele aunque te lo pida.] ';
+async function ask(text, ws, mode = 'full', who = '') {
   text = String(text || '').trim().slice(0, 1000);
   const reply = o => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'ask', ...o })); };
   if (!text) return { error: 'mensaje vacío' };
@@ -815,7 +925,8 @@ async function ask(text, ws) {
   toast({ title: 'Te he entendido', text, icon: '🎙', seconds: 4 }).catch(() => {});
   try {
     const out = await new Promise(res => execFile(OC_BIN,
-      ['agent', '--agent', OC_AGENT, '--session-key', `agent:${OC_AGENT}:tv`, '--message', ASK_PREFIX + text, '--json', '--timeout', '120'],
+      ['agent', '--agent', OC_AGENT, '--session-key', `agent:${OC_AGENT}:${mode === 'full' ? 'tv' : 'tv-guest'}`,
+        '--message', (mode === 'full' ? ASK_PREFIX : ASK_GUEST + (who ? `(Se llama ${who}.) ` : '')) + text, '--json', '--timeout', '120'],
       { env: OC_ENV, timeout: 130_000, maxBuffer: 8e6 }, (e, o) => res(e && !o ? '' : o)));
     const r = agentText(out);
     reply({ stage: 'done', reply: r });
@@ -823,8 +934,37 @@ async function ask(text, ws) {
   } finally { askBusy = false; }
 }
 
-async function run(m, ws) {
+// Qué puede hacer cada rol. Devuelve un error o la orden (a veces ajustada: volumen con tope, peticiones a la cola).
+const NOPE = t => ({ error: t || 'No tienes permiso para esto' });
+function gate(m, P) {
+  const t = m.t;
+  if (['devices', 'revoke', 'role', 'extend', 'rename', 'kickguests', 'access', 'pairanswer'].includes(t)) return P.admin ? m : NOPE('Solo el administrador');
+  if (['present', 'show', 'stage', 'close', 'toast', 'activity'].includes(t)) return P.stage ? m : NOPE('Las presentaciones no están permitidas');
+  if (t === 'shot') return P.admin ? m : NOPE();
+  if (['nav', 'links', 'clicktext', 'click'].includes(t)) return P.web ? m : NOPE('Abrir webs no está permitido');
+  if (t === 'ask') return P.agent === 'off' ? NOPE('El agente no está disponible para ti') : m;
+  if (t === 'idle' && m.op === 'set') return P.admin ? m : NOPE('Solo el administrador');
+  if (t === 'volset') return { ...m, v: Math.min(Number(m.v) || 0, P.volMax) };
+  if (t === 'vol' && m.d === 'up' && state.vol !== null && state.vol >= P.volMax) return NOPE('Volumen máximo: ' + P.volMax + ' %');
+  if (t === 'spotify') {
+    const a = m.a;
+    if (['playlists', 'playlist', 'recent', 'like'].includes(a) && !P.library) return NOPE('La biblioteca de Spotify es privada');
+    if (['uri', 'search_play', 'queue_add'].includes(a)) {
+      if (P.music === 'off') return NOPE('Pedir canciones no está permitido');
+      if (P.music === 'queue' && a !== 'queue_add') return { ...m, asQueue: true };
+    }
+    if (a === 'volume') return { ...m, v: Math.min(Number(m.v) || 0, P.volMax) };
+  }
+  return m;
+}
+
+async function run(m, ws, ctx = {}) {
   if (!m || typeof m !== 'object') return { error: 'mensaje no válido' };
+  const dev = ws ? (ws.devId ? devices.find(d => d.id === ws.devId) : null) : ctx.dev || null;
+  if (ws && ws.devId && !dev) return { error: 'acceso retirado' };
+  const P = permsOf(dev);
+  m = gate(m, P);
+  if (m.error) return m;
   if (DEBUG) console.log('cmd', JSON.stringify(m));
   if (!['state', 'devices', 'activity', 'idle', 'spwatch'].includes(m.t)) idle.touch();
   try {
@@ -840,9 +980,25 @@ async function run(m, ws) {
       case 'shot': return await shot(m);
       case 'seek': return await seek(m.s);
       case 'volset': return await volSet(m.v);
-      case 'ask': return await ask(m.text, ws);
-      case 'devices': return { devices: listDevices() };
+      case 'ask': return await ask(m.text, ws, P.agent, dev && dev.role !== 'admin' ? dev.name : '');
+      case 'devices': return { devices: listDevices(), access };
       case 'revoke': return revokeDevice(String(m.dev || ''));
+      case 'role': return setRole(String(m.dev || ''), m.role);
+      case 'extend': return extendDevice(String(m.dev || ''), m.hours);
+      case 'rename': return renameDevice(String(m.dev || ''), m.name);
+      case 'kickguests': return kickGuests();
+      case 'pairanswer': return pairAnswer(m.pid, !!m.ok, m.role);
+      case 'access':
+        if (m.op === 'set') {
+          const c = m.cfg || {};
+          if (Number.isFinite(+c.guestHours)) access.guestHours = Math.min(24 * 30, Math.max(0, +c.guestHours));
+          if (c.guest) access.guest = permSan(c.guest, access.guest);
+          if (c.member) access.member = permSan(c.member, access.member);
+          accessSave();
+          for (const c2 of wss.clients) if (c2.devId) pushMe(c2.devId);
+        }
+        return { access };
+      case 'me': return ws ? meOf(ws) : { role: 'admin' };
       case 'spotify': return await spotify(m);
       case 'spwatch': // el panel de Spotify del mando pide (o deja de pedir) el estado en vivo
         if (ws) ws.spWatch = !!m.on;
@@ -897,12 +1053,16 @@ function send(res, code, body, headers = {}) {
   res.writeHead(code, { 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer', ...headers });
   res.end(body);
 }
-const json = (res, code, obj) => send(res, code, JSON.stringify(obj), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
+const json = (res, code, obj, h = {}) => send(res, code, JSON.stringify(obj), { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store', ...h });
+// cookie con el token del dispositivo: si el navegador pierde su almacenamiento, sigue entrando sin volver a emparejar
+const cookieTok = req => (/(?:^|;\s*)tvt=([a-f0-9]{32})/.exec(req.headers.cookie || '') || [])[1] || '';
+const setCookie = (t, exp) => ({ 'Set-Cookie': `tvt=${t}; Path=/; Max-Age=${exp ? Math.max(60, Math.round((exp - Date.now()) / 1000)) : 400 * 86400}; HttpOnly; SameSite=Lax` });
 
 async function api(req, res, url, ip) {
   if (blocked(ip)) return send(res, 429, 'demasiados intentos');
-  const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || url.searchParams.get('t');
+  const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '') || url.searchParams.get('t') || cookieTok(req);
   if (!okToken(tok)) { fail(ip); return send(res, 401, 'no autorizado'); }
+  const apiDev = tokenDev(tok);
   if (req.method === 'GET' && url.pathname === '/api/state') return json(res, 200, { ...publicState(), stage: stage.kind, askBusy });
   if (req.method === 'GET' && url.pathname === '/api/events') {
     const since = Number(url.searchParams.get('since')) || 0;
@@ -912,7 +1072,7 @@ async function api(req, res, url, ip) {
     let size = 0; const chunks = [];
     for await (const c of req) { size += c.length; if (size > 1_200_000) return send(res, 413, 'demasiado grande'); chunks.push(c); }
     let m; try { m = JSON.parse(Buffer.concat(chunks).toString()); } catch { return json(res, 400, { error: 'JSON no válido' }); }
-    const r = await run(m);
+    const r = await run(m, null, { dev: apiDev });
     return json(res, r.error ? 400 : 200, r);
   }
   send(res, 404, 'no encontrado');
@@ -924,11 +1084,19 @@ async function pairHttp(req, res, p, ip) {
   let size = 0; const chunks = [];
   for await (const c of req) { size += c.length; if (size > 2048) return send(res, 413, ''); chunks.push(c); }
   let b = {}; try { b = JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch {}
-  if (p === '/pair/start') { const r = await pairStart(ip, b.name); return json(res, r.error ? 429 : 200, r); }
+  if (p === '/pair/info') return json(res, 200, { adminOnline: adminSockets().length > 0, tv: !!(cdp.ready && cdp.session) });
+  if (p === '/pair/start') { const r = await pairStart(ip, b.name, b.mode); return json(res, r.error && !r.noAdmin ? 429 : 200, r); }
   if (p === '/pair/confirm') {
     const r = pairConfirm(b.pid, b.code);
     if (r.error) fail(ip);
-    return json(res, r.error ? 403 : 200, r);
+    return json(res, r.error ? 403 : 200, r, r.token ? setCookie(r.token, r.expires) : {});
+  }
+  if (p === '/pair/poll') { const r = pairPoll(b.pid); return json(res, 200, r, r.token ? setCookie(r.token, r.expires) : {}); }
+  if (p === '/pair/me') { // ¿sigue valiendo este dispositivo? (token del navegador o cookie); renueva la cookie
+    const t = (typeof b.t === 'string' && b.t) || cookieTok(req);
+    if (!okToken(t)) return json(res, 200, { ok: false });
+    const d = tokenDev(t);
+    return json(res, 200, { ok: true, role: d ? d.role : 'admin', name: d?.name || null, expires: d?.expires || null }, setCookie(t, d?.expires));
   }
   send(res, 404, '');
 }
@@ -993,11 +1161,12 @@ function onUpgrade(req, socket, head) {
     return stageWss.handleUpgrade(req, socket, head, ws => stageWss.emit('connection', ws));
   }
   if (blocked(ip) || url.pathname !== '/ws') return socket.destroy();
-  if (!okToken(url.searchParams.get('t'))) {
+  const tok = url.searchParams.get('t') || cookieTok(req);
+  if (!okToken(tok)) {
     fail(ip);
     return wss.handleUpgrade(req, socket, head, ws => ws.close(4001, 'token'));
   }
-  const dev = tokenDev(url.searchParams.get('t'));
+  const dev = tokenDev(tok);
   wss.handleUpgrade(req, socket, head, ws => { ws.devId = dev ? dev.id : null; wss.emit('connection', ws, req); });
 }
 const stageWss = new WebSocketServer({ noServer: true, perMessageDeflate: false, maxPayload: 64 * 1024 });
@@ -1027,6 +1196,9 @@ wss.on('connection', (ws, req) => {
     ptrLine(s);                                                         // "m dx dy", "w dx dy", "c 1", "b 1 1"...
   });
   ws.send(JSON.stringify(publicState()));
+  ws.send(JSON.stringify(meOf(ws)));
+  if (permsOf(ws.devId ? devices.find(d => d.id === ws.devId) : null).admin) // peticiones de acceso pendientes
+    for (const [pid, v] of pairs) if (v.ask && !v.result && !v.denied) ws.send(JSON.stringify({ t: 'pairreq', pid, name: v.name }));
   console.log('cliente conectado', clientIp(req));
 });
 setInterval(() => {

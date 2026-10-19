@@ -151,6 +151,21 @@ body{position:fixed;inset:0;width:100%;background:radial-gradient(120% 60% at 50
 .pc .in.code{text-align:center;font-size:34px;letter-spacing:.5em;padding-left:.5em;font-variant-numeric:tabular-nums;height:68px}
 .pc .bt{height:54px;font-size:16px}
 .pc .bt.ghost{background:transparent;border-color:transparent;color:var(--dim);height:44px;font-size:14px}
+.me{font-size:13px;color:var(--dim);margin:2px 2px 12px;line-height:1.4}
+.me b{color:var(--tx)}
+.chip{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.3px;padding:2px 7px;border-radius:999px;margin-left:6px;vertical-align:1px;background:var(--s3);color:var(--dim)}
+.chip.admin{background:rgba(139,167,255,.18);color:var(--ac)}.chip.member{background:rgba(90,209,154,.16);color:var(--ok)}
+.chip.on{background:transparent;color:var(--ok);padding:0;margin-left:6px}
+.dvb{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.dvb .sel{height:36px;font-size:13px}
+.req{position:fixed;left:12px;right:12px;top:max(14px,env(safe-area-inset-top));z-index:30;max-width:520px;margin:0 auto;background:#161b23;border:1px solid rgba(139,167,255,.35);border-radius:22px;padding:16px;box-shadow:0 18px 50px rgba(0,0,0,.6);animation:rqin .3s cubic-bezier(.2,.8,.2,1)}
+.req[hidden]{display:none}
+@keyframes rqin{from{transform:translateY(-20px);opacity:0}}
+.rq1{font-size:12px;letter-spacing:.6px;text-transform:uppercase;color:var(--ac)}
+.rq2{font-size:20px;font-weight:700;margin:4px 0 12px}
+.rqb{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:8px}.rqb .bt{height:46px;font-size:14px}
+.spin2{width:34px;height:34px;margin:6px auto;border-radius:50%;border:3px solid var(--s3);border-top-color:var(--ac);animation:spn .9s linear infinite}
+[data-hide]{display:none!important}
 .dv{height:36px;padding:0 14px;font-size:13px;border-radius:12px;display:block}
 .dv.sure{background:rgba(255,120,100,.18);border-color:rgba(255,120,100,.4);color:#ff9d8f}
 .rep{min-height:54px;margin-top:12px;padding:0 4px;font-size:17px;line-height:1.35;color:var(--tx)}
@@ -273,16 +288,28 @@ body{position:fixed;inset:0;width:100%;background:radial-gradient(120% 60% at 50
   <div class="pc">
     <svg class="lg" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2.5"/><path d="M9 20.5h6M12 17v3.5"/></svg>
     <h1>Mando del salón</h1>
-    <p id="pMsg">Pide acceso y escribe el código que aparecerá en la tele.</p>
+    <p id="pMsg">Pide acceso al administrador o escribe el código que aparecerá en la tele.</p>
     <div id="p1" class="pc">
       <input class="in" id="pName" placeholder="Tu nombre (opcional)" maxlength="24" autocomplete="given-name" autocapitalize="words" enterkeyhint="go">
-      <button class="bt big" id="pGo">Pedir código en la tele</button>
+      <button class="bt big" id="pAsk" hidden>Pedir acceso al administrador</button>
+      <button class="bt" id="pGo">Mostrar un código en la tele</button>
+    </div>
+    <div id="p3" class="pc" hidden>
+      <div class="spin2"></div>
+      <button class="bt ghost" id="pCancel">Cancelar</button>
     </div>
     <div id="p2" class="pc" hidden>
       <input class="in code" id="pCode" inputmode="numeric" pattern="[0-9]*" maxlength="4" placeholder="····" autocomplete="one-time-code" aria-label="Código de 4 cifras">
       <button class="bt ghost" id="pBack">Cancelar</button>
     </div>
   </div>
+</div>
+
+<!-- petición de acceso (solo administradores) -->
+<div class="req" id="req" hidden>
+  <div class="rq1">Quiere usar el mando</div>
+  <div class="rq2" id="reqName">—</div>
+  <div class="rqb"><button class="bt" data-r="no">Rechazar</button><button class="bt" data-r="member">Miembro</button><button class="bt big" data-r="guest">Invitado</button></div>
 </div>
 
 <!-- spotify -->
@@ -329,6 +356,8 @@ body{position:fixed;inset:0;width:100%;background:radial-gradient(120% 60% at 50
   <div class="fld"><span>Desplazamiento natural<small>El contenido sigue a tus dedos</small></span><button class="sw" id="swNat" aria-pressed="true" aria-label="Desplazamiento natural"></button></div>
   <div class="fld"><span>Vibración al tocar</span><button class="sw" id="swHap" aria-pressed="true" aria-label="Vibración"></button></div>
   <div class="fld" id="fsRow"><span>Mando a pantalla completa</span><button class="sw" id="swFs" aria-pressed="false" aria-label="Pantalla completa"></button></div>
+  <div class="me" id="meBox"></div>
+  <div id="admBox" hidden>
   <div class="sh">Pantalla en reposo</div>
   <div class="fld" style="border-top:0"><div class="seg" id="idMode">
     <button data-m="auto">Auto</button><button data-m="day">Día</button><button data-m="evening">Tarde</button><button data-m="night">Noche</button><button data-m="cinema">Cine</button>
@@ -343,9 +372,21 @@ body{position:fixed;inset:0;width:100%;background:radial-gradient(120% 60% at 50
     <option value="0">Nunca</option><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
   <div class="fld"><span>Música en el reposo</span><button class="sw" id="idMus" aria-pressed="true" aria-label="Música en el reposo"></button></div>
   <div class="acts" style="grid-template-columns:1fr;margin-top:8px"><button class="bt" id="idShow" type="button">Ver el reposo ahora</button></div>
-  <div class="sh">Dispositivos con acceso</div>
+  <div class="sh">Personas con acceso</div>
   <div id="devs"></div>
-  <div class="foot" style="margin-top:2px;text-align:left">Para invitar a alguien: que abra esta misma dirección sin enlace y escriba el código que verá en la tele.</div>
+  <div class="acts" style="grid-template-columns:1fr;margin:8px 0 6px"><button class="bt" id="kickG" type="button">Quitar a todos los invitados</button></div>
+  <div class="foot" style="margin-top:2px;text-align:left">Para invitar a alguien: que abra esta misma dirección. Puede pedirte acceso a ti (te llega aquí) o escribir el código que verá en la tele.</div>
+  <div class="sh">Qué pueden hacer</div>
+  <div class="fld" style="border-top:0"><div class="seg" id="acWho"><button data-w="guest" aria-pressed="true">Invitados</button><button data-w="member" aria-pressed="false">Miembros</button></div></div>
+  <div class="fld" id="acHrs"><span>Duración del acceso<small>Después tendrán que pedirlo otra vez</small></span><select class="sel" id="acHours">
+    <option value="1">1 h</option><option value="3">3 h</option><option value="6">6 h</option><option value="12">12 h</option><option value="24">24 h</option><option value="48">2 días</option><option value="168">7 días</option><option value="0">Sin límite</option></select></div>
+  <div class="fld"><span>Abrir webs y apps</span><button class="sw" id="acWeb" aria-pressed="true" aria-label="Abrir webs y apps"></button></div>
+  <div class="fld"><span>Agente<small>Modo invitado: solo tele y música, sin tus datos</small></span><div class="seg" id="acAgent"><button data-v="off">No</button><button data-v="guest">Invitado</button><button data-v="full">Completo</button></div></div>
+  <div class="fld"><span>Canciones que piden</span><div class="seg" id="acMusic"><button data-v="play">Suenan ya</button><button data-v="queue">A la cola</button><button data-v="off">No</button></div></div>
+  <div class="fld"><span>Tu biblioteca de Spotify<small>Playlists, «Me gusta» y recientes</small></span><button class="sw" id="acLib" aria-pressed="false" aria-label="Biblioteca"></button></div>
+  <div class="fld"><span>Presentaciones y avisos</span><button class="sw" id="acStage" aria-pressed="false" aria-label="Presentaciones"></button></div>
+  <div class="fld"><span>Volumen máximo</span><span id="acVolV">100 %</span><input type="range" id="acVol" min="10" max="100" step="5"></div>
+  </div>
   <div class="foot" id="foot">—</div>
 </div>
 
@@ -365,6 +406,8 @@ function addManifest() {
   document.head.appendChild(m);
 }
 if (token) { store.set('token', token); addManifest(); }
+// renueva la cookie de respaldo (por si el navegador borra su almacenamiento)
+if (token) fetch('/pair/me', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: token }) }).catch(() => {});
 
 const cfg = Object.assign({ speed: 1.6, scroll: 1, natural: true, haptic: true }, store.get('cfg', {}));
 const saveCfg = () => store.set('cfg', cfg);
@@ -385,19 +428,27 @@ function paintDot() {
   const up = ws && ws.readyState === 1;
   dot.className = 'dot' + (up ? (rtt && rtt > 150 ? ' bad' : ' ok') : '');
 }
-function connect() {
-  if (!token) { showPair(); return; }
+let viaCookie = false;
+async function connect() {
+  if (!token && !viaCookie) { // sin token guardado: quizá el navegador conserva la cookie de un emparejamiento anterior
+    const r = await post('/pair/me', {});
+    if (!r.ok) { showPair(); return; }
+    viaCookie = true;
+  }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws?t=${encodeURIComponent(token)}`);
+  ws = new WebSocket(`${proto}://${location.host}/ws` + (token ? `?t=${encodeURIComponent(token)}` : ''));
   ws.onopen = () => { tries = 0; paintDot(); ping(); };
   ws.onmessage = e => {
     const d = e.data;
     if (d.charCodeAt(0) === 112) { const r = performance.now() - parseFloat(d.slice(1)); rtt = rtt ? rtt * 0.6 + r * 0.4 : r; paintDot(); return; }
-    try { const j = JSON.parse(d); if (j.t === 'sp') { if (spOpen()) spPaint(j.now); } else if (j.t === 'ask') onAsk(j); else if (j.t === 'res') { const f = pend.get(j.id); if (f) { pend.delete(j.id); f(j.r || {}); } } else onState(j); } catch {}
+    try { const j = JSON.parse(d); if (j.t === 'me') applyMe(j); else if (j.t === 'pairreq') showReq(j); else if (j.t === 'pairdone') hideReq(j.pid); else if (j.t === 'sp') { if (spOpen()) spPaint(j.now); } else if (j.t === 'ask') onAsk(j); else if (j.t === 'res') { const f = pend.get(j.id); if (f) { pend.delete(j.id); f(j.r || {}); } } else onState(j); } catch {}
   };
   ws.onclose = ev => {
     paintDot();
-    if (ev.code === 4001) { store.set('token', ''); store.set('devid', ''); token = ''; showPair('Se ha retirado el acceso de este dispositivo. Pídelo de nuevo.'); return; }
+    if (ev.code === 4001 || ev.code === 4002) {
+      store.set('token', ''); store.set('devid', ''); token = ''; viaCookie = false;
+      showPair(ev.code === 4002 ? 'Tu acceso ha caducado. Pídelo de nuevo.' : 'No tienes acceso (o te lo han retirado). Pídelo de nuevo.'); return;
+    }
     t1.textContent = 'Reconectando…'; t2.textContent = '';
     setTimeout(connect, Math.min(2000, 250 * ++tries));
   };
@@ -549,7 +600,7 @@ shade.addEventListener('pointerdown', e => { e.preventDefault(); closeSheet(); }
 document.addEventListener('click', e => {
   const b = e.target.closest('[data-click]'); if (!b) return;
   buzz(7);
-  ({ kb: () => openSheet('kbS'), go: () => openSheet('goS'), ag: () => openSheet('agS'), sp: spButton, more: () => { refreshSet(); refreshDevs(); idleLoad(); openSheet('setS'); } })[b.dataset.a]();
+  ({ kb: () => openSheet('kbS'), go: () => openSheet('goS'), ag: () => openSheet('agS'), sp: spButton, more: () => { refreshSet(); if (ME && ME.role === 'admin') { refreshDevs(); idleLoad(); } openSheet('setS'); } })[b.dataset.a]();
 });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet && document.activeElement !== kin) closeSheet(); });
 const vv = window.visualViewport;
@@ -755,18 +806,42 @@ function spRenderDetail(box) {
 }
 /* emparejar: el código sale en la tele; con él este dispositivo recibe su propio acceso */
 const pairV = $('#pairV'), p1 = $('#p1'), p2 = $('#p2'), pCode = $('#pCode'), pMsg = $('#pMsg');
-const P_HELP = 'Pide acceso y escribe el código que aparecerá en la tele.';
+const P_HELP = 'Pide acceso al administrador o escribe el código que aparecerá en la tele.';
 let pid = null;
 const uaName = () => { const u = navigator.userAgent; return /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) ? 'iPad' : /Android/.test(u) ? (/Mobile/.test(u) ? 'Móvil Android' : 'Tablet Android') : /Mac/.test(u) ? 'Mac' : /Windows/.test(u) ? 'Windows' : 'Navegador'; };
 const pSay = (t, err) => { pMsg.textContent = t; pMsg.className = err ? 'err' : ''; };
 async function post(u, b) { try { return await (await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).json(); } catch { return { error: 'No hay conexión con el mando' }; } }
+let askT = 0;
 function showPair(msg) {
-  closeSheetSafe(); pairV.hidden = false; p1.hidden = false; p2.hidden = true; pid = null;
+  closeSheetSafe(); pairV.hidden = false; p1.hidden = false; p2.hidden = true; $('#p3').hidden = true; pid = null; clearTimeout(askT);
+  post('/pair/info', {}).then(r => { $('#pAsk').hidden = !r.adminOnline; $('#pGo').className = r.adminOnline ? 'bt' : 'bt big'; });
   $('#pName').placeholder = 'Tu nombre (' + uaName() + ')'; $('#pName').value = store.get('pname', '');
   pSay(msg || P_HELP);
   t1.textContent = 'Sin acceso'; t2.textContent = '';
 }
 function closeSheetSafe() { try { if (sheet) closeSheet(); } catch {} }
+function paired(r) {
+  token = r.token; store.set('token', token); store.set('devid', r.id); addManifest();
+  pairV.hidden = true; tries = 0; connect();
+}
+async function pairAskGo() {
+  const typed = $('#pName').value.trim(); store.set('pname', typed);
+  const r = await post('/pair/start', { name: typed || uaName(), mode: 'ask' });
+  if (r.error) { if (r.noAdmin) $('#pAsk').hidden = true; return pSay(r.error, true); }
+  pid = r.pid; p1.hidden = true; $('#p3').hidden = false; pSay('Esperando a que el administrador acepte en su móvil…');
+  const t0 = Date.now();
+  const poll = async () => {
+    if (pid !== r.pid) return;
+    const q = await post('/pair/poll', { pid });
+    if (q.token) return paired(q);
+    if (q.denied) return showPair('El administrador no ha aceptado. Puedes usar el código de la tele.');
+    if (q.dead || Date.now() - t0 > 125000) return showPair('No ha habido respuesta. Prueba otra vez o usa el código de la tele.');
+    askT = setTimeout(poll, 1500);
+  };
+  askT = setTimeout(poll, 1200);
+}
+$('#pAsk').addEventListener('click', pairAskGo);
+$('#pCancel').addEventListener('click', () => showPair());
 async function pairGo() {
   const typed = $('#pName').value.trim(); store.set('pname', typed);
   pSay('Pidiendo código…');
@@ -781,10 +856,7 @@ pCode.addEventListener('input', async () => {
   pCode.value = pCode.value.replace(/\D/g, '').slice(0, 4);
   if (pCode.value.length < 4) return;
   const r = await post('/pair/confirm', { pid, code: pCode.value });
-  if (r.token) {
-    token = r.token; store.set('token', token); store.set('devid', r.id); addManifest();
-    pairV.hidden = true; tries = 0; connect(); return;
-  }
+  if (r.token) return paired(r);
   pCode.value = '';
   if (r.dead || /caducado/.test(r.error || '')) return showPair(r.error);
   pSay(r.error || 'Error', true);
@@ -792,22 +864,94 @@ pCode.addEventListener('input', async () => {
 
 /* dispositivos con acceso (ajustes) */
 const ago = ms => { const s = (Date.now() - ms) / 1000; return s < 90 ? 'ahora' : s < 5400 ? 'hace ' + Math.round(s / 60) + ' min' : s < 129600 ? 'hace ' + Math.round(s / 3600) + ' h' : 'hace ' + Math.round(s / 86400) + ' d'; };
+const ROLE_N = { admin: 'Admin', member: 'Miembro', guest: 'Invitado' };
+const left = ms => { const h = (ms - Date.now()) / 3600e3; return h <= 0 ? 'caducado' : h < 1 ? 'caduca en ' + Math.max(1, Math.round(h * 60)) + ' min' : h < 48 ? 'caduca en ' + Math.round(h) + ' h' : 'caduca en ' + Math.round(h / 24) + ' d'; };
+let ME = null, ACC = null, acWho = 'guest';
 async function refreshDevs() {
-  const r = await rpc({ t: 'devices' }); const box = $('#devs'); box.textContent = '';
-  const me = store.get('devid', '');
+  if (!ME || ME.role !== 'admin') return;
+  const r = await rpc({ t: 'devices' }); paintDevs(r);
+}
+function paintDevs(r) {
+  if (r.access) { ACC = r.access; paintAccess(); }
+  const box = $('#devs'); box.textContent = '';
   for (const d of r.devices || []) {
     const row = document.createElement('div'); row.className = 'fld';
-    const sp = document.createElement('span'); sp.textContent = d.name + (d.id === me ? ' (este)' : '');
-    const sm = document.createElement('small'); sm.textContent = 'Último uso ' + ago(d.seen); sp.appendChild(sm);
+    const sp = document.createElement('span'); sp.textContent = d.name + (d.id === ME.id ? ' (este)' : '');
+    const ch = document.createElement('span'); ch.className = 'chip ' + d.role; ch.textContent = ROLE_N[d.role] || d.role; sp.appendChild(ch);
+    if (d.online) { const on = document.createElement('span'); on.className = 'chip on'; on.textContent = '● conectado'; sp.appendChild(on); }
+    const sm = document.createElement('small'); sm.textContent = 'Último uso ' + ago(d.seen) + (d.expires ? ' · ' + left(d.expires) : ''); sp.appendChild(sm);
+    const bx = document.createElement('div'); bx.className = 'dvb';
+    const sel = document.createElement('select'); sel.className = 'sel'; sel.setAttribute('aria-label', 'Rol de ' + d.name);
+    for (const k of ['admin', 'member', 'guest']) sel.add(new Option(ROLE_N[k], k, false, k === d.role));
+    sel.addEventListener('change', async () => { const q = await rpc({ t: 'role', dev: d.id, role: sel.value }); if (q.error) pill(q.error); paintDevs(q.devices ? q : await rpc({ t: 'devices' })); });
+    bx.appendChild(sel);
+    if (d.role === 'guest') { const x = document.createElement('button'); x.className = 'bt dv'; x.textContent = '+' + (ACC && ACC.guestHours || 24) + ' h'; x.addEventListener('click', async () => { buzz(8); paintDevs(await rpc({ t: 'extend', dev: d.id })); }); bx.appendChild(x); }
     const b = document.createElement('button'); b.className = 'bt dv'; b.textContent = 'Quitar';
     b.addEventListener('click', async () => {
       if (!b.classList.contains('sure')) { b.classList.add('sure'); b.textContent = '¿Seguro?'; setTimeout(() => { b.classList.remove('sure'); b.textContent = 'Quitar'; }, 3000); return; }
       await rpc({ t: 'revoke', dev: d.id }); refreshDevs();
     });
-    row.append(sp, b); box.appendChild(row);
+    bx.appendChild(b);
+    row.append(sp, bx); box.appendChild(row);
   }
-  if (!(r.devices || []).length) { const e = document.createElement('div'); e.className = 'foot'; e.style.textAlign = 'left'; e.textContent = 'Ninguno todavía: este dispositivo entra con el enlace de acceso.'; box.appendChild(e); }
+  if (!(r.devices || []).length) { const e = document.createElement('div'); e.className = 'foot'; e.style.textAlign = 'left'; e.textContent = 'Nadie más todavía.'; box.appendChild(e); }
+  $('#kickG').hidden = !(r.devices || []).some(d => d.role === 'guest');
 }
+$('#kickG').addEventListener('click', async () => {
+  const b = $('#kickG');
+  if (!b.classList.contains('sure')) { b.classList.add('sure'); b.textContent = '¿Quitar a todos los invitados?'; setTimeout(() => { b.classList.remove('sure'); b.textContent = 'Quitar a todos los invitados'; }, 3000); return; }
+  b.classList.remove('sure'); b.textContent = 'Quitar a todos los invitados'; paintDevs(await rpc({ t: 'kickguests' }));
+});
+/* qué pueden hacer invitados y miembros */
+function paintAccess() {
+  if (!ACC) return;
+  const P = ACC[acWho];
+  $('#acWho').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.w === acWho));
+  $('#acHrs').hidden = acWho !== 'guest'; $('#acHours').value = String(ACC.guestHours);
+  $('#acWeb').setAttribute('aria-pressed', !!P.web); $('#acLib').setAttribute('aria-pressed', !!P.library); $('#acStage').setAttribute('aria-pressed', !!P.stage);
+  $('#acAgent').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === P.agent));
+  $('#acMusic').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === P.music));
+  $('#acVol').value = P.volMax; $('#acVolV').textContent = P.volMax + ' %';
+}
+let acT = 0;
+function accSave() { clearTimeout(acT); acT = setTimeout(async () => { const r = await rpc({ t: 'access', op: 'set', cfg: ACC }); if (r.access) { ACC = r.access; paintAccess(); } }, 250); }
+const acSet = (k, v) => { if (!ACC) return; ACC[acWho][k] = v; paintAccess(); accSave(); };
+$('#acWho').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; buzz(7); acWho = b.dataset.w; paintAccess(); });
+$('#acHours').addEventListener('change', e => { if (!ACC) return; ACC.guestHours = +e.target.value; accSave(); });
+$('#acWeb').addEventListener('click', () => acSet('web', !ACC[acWho].web));
+$('#acLib').addEventListener('click', () => acSet('library', !ACC[acWho].library));
+$('#acStage').addEventListener('click', () => acSet('stage', !ACC[acWho].stage));
+$('#acAgent').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { buzz(7); acSet('agent', b.dataset.v); } });
+$('#acMusic').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { buzz(7); acSet('music', b.dataset.v); } });
+$('#acVol').addEventListener('input', e => { $('#acVolV').textContent = e.target.value + ' %'; });
+$('#acVol').addEventListener('change', e => acSet('volMax', +e.target.value));
+/* el mando se adapta a lo que puede hacer cada uno */
+function applyMe(j) {
+  ME = j; const P = j.perms || {};
+  if (j.id) store.set('devid', j.id);
+  const hide = (sel, h) => document.querySelectorAll(sel).forEach(e => { if (h) e.setAttribute('data-hide', ''); else e.removeAttribute('data-hide'); });
+  hide('[data-a=go],[data-url]', !P.web);
+  hide('[data-a=ag]', P.agent === 'off');
+  $('#admBox').hidden = j.role !== 'admin';
+  hide('#spTabs [data-tab=playlists],#spTabs [data-tab=recent]', !P.library);
+  if (!P.library && spTab !== 'queue') { spTab = 'queue'; if (spOpen()) spLoadTab(); }
+  hide('#spLike', !P.library);
+  hide('#spin', P.music === 'off');
+  $('#spin').placeholder = P.music === 'queue' ? 'Pide una canción (va a la cola)…' : 'Busca y reproduce: artista, canción…';
+  const mb = $('#meBox'); mb.textContent = '';
+  const b = document.createElement('b'); b.textContent = j.name; mb.append('Estás como ', b, ' · ' + (ROLE_N[j.role] || j.role) + (j.expires ? ' · ' + left(j.expires) : ''));
+  if (j.role === 'admin' && $('#setS').classList.contains('on')) refreshDevs();
+}
+/* peticiones de acceso que llegan al administrador */
+let reqPid = null;
+function showReq(j) { reqPid = j.pid; $('#reqName').textContent = j.name; $('#req').hidden = false; buzz(30); }
+function hideReq(pid) { if (!pid || pid === reqPid) { $('#req').hidden = true; reqPid = null; } }
+$('#req').addEventListener('click', async e => {
+  const b = e.target.closest('[data-r]'); if (!b || !reqPid) return; buzz(10);
+  const r = await rpc({ t: 'pairanswer', pid: reqPid, ok: b.dataset.r !== 'no', role: b.dataset.r });
+  if (r.error) pill(r.error); else pill(b.dataset.r === 'no' ? 'Rechazado' : 'Acceso concedido');
+  hideReq(); if ($('#setS').classList.contains('on')) refreshDevs();
+});
 
 /* ── ajustes ── */
 function refreshSet() {
