@@ -303,6 +303,12 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
       <input class="in" id="pName" placeholder="Tu nombre (opcional)" maxlength="24" autocomplete="given-name" autocapitalize="words" enterkeyhint="go">
       <button class="bt big" id="pAsk" hidden>Pedir acceso al administrador</button>
       <button class="bt" id="pGo">Mostrar un código en la tele</button>
+      <button class="bt ghost" id="pAdm">Tengo un código de administrador</button>
+    </div>
+    <div id="p4" class="pc" hidden>
+      <input class="in" id="pAdmC" placeholder="XXXXX-XXXXX" maxlength="11" autocomplete="one-time-code" autocapitalize="characters" spellcheck="false" enterkeyhint="go" aria-label="Código de administrador">
+      <button class="bt big" id="pAdmGo">Entrar como administrador</button>
+      <button class="bt ghost" id="pAdmBack">Cancelar</button>
     </div>
     <div id="p3" class="pc" hidden>
       <div class="spin2"></div>
@@ -369,6 +375,8 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
   <div class="fld"><span>Vibración al tocar</span><button class="sw" id="swHap" aria-pressed="true" aria-label="Vibración"></button></div>
   <div class="fld" id="fsRow"><span>Mando a pantalla completa</span><button class="sw" id="swFs" aria-pressed="false" aria-label="Pantalla completa"></button></div>
   <div class="me" id="meBox"></div>
+  <div class="fld" id="clBox" hidden><span>¿Eres el administrador?<small>Escribe el código que te ha dado el agente o otro admin</small></span>
+    <div class="tms"><input class="in" id="clCode" placeholder="XXXXX-XXXXX" maxlength="11" autocapitalize="characters" spellcheck="false" aria-label="Código de administrador"><button class="bt dv" id="clGo" type="button">Canjear</button></div></div>
   <div id="admBox" hidden>
   <div class="sh">Pantalla en reposo</div>
   <div class="fld" style="border-top:0"><div class="seg" id="idMode">
@@ -387,6 +395,8 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
   <div class="sh">Personas con acceso</div>
   <div id="devs"></div>
   <div class="acts" style="grid-template-columns:1fr;margin:8px 0 6px"><button class="bt" id="kickG" type="button">Quitar a todos los invitados</button></div>
+  <div class="acts" style="grid-template-columns:1fr;margin:0 0 6px"><button class="bt" id="alGo" type="button">Hacer administrador a otro dispositivo</button></div>
+  <div class="foot" id="alBox" style="text-align:left;margin-bottom:10px" hidden></div>
   <div class="foot" style="margin-top:2px;text-align:left">Para invitar a alguien: que abra esta misma dirección. Puede pedirte acceso a ti (te llega aquí) o escribir el código que verá en la tele.</div>
   <div class="sh">Qué pueden hacer</div>
   <div class="fld" style="border-top:0"><div class="seg" id="acWho"><button data-w="guest" aria-pressed="true">Invitados</button><button data-w="member" aria-pressed="false">Miembros</button></div></div>
@@ -410,16 +420,34 @@ const store = {
   set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
 };
 
-/* ── acceso: el token viaja en la URL (?t=…) y se recuerda ── */
-let token = new URLSearchParams(location.search).get('t') || store.get('token', '');
+/* ── acceso: cada dispositivo tiene su propio token (se recuerda aquí y en una cookie). El maestro no se guarda nunca. ── */
+const qs = new URLSearchParams(location.search);
+let token = qs.get('t') || store.get('token', '');
+const adminCode = (/[#&]admin=([0-9A-Za-z-]{6,24})/.exec(location.hash) || [])[1] || '';
+if (qs.has('t') || adminCode) { qs.delete('t'); const q = qs.toString(); history.replaceState(null, '', location.pathname + (q ? '?' + q : '')); }
 function addManifest() {
   if (!token || document.querySelector('link[rel=manifest]')) return;
   const m = document.createElement('link'); m.rel = 'manifest'; m.href = '/manifest.webmanifest?t=' + encodeURIComponent(token);
   document.head.appendChild(m);
 }
-if (token) { store.set('token', token); addManifest(); }
-// renueva la cookie de respaldo (por si el navegador borra su almacenamiento)
-if (token) fetch('/pair/me', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ t: token }) }).catch(() => {});
+function useToken(r) { token = r.token; store.set('token', token); store.set('devid', r.id); addManifest(); }
+let pairNote = '';
+async function settle() { // antes de conectar: canjea el código de admin o el token maestro y renueva la cookie
+  if (adminCode) {
+    const r = await post('/pair/admin', { code: adminCode, name: store.get('pname', '') || uaName(), cur: token });
+    if (r.token) { useToken(r); setTimeout(() => pill('Ya eres administrador'), 600); return; }
+    pairNote = r.error || 'No se pudo usar el enlace de administrador';
+  }
+  if (!token) return;
+  const r = await post('/pair/me', { t: token });
+  if (r.master) { // enlace maestro (o guardado por una versión anterior): se cambia por un dispositivo admin propio
+    const master = token; store.set('token', ''); token = '';
+    const q = await post('/pair/admin', { t: master, name: store.get('pname', '') || uaName() });
+    if (q.token) useToken(q);
+    return;
+  }
+  if (r.ok) { store.set('token', token); addManifest(); }
+}
 
 const cfg = Object.assign({ speed: 1.6, scroll: 1, natural: true, haptic: true, theme: 'oscuro' }, store.get('cfg', {}));
 function applyTheme() {                                // el <head> ya lo pone antes de pintar; esto lo cambia en caliente
@@ -451,7 +479,8 @@ async function connect() {
   if (!token && !viaCookie) { // sin token guardado: quizá el navegador conserva la cookie de un emparejamiento anterior
     const r = await post('/pair/me', {});
     if (!r.ok) { showPair(); return; }
-    viaCookie = true;
+    if (r.master) { const q = await post('/pair/admin', { name: store.get('pname', '') || uaName() }); if (!q.token) { showPair(); return; } useToken(q); }
+    else viaCookie = true;
   }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws` + (token ? `?t=${encodeURIComponent(token)}` : ''));
@@ -831,15 +860,15 @@ const pSay = (t, err) => { pMsg.textContent = t; pMsg.className = err ? 'err' : 
 async function post(u, b) { try { return await (await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).json(); } catch { return { error: 'No hay conexión con el mando' }; } }
 let askT = 0;
 function showPair(msg) {
-  closeSheetSafe(); pairV.hidden = false; p1.hidden = false; p2.hidden = true; $('#p3').hidden = true; pid = null; clearTimeout(askT);
+  closeSheetSafe(); pairV.hidden = false; p1.hidden = false; p2.hidden = true; $('#p3').hidden = true; $('#p4').hidden = true; pid = null; clearTimeout(askT);
   post('/pair/info', {}).then(r => { $('#pAsk').hidden = !r.adminOnline; $('#pGo').className = r.adminOnline ? 'bt' : 'bt big'; });
   $('#pName').placeholder = 'Tu nombre (' + uaName() + ')'; $('#pName').value = store.get('pname', '');
-  pSay(msg || P_HELP);
+  pSay(msg || pairNote || P_HELP); pairNote = '';
   t1.textContent = 'Sin acceso'; t2.textContent = '';
 }
 function closeSheetSafe() { try { if (sheet) closeSheet(); } catch {} }
 function paired(r) {
-  token = r.token; store.set('token', token); store.set('devid', r.id); addManifest();
+  useToken(r);
   pairV.hidden = true; tries = 0; connect();
 }
 async function pairAskGo() {
@@ -868,6 +897,38 @@ async function pairGo() {
   pid = r.pid; p1.hidden = true; p2.hidden = false; pCode.value = ''; pSay('Mira la tele y escribe aquí el código de 4 cifras.'); pCode.focus();
 }
 $('#pGo').addEventListener('click', pairGo);
+/* código de administrador (de un solo uso): lo da el agente, `node remote/admin-link.js` o otro admin */
+async function adminGo(code, name) {
+  const r = await post('/pair/admin', { code, name, cur: token });
+  if (r.token) { useToken(r); return r; }
+  return r;
+}
+$('#pAdm').addEventListener('click', () => { p1.hidden = true; $('#p4').hidden = false; pSay('Escribe el código de administrador. Sirve una sola vez y caduca en 10 minutos.'); $('#pAdmC').value = ''; $('#pAdmC').focus(); });
+$('#pAdmBack').addEventListener('click', () => showPair());
+async function pAdmSend() {
+  const typed = $('#pName').value.trim(); store.set('pname', typed);
+  const r = await adminGo($('#pAdmC').value, typed || uaName());
+  if (r.token) { pairV.hidden = true; tries = 0; connect(); return; }
+  pSay(r.error || 'Error', true);
+}
+$('#pAdmGo').addEventListener('click', pAdmSend);
+$('#pAdmC').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pAdmSend(); } });
+$('#clGo').addEventListener('click', async () => {
+  const r = await adminGo($('#clCode').value, ME && ME.name);
+  if (!r.token) return pill(r.error || 'Error');
+  $('#clCode').value = ''; pill('Ya eres administrador');
+  if (ws) ws.close(); // reconecta con el token (el mismo si se ha ascendido este dispositivo)
+});
+$('#alGo').addEventListener('click', async () => {
+  buzz(8);
+  const r = await rpc({ t: 'adminlink' });
+  const box = $('#alBox'); box.hidden = false;
+  if (r.error) { box.textContent = r.error; return; }
+  box.textContent = '';
+  const b = document.createElement('b'); b.textContent = r.code;
+  box.append('Código ', b, ` · caduca en ${r.minutes} min y sirve una vez. Ábrelo en el otro dispositivo o escribe el código en «Tengo un código de administrador».`);
+  try { if (navigator.share) await navigator.share({ title: 'Mando del salón (admin)', url: r.url }); else { await navigator.clipboard.writeText(r.url); pill('Enlace copiado'); } } catch {}
+});
 $('#pName').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pairGo(); } });
 $('#pBack').addEventListener('click', () => showPair());
 pCode.addEventListener('input', async () => {
@@ -951,6 +1012,7 @@ function applyMe(j) {
   hide('[data-a=go],[data-url]', !P.web);
   hide('[data-a=ag]', P.agent === 'off');
   $('#admBox').hidden = j.role !== 'admin';
+  $('#clBox').hidden = j.role === 'admin';
   hide('#spTabs [data-tab=playlists],#spTabs [data-tab=recent]', !P.library);
   if (!P.library && spTab !== 'queue') { spTab = 'queue'; if (spOpen()) spLoadTab(); }
   hide('#spLike', !P.library);
@@ -1025,7 +1087,7 @@ $('#idDim').addEventListener('change', e => { if (icfg) { icfg.dimMin = +e.targe
 $('#idMus').addEventListener('click', () => { if (!icfg) return; icfg.music = !icfg.music; idlePaint(); idleSave(); });
 $('#idShow').addEventListener('click', () => { buzz(7); cmd({ t: 'idle', op: 'show' }); closeSheet(); });
 
-connect();
+settle().finally(connect);
 </script>
 </body>
 </html>

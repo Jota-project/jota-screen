@@ -173,6 +173,12 @@ tool('tv_idle',
   { op: z.enum(['show', 'get', 'set']), cfg: z.record(z.any()).optional() },
   async ({ op, cfg }) => out(await cmd({ t: 'idle', op, cfg })));
 
+tool('tv_admin_link',
+  'Create a one-time admin link for the TV remote (expires in 10 minutes). Opening it on a phone (or typing the code in the remote: ' +
+  '"Tengo un código de administrador") makes that device an admin with its own revocable token, without ever exposing the master token. ' +
+  'Only give it to the owner (Sito), never to guests.', {},
+  async () => { const j = await cmd({ t: 'adminlink' }); return out(j, j.error ? '' : `Link (one use, expires in ${j.minutes} min): ${j.url}\nCode: ${j.code}`); });
+
 tool('tv_events', 'Read events sent from the stage page (ticked tasks, slide changes, custom tv.emit). Pass the last value as `since` to get only new ones.',
   { since: z.number().int().optional() },
   async ({ since }) => out(await api('GET', '/api/events?since=' + (since || 0))));

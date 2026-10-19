@@ -95,8 +95,7 @@ function newDevice(name, role) {
 }
 function okToken(t) {
   if (typeof t !== 'string' || t.length > 128) return false;
-  const b = Buffer.from(t);
-  if (b.length === TOKEN_BUF.length && crypto.timingSafeEqual(b, TOKEN_BUF)) return true;
+  if (isMaster(t)) return true;
   const d = tokenDev(t);
   if (!d) return false;
   if (Date.now() - d.seen > 3_600_000) { d.seen = Date.now(); devSave(); }
@@ -198,7 +197,7 @@ async function pairStart(ip, nameIn, mode) {
   pairClean();
   if (Date.now() - (pairLast.get(ip) || 0) < 4000) return { error: 'Espera unos segundos' };
   if (pairs.size >= 4) return { error: 'Hay otras peticiones pendientes; prueba en un minuto' };
-  const name = String(nameIn || '').replace(/[^\p{L}\p{N} ._'-]/gu, '').trim().slice(0, 24) || 'Un dispositivo';
+  const name = cleanName(nameIn) || 'Un dispositivo';
   if (mode === 'ask') { const r = pairAsk(ip, name); if (!r.error) pairLast.set(ip, Date.now()); return r; }
   if (!cdp.ready || !cdp.session) return { error: 'La tele no está disponible ahora mismo' };
   pairLast.set(ip, Date.now());
@@ -220,6 +219,39 @@ function pairConfirm(pid, code) {
   pairs.delete(String(pid)); pairClean();
   return newDevice(p.name, 'guest');
 }
+
+// Enlace o código de admin: un solo uso, caduca en 10 min. Lo genera el token maestro (MCP, agente,
+// remote/admin-link.js) o un admin conectado. Así el token maestro no tiene que llegar nunca al móvil.
+const ADMIN_TTL = 10 * 60_000;
+// dirección canónica para los enlaces de admin (la del mando en casa). TV_PUBLIC_URL es otra cosa: la de Spotify, con https.
+const ADMIN_URL = (process.env.TV_ADMIN_URL || 'http://mando.local').replace(/\/+$/, '');
+const CODE_ABC = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // sin 0/O ni 1/I para poder teclearlo
+const adminCodes = new Map(); // sha(código) -> caducidad
+const codeNorm = c => String(c || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
+const cleanName = n => String(n || '').replace(/[^\p{L}\p{N} ._'-]/gu, '').trim().slice(0, 24);
+function adminLink() {
+  for (const [k, exp] of adminCodes) if (Date.now() > exp) adminCodes.delete(k);
+  if (adminCodes.size >= 8) return { error: 'Hay demasiados enlaces sin usar; espera unos minutos' };
+  let c = ''; for (const x of crypto.randomBytes(10)) c += CODE_ABC[x & 31];
+  const expires = Date.now() + ADMIN_TTL;
+  adminCodes.set(sha(c), expires);
+  const code = c.slice(0, 5) + '-' + c.slice(5);
+  return { ok: 1, code, url: ADMIN_URL + '/#admin=' + code, expires, minutes: ADMIN_TTL / 60_000 };
+}
+function adminClaim(code, name, cur) { // cur: token que ya tiene este navegador; si es de un dispositivo, se asciende ese
+  const h = sha(codeNorm(code)), exp = adminCodes.get(h);
+  if (!exp || Date.now() > exp) { adminCodes.delete(h); return { error: 'El código no vale o ha caducado. Pide otro.' }; }
+  adminCodes.delete(h);
+  return adminDevice(name, cur);
+}
+function adminDevice(name, cur) {
+  const d = tokenDev(cur);
+  if (!d) return newDevice(cleanName(name) || 'Admin', 'admin');
+  d.role = 'admin'; d.expires = null; devSave(); pushMe(d.id);
+  console.log('dispositivo ascendido a admin:', d.name);
+  return { token: cur, id: d.id, role: 'admin', expires: null };
+}
+const isMaster = t => { const b = Buffer.from(typeof t === 'string' ? t : ''); return b.length === TOKEN_BUF.length && crypto.timingSafeEqual(b, TOKEN_BUF); };
 
 // IP real del cliente cuando llega a través de un proxy local (nginx, tailscale serve)
 function clientIp(req) {
@@ -938,7 +970,7 @@ async function ask(text, ws, mode = 'full', who = '') {
 const NOPE = t => ({ error: t || 'No tienes permiso para esto' });
 function gate(m, P) {
   const t = m.t;
-  if (['devices', 'revoke', 'role', 'extend', 'rename', 'kickguests', 'access', 'pairanswer'].includes(t)) return P.admin ? m : NOPE('Solo el administrador');
+  if (['devices', 'revoke', 'role', 'extend', 'rename', 'kickguests', 'access', 'pairanswer', 'adminlink'].includes(t)) return P.admin ? m : NOPE('Solo el administrador');
   if (['present', 'show', 'stage', 'close', 'toast', 'activity'].includes(t)) return P.stage ? m : NOPE('Las presentaciones no están permitidas');
   if (t === 'shot') return P.admin ? m : NOPE();
   if (['nav', 'links', 'clicktext', 'click'].includes(t)) return P.web ? m : NOPE('Abrir webs no está permitido');
@@ -988,6 +1020,7 @@ async function run(m, ws, ctx = {}) {
       case 'rename': return renameDevice(String(m.dev || ''), m.name);
       case 'kickguests': return kickGuests();
       case 'pairanswer': return pairAnswer(m.pid, !!m.ok, m.role);
+      case 'adminlink': return adminLink();
       case 'access':
         if (m.op === 'set') {
           const c = m.cfg || {};
@@ -1096,8 +1129,18 @@ async function pairHttp(req, res, p, ip) {
   if (p === '/pair/me') { // ¿sigue valiendo este dispositivo? (token del navegador o cookie); renueva la cookie
     const t = (typeof b.t === 'string' && b.t) || cookieTok(req);
     if (!okToken(t)) return json(res, 200, { ok: false });
+    if (isMaster(t)) return json(res, 200, { ok: true, master: true }); // el maestro no se guarda nunca en el navegador
     const d = tokenDev(t);
-    return json(res, 200, { ok: true, role: d ? d.role : 'admin', name: d?.name || null, expires: d?.expires || null }, setCookie(t, d?.expires));
+    return json(res, 200, { ok: true, role: d.role, name: d.name, expires: d.expires || null }, setCookie(t, d.expires));
+  }
+  if (p === '/pair/admin') { // canjear un código de admin, o el token maestro, por un dispositivo admin propio
+    const cur = (typeof b.cur === 'string' && b.cur) || cookieTok(req);
+    let r;
+    if (isMaster(b.t) || (!b.code && isMaster(cur))) r = adminDevice(b.name, cur); // también el maestro que una versión anterior dejó en la cookie
+    else if (b.code) r = adminClaim(b.code, b.name, cur);
+    else r = { error: 'Falta el código' };
+    if (r.error) fail(ip);
+    return json(res, r.error ? 403 : 200, r, r.token ? setCookie(r.token, r.expires) : {});
   }
   send(res, 404, '');
 }
@@ -1120,10 +1163,10 @@ function handler(req, res) {
     return spCallback(url).then(() => page('Spotify conectado ✓', 'Ya puedes cerrar esta pestaña.'), e => page('No se pudo conectar', String(e.message).replace(/[<>&]/g, '')));
   }
 
-  // manifiesto dinámico: si llega el token, el acceso directo instalado lo conserva
+  // manifiesto dinámico: si llega el token de un dispositivo, el acceso directo instalado lo conserva (el maestro, nunca)
   if (p === '/manifest.webmanifest' && assets.has(p)) {
     const man = JSON.parse(assets.get(p).buf.toString());
-    const mt = url.searchParams.get('t'); if (okToken(mt)) man.start_url = '/?t=' + encodeURIComponent(mt);
+    const mt = url.searchParams.get('t'); if (tokenDev(mt)) man.start_url = '/?t=' + encodeURIComponent(mt);
     return send(res, 200, JSON.stringify(man), { 'Content-Type': TYPES['.webmanifest'], 'Cache-Control': 'no-store' });
   }
   // páginas HTML que el agente ha puesto en el escenario (solo las pide el Chrome de la tele)
