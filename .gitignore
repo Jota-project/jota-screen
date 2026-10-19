@@ -17,3 +17,6 @@ remote/access.json
 
 # worktrees de otras sesiones de Claude
 .claude/worktrees/
+
+# capturas del mando (e2e/mando-capturas.js)
+e2e/capturas-mando/

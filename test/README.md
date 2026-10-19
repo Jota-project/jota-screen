@@ -17,7 +17,7 @@ y emite eventos como si vinieran de la página. Así se prueban teclas, texto, n
 el aviso de foco, el escenario, los avisos, el agente, escribir en directo y la reconexión sin tele. `transport.test.js` cubre
 las rutas HTTP (CSP, métodos, tamaños, páginas del escenario solo para la tele) y los canales WebSocket. `spotify.test.js` arranca con estado inicial (`start({ files })`).
 
-Las capturas de la pantalla en reposo están en `e2e/` (Playwright). La CI (`.github/workflows/ci.yml`) lanza todo en cada push.
+Las capturas de la pantalla en reposo y del mando están en `e2e/` (Playwright). `e2e/mando-capturas.js` saca el mando en cada pantalla y hoja (oscuro y claro, admin, invitado y emparejar) y registra las órdenes que manda en un recorrido fijo; `e2e/mando-compara.py ANTES DESPUES` compara dos tandas píxel a píxel y las órdenes. La CI (`.github/workflows/ci.yml`) lanza todo en cada push.
 
 Cada caso que bloquea la IP (5 fallos = 429 durante un minuto) va en su propio servidor (`access.test.js`),
 porque todas las peticiones llegan desde 127.0.0.1.

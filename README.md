@@ -12,7 +12,7 @@ Antes se llamaba `tv-canvas`; el MCP, la skill y el plugin conservan ese nombre 
 | `plugin/tv-canvas/` | Plugin de Claude Code (skill + `.mcp.json`; su `mcp/server.js` es copia de `mcp/`, ver `scripts/sync-plugin.sh`) |
 | `systemd/` | Unidades de usuario (`tv-remote`, `tv-mdns`, `spotifyd`) y del kiosco (sistema) |
 | `scripts/` | `install.sh` (instala unidades), `sync-plugin.sh` |
-| `e2e/` | Capturas automáticas de la pantalla en reposo con datos de ejemplo (Playwright) |
+| `e2e/` | Capturas automáticas (Playwright) de la pantalla en reposo y del mando, con datos de ejemplo; `mando-compara.py` compara dos tandas del mando |
 | `kiosk-session.sh`, `home.html`, `mdns-alias.sh`, `cdp-*.js` | Sesión X del kiosco, portada, alias `mando.local`, utilidades CDP |
 
 Specs, decisiones, roadmap y notas viven en el vault de Obsidian (`Producto Jota/tv-canvas/`), no aquí:
