@@ -792,10 +792,14 @@ function kbFlush() {                                     // manda el estado del 
   rpc({ t: 'field', value: v, selStart: a, selEnd: b, seq }).then(r => {
     fAck = Math.max(fAck, seq);
     if (seq === fSeq && !r.stale && !r.skipped) { fErr = r.error || ''; fOk = r.error ? fOk : !r.none; }
+    if (r.ok && !r.skipped && (tvF.kind === 'text' || tvF.kind === 'search')) tvF = { ...tvF, value: v }; // al reabrir sale lo escrito (nunca una contraseña)
     kbPaint();
   });
 }
-function kbKey(k) { kbFlush(); cmd({ t: 'key', k }); buzz(8); } // lo escrito llega antes que la tecla
+function kbKey(k) {                                     // lo escrito llega antes que la tecla (el servidor la hace esperar)
+  kbFlush(); cmd({ t: 'key', k }); buzz(8);
+  if (k === 'Tab' || k === 'Enter' || k === 'Escape') fTyped = 0; // cambiar de campo desde aquí no es estar escribiendo: que se rellene
+}
 for (const e of [kbTa, kbPw]) {
   e.addEventListener('input', ev => { fTyped = Date.now(); kbPaint(); if (!ev.isComposing && !fComp) kbSched(); });
   e.addEventListener('compositionstart', () => { fComp = true; });

@@ -541,7 +541,10 @@ const cdp = {
 
   async activate(id) {
     if (this.targetId === id && this.session) return;
+    const old = this.session;
     this.targetId = id; this.session = null; focusSet(null);
+    // la sesión anterior se suelta: si no, sigue enganchada con sus scripts y mandando eventos
+    if (old) this.call('Target.detachFromTarget', { sessionId: old }, true).catch(() => {});
     try {
       const r = await this.call('Target.attachToTarget', { targetId: id, flatten: true }, true);
       if (this.targetId !== id) return;
@@ -602,7 +605,9 @@ function key(k) {
 }
 
 // escribir en directo: una sola aplicación en marcha; mientras, solo se guarda la más nueva (las intermedias sobran)
-const fieldQ = { busy: false, next: null };
+const fieldQ = { busy: false, next: null, idle: [] };
+// las teclas esperan a que se aplique lo escrito: un Intro o un Tab no se adelanta al texto
+const fieldDrain = () => fieldQ.busy || fieldQ.next ? new Promise(r => fieldQ.idle.push(r)) : null;
 let fieldN = Date.now(); // la página recuerda el último aplicado; así sigue creciendo aunque se reinicie el servidor
 function field(m, ws) {
   const seq = Number(m.seq) || 0;
@@ -622,9 +627,12 @@ async function fieldRun() {
     const j = fieldQ.next; fieldQ.next = null;
     let r;
     try { r = await fieldApply({ ...j.o, seq: ++fieldN }); } catch (e) { r = { error: e.message }; }
+    // el foco guardado lleva el valor al día (sin empujarlo): quien abra el teclado después ve lo escrito
+    if (r.ok && (tvFocus.kind === 'text' || tvFocus.kind === 'search')) tvFocus = { ...tvFocus, value: j.o.value };
     j.res({ ...r, seq: j.seq });
   }
   fieldQ.busy = false;
+  for (const r of fieldQ.idle.splice(0)) r();
 }
 async function fieldApply(o) {
   const r = await cdp.call('Runtime.evaluate', { expression: `(${fieldInPage})(${JSON.stringify(o)})`, returnByValue: true });
@@ -1204,10 +1212,13 @@ async function run(m, ws, ctx = {}) {
         return { ok: 1 };
       case 'idle': return await idle.run(m);
       case 'activity': return idle.activity(m);
-      case 'key': return key(String(m.k));
+      case 'key': { const w = fieldDrain(); if (w) await w; return key(String(m.k)); }
       case 'text': cdp.fire('Input.insertText', { text: String(m.v ?? '').slice(0, 2000) }); return { ok: 1 };
       case 'field': return await field(m, ws);
-      case 'focus': if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(tvFocus)); return tvFocus; // el mando lo pide al abrir el teclado
+      case 'focus': // el mando lo pide al abrir el teclado: va lo guardado y, si la web ha cambiado el campo, llega otro aviso
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(tvFocus));
+        cdp.call('Runtime.evaluate', { expression: `(${focusWatch})()` }).catch(() => {});
+        return tvFocus;
       case 'nav': return await nav(m.url);
       case 'home': return await nav(HOME_URL);
       case 'back': return await hist(-1);
