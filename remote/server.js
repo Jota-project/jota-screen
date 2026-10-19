@@ -795,8 +795,12 @@ async function spAccess() {
   if (!sp.access || Date.now() > sp.expires) await spToken({ grant_type: 'refresh_token', refresh_token: sp.refresh });
   return sp.access;
 }
-// Spotify limita las peticiones (429): hasta que pase su Retry-After no se le pide nada, para no alargar el bloqueo
-let spWait = 0;
+// Spotify limita las peticiones (429): hasta que pase su Retry-After no se le pide nada, para no alargar el bloqueo.
+// La espera se guarda en spotify.json (waitUntil): si el servidor se reinicia, no vuelve a preguntar antes de tiempo
+// (cada pregunta durante el castigo lo renovaba otra hora).
+let spWait = Number(sp.waitUntil) > Date.now() ? Number(sp.waitUntil) : 0;
+if (spWait) log.info(`spotify: sigo esperando ${Math.ceil((spWait - Date.now()) / 1000)} s por el límite de antes del reinicio`);
+else if (sp.waitUntil) { delete sp.waitUntil; spSave(); }
 // contador de peticiones reales a la Web API: con TV_DEBUG, una línea por minuto; sin él, solo si pasan de 30/min
 const spCount = { n: 0, by: {} };
 const spCounted = (method, p, status) => {
@@ -823,9 +827,11 @@ async function spApi(method, p, body) {
   if (r.status === 429) {
     const ra = Number(r.headers.get('retry-after'));                  // segundos; sin cabecera, 30 s
     spWait = Date.now() + Math.min(Number.isFinite(ra) && ra > 0 ? ra : 30, 3600) * 1000;
+    sp.waitUntil = spWait; spSave();
     log.info(`spotify: límite de peticiones, espero ${Math.ceil((spWait - Date.now()) / 1000)} s`);
     throw spWaitErr();
   }
+  if (sp.waitUntil) { delete sp.waitUntil; spSave(); }               // ya responde: fuera la espera guardada
   if (r.status === 204 || r.status === 202) return {};
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error?.message || 'Spotify ' + r.status);

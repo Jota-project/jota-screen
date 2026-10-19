@@ -25,12 +25,13 @@ function copyRemote(dst) {
   fs.symlinkSync(path.join(REMOTE, 'node_modules'), path.join(dst, 'node_modules'), 'dir');
 }
 
-async function start() {
+async function start({ files = {} } = {}) { // files: estado inicial, { 'spotify.json': {...} }
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-test-'));
   const root = path.join(tmp, 'remote');
   copyRemote(root);
   const token = crypto.randomBytes(16).toString('hex');
   fs.writeFileSync(path.join(root, 'token'), token + '\n', { mode: 0o600 });
+  for (const [f, v] of Object.entries(files)) fs.writeFileSync(path.join(root, f), JSON.stringify(v), { mode: 0o600 });
   const port = await freePort();
   const out = [];
   const proc = spawn(process.execPath, ['server.js'], {
