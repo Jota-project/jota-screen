@@ -8,6 +8,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { WebSocketServer, WebSocket } = require('ws');
 const { writeJson } = require('./src/core/json-store');
+const { islandSource } = require('./src/tv/tokens');
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const MODES = ['auto', 'day', 'evening', 'night', 'cinema'];
@@ -186,7 +187,8 @@ module.exports = function createIdle(o) {
   }
 
   // ───────── difusión: a la página de reposo (WS) y, sobre cualquier otra página, la isla inyectada por CDP
-  const islandSrc = () => { try { return fs.readFileSync(path.join(PUB, 'tv-island.js'), 'utf8'); } catch { return ''; } };
+  // los tokens de shared/tokens-tv.css van delante como texto: la isla no puede cargar CSS nuestro dentro de una web ajena
+  const islandSrc = () => { try { return islandSource(PUB); } catch (e) { log('isla: ' + e.message); return ''; } };
   let overlayOn = false;
   function payload() {
     return JSON.stringify({ t: 'idle', now: Date.now(), profile, cfg: { city: cfg.city, dimMin: cfg.dimMin, mode: cfg.mode, music: cfg.music, layout: cfg.layout, rearrangeMin: cfg.rearrangeMin, calm: cfg.calm }, weather, music, acts: actList() });

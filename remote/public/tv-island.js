@@ -1,43 +1,46 @@
 // «Isla» de Live Activities: píldora negra arriba en el centro que se expande cuando algo cambia.
 // Funciona en el reposo y, inyectada por CDP, encima de cualquier web (también a pantalla completa).
 // Solo usa createElement/textContent (algunas webs, como YouTube, prohíben innerHTML con Trusted Types).
+// Los colores y medidas son los tokens de Jota Dusk (public/shared/tokens-tv.css): el servidor los antepone como texto en
+// __TV_TOKENS (src/tv/tokens.js) y aquí van en :host, dentro del shadow DOM, sin pedir nada a la red desde la web ajena.
 (function () {
-  if (window.TVIsland) return;
+  if (window.TVIsland) return; // ya inyectada en esta página: solo se vuelve a llamar a render()
+  const TOK = typeof __TV_TOKENS === 'string' ? __TV_TOKENS : '';
   const CSS = `
-:host{all:initial}
+:host{all:initial;${TOK}}
 .row{position:fixed;top:40px;left:50%;transform:translateX(-50%);display:flex;align-items:flex-start;gap:10px;
-  font-family:"Inter","SF Pro Display",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:#fff;
-  -webkit-font-smoothing:antialiased;font-feature-settings:"tnum" 1;transition:opacity .8s;color:#ddd6d0}
-.pill{position:relative;background:#1d1825;border-radius:30px;height:60px;min-width:260px;max-width:360px;padding:0 14px 0 10px;
-  display:flex;align-items:center;gap:14px;overflow:hidden;box-shadow:0 0 0 1px rgba(246,243,240,.08),0 12px 40px rgba(0,0,0,.45);
-  transition:height .55s cubic-bezier(.32,.72,0,1),max-width .55s cubic-bezier(.32,.72,0,1),min-width .55s cubic-bezier(.32,.72,0,1),
-  border-radius .55s cubic-bezier(.32,.72,0,1),padding .55s cubic-bezier(.32,.72,0,1);will-change:height,max-width}
+  font-family:var(--tv-sans);
+  -webkit-font-smoothing:antialiased;font-feature-settings:"tnum" 1;transition:opacity .8s;color:var(--tv-text)}
+.pill{position:relative;background:var(--tv-surface);border-radius:30px;height:60px;min-width:260px;max-width:360px;padding:0 14px 0 10px;
+  display:flex;align-items:center;gap:14px;overflow:hidden;box-shadow:var(--tv-shadow-float);
+  transition:height .55s var(--tv-ease),max-width .55s var(--tv-ease),min-width .55s var(--tv-ease),
+  border-radius .55s var(--tv-ease),padding .55s var(--tv-ease);will-change:height,max-width}
 .pill.exp{height:120px;min-width:720px;max-width:780px;border-radius:60px;padding:0 32px 0 22px;gap:20px}
 .ic{flex:none;width:42px;height:42px;border-radius:50%;display:grid;place-items:center;font-size:24px;line-height:1;
-  background:color-mix(in srgb,var(--a) 22%,transparent);transition:width .55s cubic-bezier(.32,.72,0,1),height .55s cubic-bezier(.32,.72,0,1),font-size .55s}
+  background:color-mix(in srgb,var(--a) 22%,transparent);transition:width .55s var(--tv-ease),height .55s var(--tv-ease),font-size .55s}
 .exp .ic{width:76px;height:76px;font-size:38px}
 .tx{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
 .t{font-size:24px;font-weight:500;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:font-size .55s}
 .exp .t{font-size:30px}
-.s{font-size:0;opacity:0;color:#bab2c4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:opacity .4s,font-size .55s}
+.s{font-size:0;opacity:0;color:var(--tv-text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:opacity .4s,font-size .55s}
 .exp .s{font-size:26px;opacity:1;margin-top:4px}
-.v{flex:none;font-family:"Fraunces",Georgia,serif;font-size:28px;font-weight:400;color:var(--a);letter-spacing:-.01em;display:flex;align-items:center;gap:8px;transition:font-size .55s}
+.v{flex:none;font-family:var(--tv-serif);font-size:28px;font-weight:400;color:var(--a);letter-spacing:-.01em;display:flex;align-items:center;gap:8px;transition:font-size .55s}
 .exp .v{font-size:48px;font-weight:380}
 .ring{width:32px;height:32px;transform:rotate(-90deg);transition:width .55s,height .55s}
 .exp .ring{width:52px;height:52px}
 .ring circle{fill:none;stroke-width:3.2}
-.ring .bg{stroke:rgba(246,243,240,.14)}.ring .fg{stroke:var(--a);stroke-linecap:round;transition:stroke-dashoffset .9s linear}
-.bar{position:absolute;left:18px;right:18px;bottom:10px;height:3px;border-radius:3px;background:rgba(246,243,240,.12);opacity:0;transition:opacity .4s}
+.ring .bg{stroke:rgba(246,243,240,.14)}.ring .fg{stroke:var(--a);stroke-linecap:round;transition:stroke-dashoffset calc(var(--tv-tick) * .9) linear}
+.bar{position:absolute;left:18px;right:18px;bottom:10px;height:3px;border-radius:var(--tv-track-radius);background:var(--tv-track-2);opacity:0;transition:opacity .4s}
 .exp .bar.on{opacity:1}
-.bar i{display:block;height:100%;width:0;border-radius:3px;background:var(--a);transition:width .9s linear}
-.done .ic{animation:pulse 1.6s ease-in-out 3}
-.done .v{animation:blink 1.6s ease-in-out 3}
+.bar i{display:block;height:100%;width:0;border-radius:var(--tv-track-radius);background:var(--a);transition:width calc(var(--tv-tick) * .9) linear}
+.done .ic{animation:pulse var(--tv-pulse) ease-in-out 3}
+.done .v{animation:blink var(--tv-pulse) ease-in-out 3}
 @keyframes pulse{0%,100%{box-shadow:0 0 0 0 color-mix(in srgb,var(--a) 50%,transparent)}50%{box-shadow:0 0 0 10px transparent}}
 @keyframes blink{50%{opacity:.55}}
-.mini{width:60px;height:60px;border-radius:50%;background:#1d1825;display:grid;place-items:center;font-size:24px;position:relative;
-  box-shadow:0 0 0 1px rgba(246,243,240,.08),0 12px 40px rgba(0,0,0,.45)}
+.mini{width:60px;height:60px;border-radius:50%;background:var(--tv-surface);display:grid;place-items:center;font-size:24px;position:relative;
+  box-shadow:var(--tv-shadow-float)}
 .mini svg{position:absolute;inset:4px;width:52px;height:52px;transform:rotate(-90deg)}
-.in{animation:in .6s cubic-bezier(.32,.72,0,1) both}
+.in{animation:in .6s var(--tv-ease) both}
 .out{animation:out .35s ease-in both}
 @keyframes in{from{opacity:0;transform:scale(.5)}to{opacity:1;transform:none}}
 @keyframes out{to{opacity:0;transform:scale(.6)}}
@@ -123,7 +126,7 @@
       if (!n) { n = { el: kind === 'pill' ? buildPill(a) : buildMini(a), kind }; nodes.set(a.id, n); }
       const e = n.el;
       if (e.parentNode !== row || row.children[i] !== e) row.insertBefore(e, row.children[i] || null);
-      e.style.setProperty('--a', a.accent || '#c3b7e3');
+      e.style.setProperty('--a', a.accent || 'var(--tv-accent)');
       const f = frac(a, now);
       if (kind === 'pill') {
         e.querySelector('.ic').textContent = a.icon || '•';

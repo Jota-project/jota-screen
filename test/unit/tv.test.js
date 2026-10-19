@@ -79,3 +79,31 @@ test('CDP: engancha la pestaña, avisa por los ganchos y corta las llamadas que 
   assert.equal(cdp.ready, false);
   await fake.close();
 });
+
+test('tokens de la tele: la isla los lleva delante y tv-island.js no repite sus colores', () => {
+  const fs = require('node:fs');
+  const os = require('node:os');
+  const { readTokens, islandSource } = require(path.join(R, 'tokens'));
+  const PUB = path.join(__dirname, '..', '..', 'remote', 'public');
+  const src = islandSource(PUB);
+  assert.ok(src.startsWith('var __TV_TOKENS='), 'empieza por los tokens');
+  assert.ok(src.includes('--tv-accent:#c3b7e3'));
+  const tok = readTokens(PUB);
+  assert.doesNotMatch(tok, /[{}]|\/\*/, 'solo declaraciones, sin llaves ni comentarios');
+  // la isla no lleva sueltos los colores que ya están en los tokens
+  const island = fs.readFileSync(path.join(PUB, 'tv-island.js'), 'utf8');
+  for (const hex of tok.match(/#[0-9a-f]{3,8}\b/gi)) assert.ok(!island.toLowerCase().includes(hex.toLowerCase()), hex + ' suelto en tv-island.js');
+  for (const rgba of tok.match(/rgba\([^)]*\)/g)) assert.ok(!island.includes(rgba), rgba + ' suelto en tv-island.js');
+  // un fichero de tokens con dos bloques :root (o con algo fuera) es un error claro
+  const d = fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-tok-'));
+  fs.mkdirSync(path.join(d, 'shared'));
+  fs.writeFileSync(path.join(d, 'tv-island.js'), '');
+  for (const css of [':root{--a:1}\n:root{--b:2}', '/* nada */', ':root{--a:1}\n@media (min-width:1px){:root{--a:2}}']) {
+    fs.writeFileSync(path.join(d, 'shared', 'tokens-tv.css'), css);
+    assert.throws(() => readTokens(d), /exactamente un bloque :root/, css);
+    assert.throws(() => islandSource(d), /exactamente un bloque :root/);
+  }
+  fs.writeFileSync(path.join(d, 'shared', 'tokens-tv.css'), '/* :root{--x:0} en un comentario no cuenta */\n:root{\n  --a:1;\n  --b:"x y";\n}\n');
+  assert.equal(readTokens(d), '--a:1; --b:"x y";');
+  fs.rmSync(d, { recursive: true, force: true });
+});
