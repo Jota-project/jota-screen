@@ -1,11 +1,11 @@
-import { $, el, hide } from './core/dom.js';
+import { $, hide } from './core/dom.js';
 import { persist, cfg, saveCfg, state, initSession, on } from './core/store.js';
-import { cmd, rpc, post, connect, reconnect, resetTries, isUp, getRtt, handle, setGate, start } from './core/api.js';
+import { rpc, post, connect, reconnect, resetTries, isUp, getRtt, handle, setGate, start } from './core/api.js';
 import { buzz } from './ui/haptics.js';
 import { pill } from './ui/pill.js';
 import { applyTheme } from './ui/theme.js';
 import { status, setTitle } from './ui/status.js';
-import { sheets, registerSheet, openSheet, closeSheet, closeSheetSafe, isOpen } from './ui/sheets.js';
+import { sheets, registerSheet, openSheet, closeSheetSafe, isOpen } from './ui/sheets.js';
 import { actions, registerAct, registerClick } from './ui/actions.js';
 import { gestures } from './ui/gestures.js';
 import { ROLE_N, left, applyMe } from './core/perms.js';
@@ -13,6 +13,8 @@ import { controls } from './features/controls.js';
 import { trackpad } from './features/trackpad.js';
 import { keyboard } from './features/keyboard.js';
 import { go } from './features/go.js';
+import { idle, idleLoad } from './features/idle.js';
+import { spotify } from './features/spotify.js';
 import { agent } from './features/agent.js';
 
 /* registro: mensajes, hojas, acciones [data-click] y órdenes directas de cada parte (error si algo se repite) */
@@ -71,7 +73,6 @@ on('auth:lost', code => {
 handle('me', applyMe);
 handle('pairreq', j => showReq(j));
 handle('pairdone', j => hideReq(j.pid));
-handle('sp', j => { if (spOpen()) spPaint(j.now); });
 start();
 status.init();
 
@@ -81,9 +82,6 @@ gestures.init();
 actions.init();
 
 /* ── hojas ── */
-const spin = $('#spin');
-registerSheet('spS', { open: () => { spin.value = ''; }, close: () => cmd({ t: 'spwatch', on: false }) });
-registerClick('sp', () => spButton());
 registerClick('more', () => { refreshSet(); if (state.me && state.me.role === 'admin') { refreshDevs(); idleLoad(); } openSheet('setS'); });
 sheets.init();
 
@@ -92,174 +90,8 @@ register([keyboard, go, agent]);
 go.init();
 agent.init();
 
-/* spotify: panel completo del dispositivo «Salón», con datos en vivo empujados por el servidor */
-let spN = null, spRecv = 0, spVolT = 0, spTab = 'queue', spDrag = null;
-const mmss = ms => { const t = Math.max(0, Math.floor((ms || 0) / 1000)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
-const spOpen = () => isOpen('spS');
-function spButton() {
-  openSheet('spS');
-  rpc({ t: 'spwatch', on: true }).then(r => { if (r && 'now' in r) spPaint(r.now); });
-  spLoadTab();
-}
-function spPos() { return !spN || spN.empty ? 0 : Math.min(spN.duration, spN.progress + (spN.playing ? Date.now() - spRecv : 0)); }
-function spPaint(n) {
-  spN = n; spRecv = Date.now();
-  const S = $('#spS');
-  $('#spLogin').hidden = !(n && n.needsLogin);
-  $('#spLoginA').href = '/spotify/login?t=' + encodeURIComponent(state.token);
-  if (!n || n.empty || !n.track) {
-    $('#spT').textContent = 'Nada sonando'; $('#spA').textContent = 'Busca algo o elige una playlist'; $('#spCtx').textContent = '';
-    $('#spArt').style.backgroundImage = ''; $('#spLike').hidden = true; S.classList.remove('tint'); spTick(); spList(); return;
-  }
-  $('#spT').textContent = n.track.name;
-  $('#spA').textContent = n.artist;
-  const c = n.context;
-  $('#spCtx').textContent = c && c.name && c.type !== 'album' ? 'Desde ' + c.name : [n.album.name, n.album.year].filter(Boolean).join(' · ');
-  const im = n.album.image && (n.album.image.m || n.album.image.l);
-  $('#spArt').style.backgroundImage = im ? `url("${im}")` : '';
-  if (n.colors) { S.style.setProperty('--spBg', n.colors.bg); S.style.setProperty('--spAc', n.colors.accent); S.classList.add('tint'); } else S.classList.remove('tint');
-  $('#spLike').hidden = n.liked === null || n.liked === undefined; $('#spLike').classList.toggle('on', !!n.liked);
-  $('#spShuf').classList.toggle('on', !!n.shuffle);
-  $('#spRep').classList.toggle('on', n.repeat !== 'off'); $('#spRep').classList.toggle('one', n.repeat === 'track');
-  $('#spS .big use').setAttribute('href', n.playing ? '#i-pause' : '#i-play');
-  const v = n.device && n.device.volume; if (typeof v === 'number' && !spVolT) { $('#rSp').value = v; $('#spV').textContent = v + ' %'; }
-  spTick();
-  if (spTab === 'queue') spList();
-}
-function spTick() {
-  const d = spN && !spN.empty ? spN.duration : 0;
-  const p = spDrag !== null ? spDrag * d : spPos();
-  $('#spP').textContent = mmss(p); $('#spD').textContent = mmss(d);
-  $('#spFill').style.width = d ? (p / d * 100).toFixed(2) + '%' : '0';
-}
-setInterval(() => { if (spOpen()) spTick(); }, 500);
-setInterval(() => { if (spOpen() && !document.hidden) cmd({ t: 'spwatch', on: true }); }, 15000); // por si el WebSocket se ha reconectado
-// el servidor deja de contar el panel a los 40 s sin renovar (móvil bloqueado): al volver, se pide al momento
-document.addEventListener('visibilitychange', () => { if (spOpen() && !document.hidden) rpc({ t: 'spwatch', on: true }).then(r => { if (r && 'now' in r) spPaint(r.now); }); });
-const trk = $('#spTrk');
-const frac = e => { const r = trk.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
-trk.addEventListener('pointerdown', e => { if (!spN || spN.empty) return; trk.setPointerCapture(e.pointerId); trk.classList.add('drag'); spDrag = frac(e); spTick(); });
-trk.addEventListener('pointermove', e => { if (spDrag === null) return; spDrag = frac(e); spTick(); });
-trk.addEventListener('pointerup', e => {
-  if (spDrag === null) return;
-  const f = frac(e); spDrag = null; trk.classList.remove('drag'); buzz(8);
-  if (spN && !spN.empty) { spN.progress = f * spN.duration; spRecv = Date.now(); spTick(); rpc({ t: 'spotify', a: 'seek', ms: Math.round(f * spN.duration) }); }
-});
-trk.addEventListener('pointercancel', () => { spDrag = null; trk.classList.remove('drag'); spTick(); });
-document.addEventListener('click', e => {
-  const b = e.target.closest('[data-sp]'); if (!b) return;
-  buzz(8);
-  if (b.dataset.sp === 'playpause' && spN && !spN.empty) { spN.progress = spPos(); spRecv = Date.now(); spN.playing = !spN.playing; $('#spS .big use').setAttribute('href', spN.playing ? '#i-pause' : '#i-play'); }
-  rpc({ t: 'spotify', a: b.dataset.sp }).then(r => { if (r && r.error) pill(r.error); });
-});
-$('#spShuf').addEventListener('click', () => { buzz(8); $('#spShuf').classList.toggle('on'); rpc({ t: 'spotify', a: 'shuffle' }); });
-$('#spRep').addEventListener('click', () => { buzz(8); rpc({ t: 'spotify', a: 'repeat' }); });
-$('#spLike').addEventListener('click', () => { buzz(12); $('#spLike').classList.toggle('on'); rpc({ t: 'spotify', a: 'like' }).then(r => { if (r && r.error) { pill(r.error); $('#spLike').classList.toggle('on'); } }); });
-$('#spTv').addEventListener('click', () => { buzz(8); cmd({ t: 'nav', url: 'https://open.spotify.com/' }); cmd({ t: 'spotify', a: 'activate' }); closeSheet(); pill('Abriendo Spotify en la tele'); });
-$('#rSp').addEventListener('input', e => {
-  $('#spV').textContent = e.target.value + ' %';
-  clearTimeout(spVolT); spVolT = setTimeout(() => { spVolT = 0; rpc({ t: 'spotify', a: 'volume', v: +e.target.value }); }, 250);
-});
-spin.addEventListener('keydown', e => {
-  if (e.key !== 'Enter' || e.isComposing) return;
-  e.preventDefault(); const v = spin.value.trim(); if (!v) return;
-  spin.value = ''; $('#spT').textContent = 'Buscando…'; $('#spA').textContent = v; spin.blur();
-  rpc({ t: 'spotify', a: 'search_play', query: v, type: 'track' }).then(r => { if (r && r.error) { pill(r.error); spPaint(spN); } });
-});
-/* listas: a continuación, playlists (con su detalle) y recientes */
-const spCache = {};
-let spDetail = null; // playlist abierta: {uri, head, items, next, loading}
-$('#spTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; buzz(7); if (spTab === b.dataset.tab && b.dataset.tab === 'playlists') spDetail = null; spTab = b.dataset.tab; spLoadTab(); });
-async function spLoadTab() {
-  $('#spTabs').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === spTab));
-  if (spTab === 'queue') return spList();
-  if (spTab === 'playlists' && spDetail) return spList();
-  if (spCache[spTab]) spList(); else spMsg('Cargando…');
-  const r = await rpc({ t: 'spotify', a: spTab === 'playlists' ? 'playlists' : 'recent' });
-  spCache[spTab] = r && r.items ? r.items : { error: r && r.error || 'error' };
-  if (spCache[spTab].error && /403|scope|permis|Insufficient/i.test(spCache[spTab].error)) $('#spLogin').hidden = false;
-  if (!(spTab === 'playlists' && spDetail)) spList();
-}
-function spMsg(t) { const box = $('#spList'); box.textContent = ''; box.appendChild(el('div', 'spEmpty', t)); }
-function spCover(x, cls) {
-  const im = el('div', cls || 'im');
-  const src = typeof x.image === 'string' ? x.image : x.image && (x.image.m || x.image.s);
-  if (x.liked) { im.classList.add('lk'); im.textContent = '♥'; }
-  else if (src) im.style.backgroundImage = `url("${src}")`;
-  else im.textContent = '♪';
-  return im;
-}
-const spPlay = (o, label) => rpc({ t: 'spotify', ...o }).then(r => pill(r && r.error ? r.error : label || 'Reproduciendo'));
-function spRow(x, sub, onTap, extra) {
-  const it = el('div', 'spIt' + (x.playable === false ? ' off' : ''));
-  const tx = el('div', 'tx'); tx.append(el('div', 'a', x.name), el('div', 'b', sub || ''));
-  it.append(spCover(x), tx, extra || el('div', 'c', x.duration ? mmss(x.duration) : ''));
-  it.addEventListener('click', e => { if (e.target.closest('.spMini')) return; buzz(10); it.classList.add('dn'); setTimeout(() => it.classList.remove('dn'), 250); onTap(); });
-  return it;
-}
-function spMiniBtn(icon, label, fn) {
-  const b = el('button', 'spMini'); b.setAttribute('aria-label', label);
-  b.innerHTML = `<svg><use href="#${icon}"/></svg>`;
-  b.addEventListener('click', e => { e.stopPropagation(); buzz(10); fn(); });
-  return b;
-}
-function spList() {
-  const box = $('#spList'); box.textContent = '';
-  if (spTab === 'playlists' && spDetail) return spRenderDetail(box);
-  let items;
-  if (spTab === 'queue') {
-    items = (spN && spN.queue) || [];
-    if (!items.length) return spMsg('No hay nada en cola.');
-    // dentro de la playlist/álbum que suena, para no perder lo que viene después
-    for (const x of items) box.appendChild(spRow(x, x.artist, () => spPlay(spN && spN.context && /^(playlist|album)$/.test(spN.context.type) ? { a: 'uri', uri: spN.context.uri, offset: x.uri } : { a: 'uri', uri: x.uri })));
-    return;
-  }
-  const c = spCache[spTab]; if (!c) return;
-  if (c.error) return spMsg(/403|scope|permis|Insufficient/i.test(c.error) ? 'Falta volver a conectar Spotify.' : c.error);
-  if (!c.length) return spMsg('Nada por aquí.');
-  if (spTab === 'playlists') {
-    for (const x of c) box.appendChild(spRow(x, [x.by, x.count != null ? x.count + ' canciones' : ''].filter(Boolean).join(' · '),
-      () => spOpenPl(x), spMiniBtn('i-shuf', 'Reproducir en aleatorio', () => spPlay({ a: 'uri', uri: x.uri, shuffle: true, total: x.count }, 'Aleatorio: ' + x.name))));
-  } else {
-    for (const x of c) box.appendChild(spRow(x, x.by, () => spPlay({ a: 'uri', uri: x.uri }),
-      spMiniBtn('i-plus', 'Añadir a la cola', () => spPlay({ a: 'queue_add', uri: x.uri }, 'Añadida a la cola'))));
-  }
-}
-async function spOpenPl(x) {
-  spDetail = { uri: x.uri, head: x, items: [], next: 0, loading: true };
-  spList(); $('#spList').scrollIntoView({ block: 'nearest' });
-  await spMore();
-}
-async function spMore() {
-  const d = spDetail; if (!d || d.next === null) return;
-  d.loading = true; if (spTab === 'playlists') spList();
-  const r = await rpc({ t: 'spotify', a: 'playlist', uri: d.uri, offset: d.next });
-  if (spDetail !== d) return;
-  d.loading = false;
-  if (r.error) { d.error = r.error; d.next = null; }
-  else { for (const [k, v] of Object.entries(r)) if (k !== 'items' && v !== null && v !== undefined) d.head[k] = v; d.items.push(...(r.items || [])); d.next = r.next; }
-  if (spTab === 'playlists') spList();
-}
-function spRenderDetail(box) {
-  const d = spDetail, h = d.head;
-  const back = el('button', 'spBack', '‹ Playlists'); back.addEventListener('click', () => { buzz(7); spDetail = null; spList(); });
-  const hd = el('div', 'spPl');
-  const meta = el('div', 'm');
-  meta.append(el('div', 'n', h.name), el('div', 'b', [h.by, h.count != null ? h.count + ' canciones' : ''].filter(Boolean).join(' · ')));
-  if (h.description) meta.appendChild(el('div', 'd', h.description));
-  hd.append(spCover(h, 'cv'), meta);
-  const acts = el('div', 'spPlA');
-  const pb = el('button', 'bt big', 'Reproducir'); pb.addEventListener('click', () => { buzz(10); spPlay({ a: 'uri', uri: d.uri, shuffle: false }, 'Reproduciendo ' + h.name); });
-  const sb = el('button', 'bt', 'Aleatorio'); sb.addEventListener('click', () => { buzz(10); spPlay({ a: 'uri', uri: d.uri, shuffle: true, total: h.count }, 'Aleatorio: ' + h.name); });
-  acts.append(pb, sb);
-  box.append(back, hd, acts);
-  if (d.error) return box.appendChild(el('div', 'spEmpty', d.error));
-  if (h.canList === false) return box.appendChild(el('div', 'spEmpty', h.note || 'No se pueden ver sus canciones.'));
-  d.items.forEach((x, i) => box.appendChild(spRow(x, x.by, () => spPlay({ a: 'uri', uri: d.uri, offset: x.uri }),
-    spMiniBtn('i-plus', 'Añadir a la cola', () => spPlay({ a: 'queue_add', uri: x.uri }, 'Añadida a la cola')))));
-  if (d.loading) box.appendChild(el('div', 'spEmpty', 'Cargando…'));
-  else if (d.next !== null) { const m = el('button', 'bt spMore', 'Cargar más'); m.addEventListener('click', () => { buzz(7); spMore(); }); box.appendChild(m); }
-}
+register([spotify]);
+spotify.init();
 /* emparejar: el código sale en la tele; con él este dispositivo recibe su propio acceso */
 const pairV = $('#pairV'), p1 = $('#p1'), p2 = $('#p2'), pCode = $('#pCode'), pMsg = $('#pMsg');
 const P_HELP = 'Pide acceso al administrador o escribe el código que aparecerá en la tele.';
@@ -416,11 +248,6 @@ on('me', j => {
   hide('[data-a=ag]', P.agent === 'off');
   $('#admBox').hidden = j.role !== 'admin';
   $('#clBox').hidden = j.role === 'admin';
-  hide('#spTabs [data-tab=playlists],#spTabs [data-tab=recent]', !P.library);
-  if (!P.library && spTab !== 'queue') { spTab = 'queue'; if (spOpen()) spLoadTab(); }
-  hide('#spLike', !P.library);
-  hide('#spin', P.music === 'off');
-  $('#spin').placeholder = P.music === 'queue' ? 'Pide una canción (va a la cola)…' : 'Busca y reproduce: artista, canción…';
   const mb = $('#meBox'); mb.textContent = '';
   const b = document.createElement('b'); b.textContent = j.name; mb.append('Estás como ', b, ' · ' + (ROLE_N[j.role] || j.role) + (j.expires ? ' · ' + left(j.expires) : ''));
   if (j.role === 'admin' && $('#setS').classList.contains('on')) refreshDevs();
@@ -457,44 +284,7 @@ $('#swFs').addEventListener('click', () => {
 });
 setInterval(() => { if (isOpen('setS')) refreshSet(); }, 1000);
 
-/* ── pantalla en reposo ── */
-const DAYN = [['mon', 'Lun'], ['tue', 'Mar'], ['wed', 'Mié'], ['thu', 'Jue'], ['fri', 'Vie'], ['sat', 'Sáb'], ['sun', 'Dom']];
-let icfg = null, iT = 0;
-function idlePaint() {
-  if (!icfg) return;
-  $('#idMode').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.m === icfg.mode));
-  $('#idBed').value = icfg.bed; $('#idWake').value = icfg.wake;
-  $('#idPer').setAttribute('aria-pressed', !!icfg.perDay);
-  $('#idIdle').value = String(icfg.idleMin); $('#idDim').value = String(icfg.dimMin);
-  if (![...$('#idIdle').options].some(o => o.value === String(icfg.idleMin))) $('#idIdle').add(new Option(icfg.idleMin + ' min', icfg.idleMin, true, true));
-  $('#idMus').setAttribute('aria-pressed', !!icfg.music);
-  $('#idLay').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.l === (icfg.layout || 'rotar')));
-  $('#idRe').value = String(icfg.rearrangeMin ?? 20);
-  if (![...$('#idRe').options].some(o => o.value === String(icfg.rearrangeMin))) $('#idRe').add(new Option(icfg.rearrangeMin + ' min', icfg.rearrangeMin, true, true));
-  $('#idCalm').setAttribute('aria-pressed', !!icfg.calm);
-  const wk = $('#idWeek'); wk.hidden = !icfg.perDay; wk.textContent = '';
-  if (icfg.perDay) for (const [k, n] of DAYN) {
-    const w = icfg.week[k] || {};
-    const l = document.createElement('span'); l.textContent = n;
-    const a = Object.assign(document.createElement('input'), { type: 'time', className: 'tm', value: w.bed || icfg.bed }); a.setAttribute('aria-label', n + ' acostarse');
-    const b = Object.assign(document.createElement('input'), { type: 'time', className: 'tm', value: w.wake || icfg.wake }); b.setAttribute('aria-label', n + ' levantarse');
-    const chg = () => { icfg.week[k] = { bed: a.value, wake: b.value }; idleSave(); };
-    a.addEventListener('change', chg); b.addEventListener('change', chg);
-    wk.append(l, a, b);
-  }
-}
-async function idleLoad() { const r = await rpc({ t: 'idle', op: 'get' }); if (r && r.cfg) { icfg = r.cfg; idlePaint(); } }
-function idleSave() { clearTimeout(iT); iT = setTimeout(async () => { const r = await rpc({ t: 'idle', op: 'set', cfg: icfg }); if (r && r.cfg) icfg = r.cfg; }, 300); }
-$('#idMode').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || !icfg) return; buzz(7); icfg.mode = b.dataset.m; idlePaint(); idleSave(); });
-$('#idBed').addEventListener('change', e => { if (icfg && e.target.value) { icfg.bed = e.target.value; idleSave(); } });
-$('#idWake').addEventListener('change', e => { if (icfg && e.target.value) { icfg.wake = e.target.value; idleSave(); } });
-$('#idPer').addEventListener('click', () => { if (!icfg) return; icfg.perDay = !icfg.perDay; idlePaint(); idleSave(); });
-$('#idIdle').addEventListener('change', e => { if (icfg) { icfg.idleMin = +e.target.value; idleSave(); } });
-$('#idDim').addEventListener('change', e => { if (icfg) { icfg.dimMin = +e.target.value; idleSave(); } });
-$('#idMus').addEventListener('click', () => { if (!icfg) return; icfg.music = !icfg.music; idlePaint(); idleSave(); });
-$('#idLay').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || !icfg) return; buzz(7); icfg.layout = b.dataset.l; idlePaint(); idleSave(); });
-$('#idRe').addEventListener('change', e => { if (icfg) { icfg.rearrangeMin = +e.target.value; idleSave(); } });
-$('#idCalm').addEventListener('click', () => { if (!icfg) return; icfg.calm = !icfg.calm; idlePaint(); idleSave(); });
-$('#idShow').addEventListener('click', () => { buzz(7); cmd({ t: 'idle', op: 'show' }); closeSheet(); });
+register([idle]);
+idle.init();
 
 settle().finally(connect);

@@ -1,0 +1,100 @@
+// Spotify: panel completo del dispositivo «Salón», con datos en vivo empujados por el servidor.
+import { $, hide } from '../core/dom.js';
+import { state, on } from '../core/store.js';
+import { cmd, rpc } from '../core/api.js';
+import { buzz } from '../ui/haptics.js';
+import { pill } from '../ui/pill.js';
+import { openSheet, closeSheet, isOpen } from '../ui/sheets.js';
+import { sp, mmss } from './spotify-state.js';
+import { spLoadTab, spList } from './spotify-lists.js';
+
+const spOpen = () => isOpen('spS');
+function spButton() {
+  openSheet('spS');
+  rpc({ t: 'spwatch', on: true }).then(r => { if (r && 'now' in r) spPaint(r.now); });
+  spLoadTab();
+}
+function spPos() { return !sp.now || sp.now.empty ? 0 : Math.min(sp.now.duration, sp.now.progress + (sp.now.playing ? Date.now() - sp.recv : 0)); }
+function spPaint(n) {
+  sp.now = n; sp.recv = Date.now();
+  const S = $('#spS');
+  $('#spLogin').hidden = !(n && n.needsLogin);
+  $('#spLoginA').href = '/spotify/login?t=' + encodeURIComponent(state.token);
+  if (!n || n.empty || !n.track) {
+    $('#spT').textContent = 'Nada sonando'; $('#spA').textContent = 'Busca algo o elige una playlist'; $('#spCtx').textContent = '';
+    $('#spArt').style.backgroundImage = ''; $('#spLike').hidden = true; S.classList.remove('tint'); spTick(); spList(); return;
+  }
+  $('#spT').textContent = n.track.name;
+  $('#spA').textContent = n.artist;
+  const c = n.context;
+  $('#spCtx').textContent = c && c.name && c.type !== 'album' ? 'Desde ' + c.name : [n.album.name, n.album.year].filter(Boolean).join(' · ');
+  const im = n.album.image && (n.album.image.m || n.album.image.l);
+  $('#spArt').style.backgroundImage = im ? `url("${im}")` : '';
+  if (n.colors) { S.style.setProperty('--spBg', n.colors.bg); S.style.setProperty('--spAc', n.colors.accent); S.classList.add('tint'); } else S.classList.remove('tint');
+  $('#spLike').hidden = n.liked === null || n.liked === undefined; $('#spLike').classList.toggle('on', !!n.liked);
+  $('#spShuf').classList.toggle('on', !!n.shuffle);
+  $('#spRep').classList.toggle('on', n.repeat !== 'off'); $('#spRep').classList.toggle('one', n.repeat === 'track');
+  $('#spS .big use').setAttribute('href', n.playing ? '#i-pause' : '#i-play');
+  const v = n.device && n.device.volume; if (typeof v === 'number' && !sp.volT) { $('#rSp').value = v; $('#spV').textContent = v + ' %'; }
+  spTick();
+  if (sp.tab === 'queue') spList();
+}
+function spTick() {
+  const d = sp.now && !sp.now.empty ? sp.now.duration : 0;
+  const p = sp.drag !== null ? sp.drag * d : spPos();
+  $('#spP').textContent = mmss(p); $('#spD').textContent = mmss(d);
+  $('#spFill').style.width = d ? (p / d * 100).toFixed(2) + '%' : '0';
+}
+
+export const spotify = {
+  name: 'spotify',
+  msgs: { sp: j => { if (spOpen()) spPaint(j.now); } },
+  sheets: { spS: { open() { $('#spin').value = ''; }, close: () => cmd({ t: 'spwatch', on: false }) } },
+  clicks: { sp: spButton },
+  init() {
+    setInterval(() => { if (spOpen()) spTick(); }, 500);
+    setInterval(() => { if (spOpen() && !document.hidden) cmd({ t: 'spwatch', on: true }); }, 15000); // por si el WebSocket se ha reconectado
+    // el servidor deja de contar el panel a los 40 s sin renovar (móvil bloqueado): al volver, se pide al momento
+    document.addEventListener('visibilitychange', () => { if (spOpen() && !document.hidden) rpc({ t: 'spwatch', on: true }).then(r => { if (r && 'now' in r) spPaint(r.now); }); });
+    const trk = $('#spTrk');
+    const frac = e => { const r = trk.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
+    trk.addEventListener('pointerdown', e => { if (!sp.now || sp.now.empty) return; trk.setPointerCapture(e.pointerId); trk.classList.add('drag'); sp.drag = frac(e); spTick(); });
+    trk.addEventListener('pointermove', e => { if (sp.drag === null) return; sp.drag = frac(e); spTick(); });
+    trk.addEventListener('pointerup', e => {
+      if (sp.drag === null) return;
+      const f = frac(e); sp.drag = null; trk.classList.remove('drag'); buzz(8);
+      if (sp.now && !sp.now.empty) { sp.now.progress = f * sp.now.duration; sp.recv = Date.now(); spTick(); rpc({ t: 'spotify', a: 'seek', ms: Math.round(f * sp.now.duration) }); }
+    });
+    trk.addEventListener('pointercancel', () => { sp.drag = null; trk.classList.remove('drag'); spTick(); });
+    document.addEventListener('click', e => {
+      const b = e.target.closest('[data-sp]'); if (!b) return;
+      buzz(8);
+      if (b.dataset.sp === 'playpause' && sp.now && !sp.now.empty) { sp.now.progress = spPos(); sp.recv = Date.now(); sp.now.playing = !sp.now.playing; $('#spS .big use').setAttribute('href', sp.now.playing ? '#i-pause' : '#i-play'); }
+      rpc({ t: 'spotify', a: b.dataset.sp }).then(r => { if (r && r.error) pill(r.error); });
+    });
+    $('#spShuf').addEventListener('click', () => { buzz(8); $('#spShuf').classList.toggle('on'); rpc({ t: 'spotify', a: 'shuffle' }); });
+    $('#spRep').addEventListener('click', () => { buzz(8); rpc({ t: 'spotify', a: 'repeat' }); });
+    $('#spLike').addEventListener('click', () => { buzz(12); $('#spLike').classList.toggle('on'); rpc({ t: 'spotify', a: 'like' }).then(r => { if (r && r.error) { pill(r.error); $('#spLike').classList.toggle('on'); } }); });
+    $('#spTv').addEventListener('click', () => { buzz(8); cmd({ t: 'nav', url: 'https://open.spotify.com/' }); cmd({ t: 'spotify', a: 'activate' }); closeSheet(); pill('Abriendo Spotify en la tele'); });
+    $('#rSp').addEventListener('input', e => {
+      $('#spV').textContent = e.target.value + ' %';
+      clearTimeout(sp.volT); sp.volT = setTimeout(() => { sp.volT = 0; rpc({ t: 'spotify', a: 'volume', v: +e.target.value }); }, 250);
+    });
+    const spin = $('#spin');
+    spin.addEventListener('keydown', e => {
+      if (e.key !== 'Enter' || e.isComposing) return;
+      e.preventDefault(); const v = spin.value.trim(); if (!v) return;
+      spin.value = ''; $('#spT').textContent = 'Buscando…'; $('#spA').textContent = v; spin.blur();
+      rpc({ t: 'spotify', a: 'search_play', query: v, type: 'track' }).then(r => { if (r && r.error) { pill(r.error); spPaint(sp.now); } });
+    });
+    $('#spTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; buzz(7); if (sp.tab === b.dataset.tab && b.dataset.tab === 'playlists') sp.detail = null; sp.tab = b.dataset.tab; spLoadTab(); });
+    on('me', j => {
+      const P = j.perms || {};
+      hide('#spTabs [data-tab=playlists],#spTabs [data-tab=recent]', !P.library);
+      if (!P.library && sp.tab !== 'queue') { sp.tab = 'queue'; if (spOpen()) spLoadTab(); }
+      hide('#spLike', !P.library);
+      hide('#spin', P.music === 'off');
+      $('#spin').placeholder = P.music === 'queue' ? 'Pide una canción (va a la cola)…' : 'Busca y reproduce: artista, canción…';
+    });
+  },
+};
