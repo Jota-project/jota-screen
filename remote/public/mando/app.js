@@ -1,6 +1,6 @@
 import { $, el, hide } from './core/dom.js';
 import { persist, cfg, saveCfg, state, initSession, on } from './core/store.js';
-import { send, cmd, rpc, post, connect, reconnect, resetTries, isUp, getRtt, handle, onWs, setGate, start } from './core/api.js';
+import { cmd, rpc, post, connect, reconnect, resetTries, isUp, getRtt, handle, onWs, setGate, start } from './core/api.js';
 import { buzz } from './ui/haptics.js';
 import { pill } from './ui/pill.js';
 import { applyTheme } from './ui/theme.js';
@@ -9,6 +9,20 @@ import { sheets, registerSheet, openSheet, closeSheet, closeSheetSafe, isOpen } 
 import { actions, registerAct, registerClick } from './ui/actions.js';
 import { gestures } from './ui/gestures.js';
 import { ROLE_N, left, applyMe } from './core/perms.js';
+import { controls } from './features/controls.js';
+import { trackpad } from './features/trackpad.js';
+import { go } from './features/go.js';
+import { agent } from './features/agent.js';
+
+/* registro: mensajes, hojas, acciones [data-click] y órdenes directas de cada parte (error si algo se repite) */
+function register(list) {
+  for (const f of list) {
+    for (const [t, fn] of Object.entries(f.msgs || {})) handle(t, fn);
+    for (const [id, h] of Object.entries(f.sheets || {})) registerSheet(id, h);
+    for (const [a, fn] of Object.entries(f.clicks || {})) registerClick(a, fn);
+    for (const [a, fn] of Object.entries(f.acts || {})) registerAct(a, fn);
+  }
+}
 
 /* ── acceso: cada dispositivo tiene su propio token (se recuerda aquí y en una cookie). El maestro no se guarda nunca. ── */
 initSession();
@@ -35,18 +49,8 @@ async function settle() { // antes de conectar: canjea el código de admin o el 
   if (r.ok) { persist.set('token', state.token); addManifest(); }
 }
 
-/* accesos del mando: salen de cfg.apps (M5 los hará configurables) */
-const APPS = {
-  spotify: { n: 'Spotify', at: { 'data-a': 'sp', 'data-click': '' }, svg: '<path d="M9 18V6l10-2v12"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="16" r="2.5"/>' },
-  netflix: { n: 'Netflix', at: { 'data-url': 'https://www.netflix.com' }, svg: '<rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18M7.5 4l3 5M13.5 4l3 5"/>' },
-};
-for (const k of Array.isArray(cfg.apps) ? cfg.apps : []) {
-  const a = APPS[k]; if (!a) continue;
-  const b = document.createElement('button'); b.className = 'b2'; b.setAttribute('aria-label', 'Abrir ' + a.n);
-  for (const [n, v] of Object.entries(a.at)) b.setAttribute(n, v);
-  b.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${a.svg}</svg>`;
-  b.append(a.n); $('#apps2').appendChild(b);
-}
+register([controls]);
+controls.init();
 
 /* ── conexión ── */
 setGate(() => {
@@ -67,144 +71,21 @@ handle('me', applyMe);
 handle('pairreq', j => showReq(j));
 handle('pairdone', j => hideReq(j.pid));
 handle('sp', j => { if (spOpen()) spPaint(j.now); });
-handle('ask', j => onAsk(j));
-handle('state', j => onState(j));
 handle('focus', j => onTvFocus(j)); // campo con foco en la tele
 start();
 status.init();
 
-function onState(s) {
-  if (s.t !== 'state') return;
-  if (!s.cdp) setTitle('Navegador no disponible', '');
-  else if (!s.host) setTitle('Inicio', '');
-  else setTitle(s.title || s.host, s.host);
-  $('#pp').dataset.m = s.media;
-  paint2(s);                                            // el volumen se ve en el balancín: sin aviso flotante
-  state.lastState = s;
-}
-/* v2: número de volumen (el % real del servidor), silencio, play/pausa y carril con el scroll de la página de la tele */
-function paint2(s) {
-  const v = $('#vol2'), m = $('#mute2'), off = !!s.muted || typeof s.vol !== 'number';
-  v.textContent = off ? '–' : String(s.vol); v.classList.toggle('off', off);
-  v.setAttribute('aria-label', s.muted ? 'Volumen silenciado' : off ? 'Volumen desconocido' : 'Volumen ' + s.vol + ' %');
-  m.setAttribute('aria-pressed', !!s.muted); m.setAttribute('aria-label', s.muted ? 'Activar sonido' : 'Silenciar');
-  $('#pp').setAttribute('aria-label', s.media === 1 ? 'Pausar' : s.media === 0 ? 'Reproducir' : 'Reproducir o pausar');
-  const sc = s.scroll, rail = $('#rail');
-  rail.hidden = !sc;                                    // sin dato (o página sin scroll), sin carril
-  if (sc) {
-    const h = Math.max(0.08, Math.min(1, +sc.size || 0)), th = $('#railT');
-    th.style.top = (Math.min(1, Math.max(0, +sc.pos || 0)) * (1 - h) * 100).toFixed(2) + '%'; th.style.height = (h * 100).toFixed(2) + '%';
-  }
-}
-
-/* ── touchpad ── */
-const pad = $('#pad'), hint = $('#hint');
-const P = new Map();
-let ax = 0, ay = 0, sxa = 0, sya = 0, raf = 0;
-let downT = 0, moved = 0, maxN = 0, twoT = 0, twoMoved = 0, rcDone = false, dragging = false, tdArm = false, lastTap = 0;
-let svy = 0, inertia = 0;
-const r2 = n => Math.round(n * 100) / 100;
-/* un halo malva sigue al dedo mientras toca (en vez de la onda) y la ayuda se esconde solo mientras se toca */
-const halo = $('#halo');
-let haloId = null;
-function haloAt(e) { const b = pad.getBoundingClientRect(); halo.style.left = (e.clientX - b.left) + 'px'; halo.style.top = (e.clientY - b.top) + 'px'; }
-
-function flush() {
-  raf = 0;
-  if (ax || ay) { send('m ' + r2(ax) + ' ' + r2(ay)); ax = ay = 0; }
-  if (sxa || sya) { send('w ' + r2(sxa) + ' ' + r2(sya)); sxa = sya = 0; }
-}
-const sched = () => { if (!raf) raf = requestAnimationFrame(flush); };
-function stopInertia() { if (inertia) { cancelAnimationFrame(inertia); inertia = 0; } }
-function startInertia() {
-  stopInertia();
-  let v = svy;                                   // px por ms ya con el signo final
-  if (Math.abs(v) < 0.35) return;
-  let last = performance.now();
-  const step = t => {
-    const dt = Math.min(40, t - last); last = t;
-    sya += v * dt; v *= Math.pow(0.0035, dt / 1000);   // frena en ~0,9 s
-    sched();
-    inertia = Math.abs(v) > 0.03 ? requestAnimationFrame(step) : 0;
-  };
-  inertia = requestAnimationFrame(step);
-}
-function click(btn, p) { send('c ' + btn); buzz(btn === 3 ? 14 : 9); }
-
-pad.addEventListener('pointerdown', e => {
-  e.preventDefault();
-  try { pad.setPointerCapture(e.pointerId); } catch {}
-  P.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
-  if (haloId === null) { haloId = e.pointerId; haloAt(e); halo.classList.add('on'); } hint.classList.add('off');
-  if (P.size === 1) {
-    stopInertia(); downT = e.timeStamp; moved = 0; maxN = 1; dragging = false; svy = 0;
-    tdArm = e.timeStamp - lastTap < 240; pad.classList.add('on');
-  } else if (P.size === 2) { maxN = 2; twoT = e.timeStamp; twoMoved = 0; rcDone = false; svy = 0; }
-});
-pad.addEventListener('pointermove', e => {
-  const p = P.get(e.pointerId); if (!p) return;
-  if (e.pointerId === haloId) haloAt(e);
-  const dx = e.clientX - p.x, dy = e.clientY - p.y, dt = Math.max(1, e.timeStamp - p.t);
-  p.x = e.clientX; p.y = e.clientY; p.t = e.timeStamp;
-  if (P.size === 1) {
-    moved += Math.abs(dx) + Math.abs(dy);
-    if (tdArm && !dragging && moved > 6) { dragging = true; send('b 1 1'); }
-    const g = cfg.speed * (1 + Math.min(Math.hypot(dx, dy) / dt / 1.1, 2.6));   // aceleración según la velocidad
-    ax += dx * g; ay += dy * g; sched();
-  } else if (P.size === 2) {
-    twoMoved += Math.abs(dx) + Math.abs(dy);
-    const k = (cfg.natural ? -1 : 1) * cfg.scroll * 0.5;                          // cada dedo aporta la mitad
-    sxa += dx * k; sya += dy * k; sched();
-    svy = svy * 0.6 + (dy * k / dt) * 0.4;
-  }
-});
-function up(e) {
-  const p = P.get(e.pointerId); if (!p) return;
-  const n = P.size; P.delete(e.pointerId);
-  const ok = e.type === 'pointerup';
-  if (e.pointerId === haloId) {                   // el halo pasa al dedo que queda o se apaga
-    const rest = P.keys().next();
-    haloId = rest.done ? null : rest.value;
-    if (haloId === null) { halo.classList.remove('on'); hint.classList.remove('off'); }
-  }
-  if (n === 1) {
-    pad.classList.remove('on');
-    if (dragging) { send('b 1 0'); dragging = false; }
-    else if (ok && maxN === 1 && e.timeStamp - downT < 240 && moved < 9) { click(1, p); lastTap = e.timeStamp; }
-    maxN = 0;
-  } else if (n === 2) {
-    if (ok && !rcDone && e.timeStamp - twoT < 280 && twoMoved < 10) { rcDone = true; click(3, p); }
-    else if (twoMoved > 14) startInertia();
-  }
-}
-pad.addEventListener('pointerup', up);
-pad.addEventListener('pointercancel', up);
-pad.addEventListener('contextmenu', e => e.preventDefault());
+trackpad.init();
 gestures.init();
 
-/* ── botones ── */
-const ACT = {
-  home: () => cmd({ t: 'home' }), back: () => cmd({ t: 'back' }), fwd: () => cmd({ t: 'forward' }), reload: () => cmd({ t: 'reload' }),
-  fs: () => cmd({ t: 'fs' }), pp: () => cmd({ t: 'pp' }),
-  skb: () => cmd({ t: 'key', k: 'ArrowLeft' }), skf: () => cmd({ t: 'key', k: 'ArrowRight' }),
-  vd: () => cmd({ t: 'vol', d: 'down' }), vu: () => cmd({ t: 'vol', d: 'up' }), vm: () => cmd({ t: 'vol', d: 'mute' }),
-  s10b: () => seek10(-10), s10f: () => seek10(10),
-};
-/* ±10 s (v2): mueve el vídeo de la página; si no hay <video>, la flecha como en el v1 */
-function seek10(s) { rpc({ t: 'seek', s }).then(r => { if (r && r.error) cmd({ t: 'key', k: s < 0 ? 'ArrowLeft' : 'ArrowRight' }); }); }
-for (const [k, f] of Object.entries(ACT)) registerAct(k, f);
 actions.init();
 document.addEventListener('mousedown', e => { if (e.target.closest('.kbK,.kbA')) e.preventDefault(); });
 
 /* ── hojas ── */
-const spin = $('#spin'), gin = $('#gin'), agin = $('#agin'), rep = $('#rep');
+const spin = $('#spin');
 registerSheet('kbS', { open: () => kbOpen(), close: () => kbClose(), keepEscInside: true });
-registerSheet('goS', { open: () => { gin.value = ''; gin.focus(); } });
-registerSheet('agS', { open: () => { agin.value = ''; agin.focus(); } });
 registerSheet('spS', { open: () => { spin.value = ''; }, close: () => cmd({ t: 'spwatch', on: false }) });
 registerClick('kb', () => openSheet('kbS'));
-registerClick('go', () => openSheet('goS'));
-registerClick('ag', () => openSheet('agS'));
 registerClick('sp', () => spButton());
 registerClick('more', () => { refreshSet(); if (state.me && state.me.role === 'admin') { refreshDevs(); idleLoad(); } openSheet('setS'); });
 sheets.init();
@@ -329,23 +210,9 @@ if (vv) {                                              // la vista ocupa lo que 
   const kbVV = () => { kbV.style.setProperty('--vt', vv.offsetTop + 'px'); kbV.style.setProperty('--vh', vv.height + 'px'); kbV.classList.toggle('kb', innerHeight - vv.height > 80); };
   vv.addEventListener('resize', kbVV); vv.addEventListener('scroll', kbVV); kbVV();
 }
-gin.addEventListener('keydown', e => {
-  if (e.key !== 'Enter') return;
-  e.preventDefault(); const v = gin.value.trim();
-  if (v) { cmd({ t: 'nav', url: v }); closeSheet(); }
-});
-
-/* agente: el texto (escrito o dictado con el teclado) va a OpenClaw; la respuesta llega por el WebSocket */
-function onAsk(j) {
-  if (j.stage === 'thinking') { rep.className = 'rep wait'; rep.textContent = 'Pensando'; return; }
-  rep.className = 'rep'; rep.textContent = j.reply || 'No he recibido respuesta.'; buzz(12);
-}
-agin.addEventListener('keydown', e => {
-  if (e.key !== 'Enter' || e.isComposing) return;
-  e.preventDefault(); const v = agin.value.trim();
-  if (!v) return;
-  cmd({ t: 'ask', text: v }); agin.value = ''; rep.className = 'rep wait'; rep.textContent = 'Pensando';
-});
+register([go, agent]);
+go.init();
+agent.init();
 
 /* spotify: panel completo del dispositivo «Salón», con datos en vivo empujados por el servidor */
 let spN = null, spRecv = 0, spVolT = 0, spTab = 'queue', spDrag = null;
