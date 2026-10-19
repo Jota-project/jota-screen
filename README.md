@@ -7,7 +7,7 @@ Antes se llamaba `tv-canvas`; el MCP, la skill y el plugin conservan ese nombre 
 | Carpeta | Qué es |
 |---|---|
 | `remote/` | Servidor del mando (Node 24, puerto 8787): WS/HTTP, CDP, emparejamiento, roles, escenario, Spotify, reposo |
-| `remote/public/` | Lo que se sirve: el mando (`index.html`), la pantalla en reposo (`idle.html`), la isla de Live Activities (`tv-island.js`) y las plantillas del escenario (`tpl-*.html`) |
+| `remote/public/` | Lo que se sirve: el mando (`index.html`), la pantalla en reposo (`idle.html` con `idle.css` e `idle-app.js`, sin nada en línea), la isla de Live Activities (`tv-island.js`), los tokens de la tele (`shared/tokens-tv.css`, que el servidor también inyecta en la isla) y las plantillas del escenario (`tpl-*.html`) |
 | `mcp/` | MCP `tv-canvas` (stdio) |
 | `plugin/tv-canvas/` | Plugin de Claude Code (skill + `.mcp.json`; su `mcp/server.js` es copia de `mcp/`, ver `scripts/sync-plugin.sh`) |
 | `systemd/` | Unidades de usuario (`tv-remote`, `tv-mdns`, `spotifyd`) y del kiosco (sistema) |

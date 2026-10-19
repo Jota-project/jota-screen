@@ -7,6 +7,9 @@ const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path');
 
 const PUB = path.join(__dirname, '..', 'remote', 'public');
+// la misma CSP que pone el servidor: si algo del reposo necesitara estilos o scripts en línea, la captura falla
+let IDLE_CSP = null;
+try { ({ IDLE_CSP } = require(path.join(__dirname, '..', 'remote', 'src', 'transport', 'static.js'))); } catch { console.warn('sin remote/src: capturas sin CSP'); }
 const OUT = path.resolve(process.argv[2] || path.join(__dirname, 'capturas'));
 const FRAUNCES = require.resolve('@fontsource-variable/fraunces/files/fraunces-latin-full-normal.woff2');
 fs.mkdirSync(OUT, { recursive: true });
@@ -22,7 +25,7 @@ const srv = http.createServer((q, r) => {
   if (u.startsWith('/idle/art')) { r.writeHead(200, { 'content-type': 'image/svg+xml' }); return r.end(ART); }
   const f = path.join(PUB, u === '/' ? 'idle.html' : u);
   if (!f.startsWith(PUB) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { r.writeHead(404); return r.end(); }
-  r.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream' });
+  r.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream', ...(IDLE_CSP && f.endsWith('.html') ? { 'content-security-policy': IDLE_CSP } : {}) });
   r.end(fs.readFileSync(f));
 }).listen(0);
 
@@ -45,6 +48,7 @@ RUNS.push({ name: 'apilada-0-noche', data: base({ profile: 'night', acts: [], mu
   for (const r of RUNS) {
     const p = await b.newPage({ viewport: { width: 1920, height: 1080 } });
     p.on('pageerror', e => errs.push(r.name + ': ' + e.message));
+    p.on('console', m => { if (m.type() === 'error' && /Content Security Policy/.test(m.text())) errs.push(r.name + ': ' + m.text()); });
     await p.route(/fonts\.googleapis\.com/, x => x.fulfill({ contentType: 'text/css',
       body: "@font-face{font-family:Fraunces;font-weight:100 900;src:url(https://fonts.gstatic.com/fraunces.woff2) format('woff2')}" }));
     await p.route(/fonts\.gstatic\.com/, x => x.fulfill({ contentType: 'font/woff2', body: fs.readFileSync(FRAUNCES) }));

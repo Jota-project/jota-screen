@@ -12,8 +12,9 @@ const CSP = "default-src 'self'; style-src 'unsafe-inline' https://fonts.googlea
 // páginas del escenario: pueden cargar imágenes, fuentes, vídeo y librerías de internet, pero no hablar con otros servicios
 const STAGE_CSP = "default-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' https:; " +
   "img-src * data: blob:; media-src * data: blob:; font-src * data:; connect-src 'self'; base-uri 'none'; form-action 'none'";
-const IDLE_CSP = "default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; " +
-  "script-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws:; base-uri 'none'; form-action 'none'";
+// el reposo: su CSS y su JS van en ficheros (idle.css, idle-app.js, shared/tokens-tv.css), así que nada en línea
+const IDLE_CSP = "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; " +
+  "script-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws:; base-uri 'none'; form-action 'none'";
 
 // rutas que ya tienen dueño: una carpeta de public/ con ese nombre quedaría tapada (o taparía la ruta)
 const RESERVED = new Set(['api', 'pair', 'stage', 'idle', 'spotify', 'ws', 'idle-ws', 'stage-ws']);

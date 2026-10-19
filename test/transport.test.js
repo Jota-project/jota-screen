@@ -29,6 +29,27 @@ test('cada página sale con su CSP y las cabeceras de seguridad', async () => {
   assert.equal((await s.get('/no-existe.js')).status, 404);
 });
 
+test('reposo: CSP sin \'unsafe-inline\'; su CSS y su JS van en ficheros', async () => {
+  const r = await s.get('/idle.html');
+  const csp = r.headers.get('content-security-policy');
+  assert.doesNotMatch(csp, /unsafe-inline/);
+  assert.match(csp, /style-src 'self' https:\/\/fonts\.googleapis\.com;/);
+  assert.match(csp, /script-src 'self';/);
+  const html = await r.text();
+  assert.doesNotMatch(html, /<style\b/i, 'sin <style> en línea');
+  for (const tag of html.match(/<script\b[^>]*>/gi) || []) assert.match(tag, /\bsrc=/, 'sin <script> en línea: ' + tag);
+  assert.doesNotMatch(html, /<[^>]+\s(style|on[a-z]+)\s*=/i, 'sin atributos style= ni on*=');
+  assert.match(html, /<link rel="stylesheet" href="\/idle\.css">/);
+  assert.match(html, /<script src="\/idle-app\.js"><\/script>/);
+  for (const [p, type] of [['/idle.css', /^text\/css/], ['/idle-app.js', /^text\/javascript/]]) {
+    const f = await s.get(p);
+    assert.equal(f.status, 200, p);
+    assert.match(f.headers.get('content-type'), type, p);
+    assert.equal(f.headers.get('content-security-policy'), null, p);
+    assert.equal(f.headers.get('cache-control'), 'no-cache', p);
+  }
+});
+
 test('estáticos: caché por tipo, gzip para texto y nada fuera de public/', async () => {
   const js = await s.get('/tv-island.js', { headers: { 'Accept-Encoding': 'gzip' } });
   assert.equal(js.headers.get('cache-control'), 'no-cache');
