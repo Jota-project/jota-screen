@@ -84,6 +84,17 @@ test('acceso: el maestro se canjea por un dispositivo admin propio (cookie HttpO
   assert.equal(m.master, true);
 });
 
+test('estado: los ficheros de dispositivos y accesos quedan con permisos 600', async () => {
+  const fs = require('node:fs'), path = require('node:path');
+  const a = await s.ws(adminTok);
+  await a.rpc({ t: 'access', op: 'set', cfg: { guestHours: 24 } });
+  a.close();
+  for (const f of ['devices.json', 'access.json']) {
+    const st = fs.statSync(path.join(s.root, f));
+    assert.equal(st.mode & 0o777, 0o600, f);
+  }
+});
+
 test('acceso: un código de admin incorrecto se rechaza', async () => {
   const r = await s.post('/pair/admin', { code: 'AAAAA-BBBBB', name: 'x' });
   assert.equal(r.status, 403);

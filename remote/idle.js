@@ -7,6 +7,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { WebSocketServer, WebSocket } = require('ws');
+const { writeJson } = require('./src/core/json-store');
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const MODES = ['auto', 'day', 'evening', 'night', 'cinema'];
@@ -32,7 +33,7 @@ module.exports = function createIdle(o) {
   const CFG_FILE = path.join(ROOT, 'idle.json');
   let cfg = { ...DEFAULTS };
   try { cfg = sanitize({ ...DEFAULTS, ...JSON.parse(fs.readFileSync(CFG_FILE, 'utf8')) }); } catch {}
-  const save = () => fs.writeFileSync(CFG_FILE, JSON.stringify(cfg, null, 2));
+  const save = () => writeJson(CFG_FILE, cfg, { pretty: true }); // atómico y 0600 (src/core/json-store.js)
 
   const isIdle = u => typeof u === 'string' && u.startsWith(URL_IDLE);
   let lastUse = Date.now();

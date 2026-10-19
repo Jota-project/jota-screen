@@ -11,26 +11,22 @@ const zlib = require('node:zlib');
 const crypto = require('node:crypto');
 const { spawn, execFile } = require('node:child_process');
 const { WebSocketServer, WebSocket } = require('ws');
+const { loadConfig } = require('./src/core/config');
+const { createLog } = require('./src/core/log');
+const { readJson, writeJson } = require('./src/core/json-store');
+const { createRateLimiter } = require('./src/auth/ratelimit');
 
-const ROOT = __dirname;
-const PUB = path.join(ROOT, 'public');
-const PORT = Number(process.env.TV_PORT) || 8787;
-const CDP_PORT = Number(process.env.TV_CDP_PORT) || 9222;
-const DEBUG = !!process.env.TV_DEBUG;
-const NO_POINTER = !!process.env.TV_NO_POINTER;
-const SELF = `http://127.0.0.1:${PORT}`;
-const HOME_URL = process.env.TV_HOME_URL || SELF + '/idle.html'; // la pantalla en reposo
-const STAGE_DIR = path.join(os.homedir(), 'tv', 'stage');
+// configuración (entorno y rutas): src/core/config.js
+const CFG = loadConfig();
+const { ROOT, PUB, PORT, CDP_PORT, DEBUG, NO_POINTER, SELF, HOME_URL, STAGE_DIR } = CFG;
 fs.mkdirSync(STAGE_DIR, { recursive: true });
 // OpenClaw (agente). Se llama por su CLI: así no hace falta tocar ningún secreto.
-const OC_BIN = process.env.TV_OPENCLAW || path.join(os.homedir(), '.npm-global/bin/openclaw');
-const OC_AGENT = process.env.TV_AGENT || 'jota';
-const OC_ENV = { ...process.env, PATH: path.dirname(OC_BIN) + ':' + (process.env.PATH || '') };
+const { OC_BIN, OC_AGENT, OC_ENV } = CFG;
 const ASK_PREFIX = '[Voz desde el mando del salón. Responde en una sola frase corta, sin markdown ni rodeos. ' +
   'Para actuar sobre la tele usa las herramientas tv-canvas.] ';
 
 // ───────────────────────── token
-const TOKEN_FILE = path.join(ROOT, 'token');
+const TOKEN_FILE = CFG.FILES.token;
 let TOKEN = '';
 try { TOKEN = fs.readFileSync(TOKEN_FILE, 'utf8').trim(); } catch {}
 if (TOKEN.length < 16) {
@@ -38,11 +34,13 @@ if (TOKEN.length < 16) {
   fs.writeFileSync(TOKEN_FILE, TOKEN + '\n', { mode: 0o600 });
 }
 const TOKEN_BUF = Buffer.from(TOKEN);
+// registro con redacción: el token maestro, los ?t= y los Bearer nunca llegan al journal (src/core/log.js)
+const log = createLog({ secrets: () => [TOKEN], debug: DEBUG });
 // Dispositivos emparejados: cada uno tiene su propio token (aquí solo se guarda su hash) y se puede retirar.
 // El token maestro (./token) queda para el agente y el MCP.
-const DEV_FILE = path.join(ROOT, 'devices.json');
-let devices = []; try { devices = JSON.parse(fs.readFileSync(DEV_FILE, 'utf8')); } catch {}
-const devSave = () => fs.writeFileSync(DEV_FILE, JSON.stringify(devices), { mode: 0o600 });
+const DEV_FILE = CFG.FILES.devices;
+let devices = readJson(DEV_FILE, []); if (!Array.isArray(devices)) devices = [];
+const devSave = () => writeJson(DEV_FILE, devices);
 const sha = x => crypto.createHash('sha256').update(x).digest('hex');
 // Roles: admin (el dueño), member (registrado por un admin) y guest (con el código de la tele; caduca).
 const ROLES = ['admin', 'member', 'guest'];
@@ -59,12 +57,12 @@ function tokenDev(t) { // -> dispositivo emparejado dueño de este token, o null
 function expireDevice(d) {
   const i = devices.indexOf(d); if (i >= 0) { devices.splice(i, 1); devSave(); }
   for (const c of wss.clients) if (c.devId === d.id) c.close(4002, 'caducado');
-  console.log('acceso caducado:', d.name);
+  log.info('acceso caducado:', d.name);
 }
 setInterval(() => { for (const d of [...devices]) if (d.expires && Date.now() > d.expires) expireDevice(d); }, 60_000);
 
 // Permisos de invitados y miembros (los admin pueden todo). Configurables por el admin desde el mando.
-const ACCESS_FILE = path.join(ROOT, 'access.json');
+const ACCESS_FILE = CFG.FILES.access;
 const PERM_DEFAULT = { web: true, agent: 'guest', music: 'play', library: false, volMax: 100, stage: false };
 const ADMIN_PERMS = { web: true, agent: 'full', music: 'play', library: true, volMax: 100, stage: true, admin: true };
 function permSan(p = {}, base = PERM_DEFAULT) {
@@ -82,7 +80,7 @@ try {
   const a = JSON.parse(fs.readFileSync(ACCESS_FILE, 'utf8'));
   access = { guestHours: Number.isFinite(+a.guestHours) ? +a.guestHours : 24, guest: permSan(a.guest), member: permSan(a.member) };
 } catch {}
-const accessSave = () => fs.writeFileSync(ACCESS_FILE, JSON.stringify(access, null, 2));
+const accessSave = () => writeJson(ACCESS_FILE, access, { pretty: true });
 const permsOf = dev => !dev || dev.role === 'admin' ? ADMIN_PERMS : { ...(access[dev.role] || access.guest), admin: false };
 const guestExpiry = () => access.guestHours > 0 ? Date.now() + access.guestHours * 3600e3 : null;
 function newDevice(name, role) {
@@ -90,7 +88,7 @@ function newDevice(name, role) {
   const dev = { id: crypto.randomBytes(4).toString('hex'), name, role, h: sha(token), created: Date.now(), seen: Date.now(),
     expires: role === 'guest' ? guestExpiry() : null };
   devices.push(dev); devSave();
-  console.log('dispositivo emparejado:', dev.name, dev.role);
+  log.info('dispositivo emparejado:', dev.name, dev.role);
   return { token, id: dev.id, role: dev.role, expires: dev.expires };
 }
 function okToken(t) {
@@ -224,7 +222,7 @@ function pairConfirm(pid, code) {
 // remote/admin-link.js) o un admin conectado. Así el token maestro no tiene que llegar nunca al móvil.
 const ADMIN_TTL = 10 * 60_000;
 // dirección canónica para los enlaces de admin (la del mando en casa). TV_PUBLIC_URL es otra cosa: la de Spotify, con https.
-const ADMIN_URL = (process.env.TV_ADMIN_URL || 'http://mando.local').replace(/\/+$/, '');
+const { ADMIN_URL } = CFG;
 const CODE_ABC = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // sin 0/O ni 1/I para poder teclearlo
 const adminCodes = new Map(); // sha(código) -> caducidad
 const codeNorm = c => String(c || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
@@ -248,7 +246,7 @@ function adminDevice(name, cur) {
   const d = tokenDev(cur);
   if (!d) return newDevice(cleanName(name) || 'Admin', 'admin');
   d.role = 'admin'; d.expires = null; devSave(); pushMe(d.id);
-  console.log('dispositivo ascendido a admin:', d.name);
+  log.info('dispositivo ascendido a admin:', d.name);
   return { token: cur, id: d.id, role: 'admin', expires: null };
 }
 const isMaster = t => { const b = Buffer.from(typeof t === 'string' ? t : ''); return b.length === TOKEN_BUF.length && crypto.timingSafeEqual(b, TOKEN_BUF); };
@@ -259,14 +257,8 @@ function clientIp(req) {
   if ((a === '127.0.0.1' || a === '::1') && req.headers['x-forwarded-for']) return String(req.headers['x-forwarded-for']).split(',')[0].trim().slice(0, 64);
   return a;
 }
-// freno a intentos fallidos: 5 fallos -> 60 s bloqueada esa IP
-const fails = new Map();
-const blocked = ip => (fails.get(ip)?.until || 0) > Date.now();
-function fail(ip) {
-  const f = fails.get(ip) || { n: 0, until: 0 };
-  if (++f.n >= 5) { f.n = 0; f.until = Date.now() + 60_000; }
-  fails.set(ip, f);
-}
+// freno a intentos fallidos: 5 fallos -> 60 s bloqueada esa IP (src/auth/ratelimit.js)
+const { blocked, fail } = createRateLimiter({ max: 5, ms: 60_000 });
 
 // ───────────────────────── estado compartido
 const state = { title: '', url: '', vol: null, muted: false, media: -1, scroll: null }; // scroll: {pos, size} de 0 a 1, o null
@@ -469,7 +461,7 @@ const cdp = {
     ws.on('open', () => {
       this.ready = true;
       this.send('Target.setDiscoverTargets', { discover: true });
-      console.log('CDP conectado');
+      log.info('CDP conectado');
     });
     ws.on('message', d => { try { this.onMessage(JSON.parse(d.toString())); } catch {} });
     ws.on('error', () => {});
@@ -528,7 +520,7 @@ const cdp = {
           if (t.url !== state.url && idle) idle.onNav(t.url);
           state.title = t.title; state.url = t.url; broadcast();
           // al cambiar de página dentro de Spotify (o llegar a él) se repasa el retoque
-          if (this.session && /^https:\/\/open\.spotify\.com\//.test(t.url) && !process.env.TV_SPOTIFY_BANNER)
+          if (this.session && /^https:\/\/open\.spotify\.com\//.test(t.url) && !CFG.SPOTIFY_BANNER)
             this.call('Runtime.evaluate', { expression: `(${spotifyTweak})()` }).catch(() => {});
         }
         break;
@@ -562,7 +554,7 @@ const cdp = {
   // retoques de páginas concretas (se ejecutan en cada documento nuevo de la pestaña activa)
   tweak() {
     const source = `(${spotifyTweak})()`;
-    const bad = m => e => console.error('tweak', m, e.message);
+    const bad = m => e => log.error('tweak', m, e.message);
     this.call('Page.addScriptToEvaluateOnNewDocument', { source }).catch(bad('addScript'));
     this.call('Runtime.evaluate', { expression: source }).catch(bad('eval'));
   },
@@ -584,7 +576,7 @@ const cdp = {
       },
     ];
     try { for (const f of steps) { if (this.session !== sid) return; await f(); } } // se aborta si cambia la sesión
-    catch (e) { console.error('foco', e.message); }
+    catch (e) { log.error('foco', e.message); }
   },
   focusRefresh() { // vuelve a mirar el campo con foco (por si la web lo ha cambiado por su cuenta, o lo ha escrito un mando)
     if (!this.focusCtx) return Promise.resolve();
@@ -603,7 +595,7 @@ const cdp = {
       this.session = r.sessionId;
       const t = this.pages.get(id);
       if (t) { state.title = t.title; state.url = t.url; }
-      if (!process.env.TV_SPOTIFY_BANNER) this.tweak();
+      if (!CFG.SPOTIFY_BANNER) this.tweak();
       this.watchFocus();
       broadcast();
     } catch {}
@@ -615,7 +607,7 @@ let ptr = null;
 function startPointer() {
   if (NO_POINTER) return;
   ptr = spawn('python3', [path.join(ROOT, 'pointer.py')], {
-    stdio: ['pipe', 'ignore', 'inherit'], env: { ...process.env, DISPLAY: process.env.DISPLAY || ':0' },
+    stdio: ['pipe', 'ignore', 'inherit'], env: { ...process.env, DISPLAY: CFG.DISPLAY },
   });
   ptr.stdin.on('error', () => {});
   ptr.on('exit', () => { ptr = null; setTimeout(startPointer, 1000); });
@@ -623,7 +615,7 @@ function startPointer() {
 const RE_PTR = /^(?:[mw] -?\d{1,4}(?:\.\d{1,2})? -?\d{1,4}(?:\.\d{1,2})?|[bc] [1-3](?: [01])?)$/;
 function ptrLine(s) {
   if (!RE_PTR.test(s)) return;
-  if (DEBUG) console.log('ptr', s);
+  log.debug('ptr', s);
   if (ptr && ptr.stdin.writable) ptr.stdin.write(s + '\n');
 }
 
@@ -764,7 +756,7 @@ async function playpause() {
 }
 
 // volumen (PipeWire). Las pulsaciones seguidas se agrupan en una sola llamada.
-const WPENV = { ...process.env, XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR || `/run/user/${process.getuid()}` };
+const WPENV = { ...process.env, XDG_RUNTIME_DIR: CFG.XDG_RUNTIME_DIR };
 const wp = args => new Promise(r => execFile('wpctl', args, { env: WPENV, timeout: 2000 }, (e, o) => r(e ? '' : o)));
 async function volRead() {
   const m = /Volume:\s*([\d.]+)(\s*\[MUTED\])?/.exec(await wp(['get-volume', '@DEFAULT_AUDIO_SINK@']));
@@ -954,17 +946,16 @@ async function volSet(v) {
 
 // Spotify: spotifyd ("Salón") es el dispositivo Spotify Connect; se controla con la API web de Spotify (app propia, PKCE).
 // Los tokens se guardan en ./spotify.json (0600). Conexión: abrir /spotify/login?t=TOKEN desde cualquier dispositivo de la red.
-const SP_FILE = path.join(ROOT, 'spotify.json');
-const SP_DEVICE = process.env.TV_SPOTIFY_DEVICE || 'Salón';
-const PUBLIC_URL = (process.env.TV_PUBLIC_URL || 'https://green-house.tailf2c275.ts.net:8443').replace(/\/+$/, '');
+const SP_FILE = CFG.FILES.spotify;
+const { SP_DEVICE, PUBLIC_URL } = CFG;
 const SP_SCOPE = 'user-read-playback-state user-modify-playback-state user-read-currently-playing ' +
   'user-read-recently-played playlist-read-private playlist-read-collaborative user-library-read user-library-modify';
 const spImg = (list, want) => { const s = [...(list || [])].sort((a, b) => (a.width || 0) - (b.width || 0)); return (s.find(i => (i.width || 0) >= want) || s[s.length - 1] || {}).url || null; };
 let spMeId = '';
 async function spMe() { if (!spMeId) spMeId = (await spApi('GET', '/me')).id; return spMeId; }
 const spHasScopes = () => !!sp.scope && SP_SCOPE.split(' ').every(x => sp.scope.split(' ').includes(x));
-let sp = {}; try { sp = JSON.parse(fs.readFileSync(SP_FILE, 'utf8')); } catch {}
-const spSave = () => fs.writeFileSync(SP_FILE, JSON.stringify(sp), { mode: 0o600 });
+let sp = readJson(SP_FILE, {}) || {};
+const spSave = () => writeJson(SP_FILE, sp);
 const b64u = b => b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 const spPending = new Map(); // state -> {verifier, ts}
 
@@ -996,7 +987,7 @@ const spCounted = (method, p, status) => {
 };
 setInterval(() => {
   const { n, by } = spCount;
-  if (n && (DEBUG || n > 30)) console.log(`spotify: ${n} peticiones en el último minuto (` + Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ') + ')');
+  if (n && (DEBUG || n > 30)) log.info(`spotify: ${n} peticiones en el último minuto (` + Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ') + ')');
   spCount.n = 0; spCount.by = {};
 }, 60_000).unref();
 function spWaitErr() { const e = new Error(`Spotify pide esperar ${Math.ceil((spWait - Date.now()) / 1000)} s`); e.wait = true; return e; }
@@ -1014,7 +1005,7 @@ async function spApi(method, p, body) {
   if (r.status === 429) {
     const ra = Number(r.headers.get('retry-after'));                  // segundos; sin cabecera, 30 s
     spWait = Date.now() + Math.min(Number.isFinite(ra) && ra > 0 ? ra : 30, 3600) * 1000;
-    console.log(`spotify: límite de peticiones, espero ${Math.ceil((spWait - Date.now()) / 1000)} s`);
+    log.info(`spotify: límite de peticiones, espero ${Math.ceil((spWait - Date.now()) / 1000)} s`);
     throw spWaitErr();
   }
   if (r.status === 204 || r.status === 202) return {};
@@ -1207,13 +1198,13 @@ function spBroadcast(n) {
 const spNow = require('./nowplaying')({
   spApi, spReady: () => !!(sp.clientId && sp.refresh),
   watching: () => [...wss.clients].some(spWatching) ? 2 : idle.watching() ? 1 : 0,
-  onChange: n => { idle.setMusic(n); spBroadcast(n); }, log: (...a) => console.log(...a),
+  onChange: n => { idle.setMusic(n); spBroadcast(n); }, log: log.info,
 });
 
 // ───────────────────────── pantalla en reposo y Live Activities (idle.js)
 const idle = require('./idle')({
   ROOT, PUB, SELF, cdp, nav, state, onWatch: () => spNow.poll(5000).then(n => idle.setMusic(n)),
-  stageKind: () => stage.kind, log: (...a) => console.log(...a),
+  stageKind: () => stage.kind, log: log.info,
 });
 
 // preguntar al agente (OpenClaw) y enseñar lo entendido en la tele; la respuesta vuelve por el mismo WebSocket
@@ -1275,7 +1266,7 @@ async function run(m, ws, ctx = {}) {
   const P = permsOf(dev);
   m = gate(m, P);
   if (m.error) return m;
-  if (DEBUG) console.log('cmd', JSON.stringify(m.t === 'field' ? { ...m, value: `(${String(m.value ?? '').length} caracteres)` } : m)); // lo escrito (contraseñas) no va al registro
+  log.debug('cmd', JSON.stringify(m.t === 'field' ? { ...m, value: `(${String(m.value ?? '').length} caracteres)` } : m)); // lo escrito (contraseñas) no va al registro
   if (!['state', 'devices', 'activity', 'idle', 'spwatch', 'focus'].includes(m.t)) idle.touch();
   try {
     switch (m.t) {
@@ -1531,7 +1522,7 @@ wss.on('connection', (ws, req) => {
   ws.send(JSON.stringify(focusFor(ws)));
   if (permsOf(ws.devId ? devices.find(d => d.id === ws.devId) : null).admin) // peticiones de acceso pendientes
     for (const [pid, v] of pairs) if (v.ask && !v.result && !v.denied) ws.send(JSON.stringify({ t: 'pairreq', pid, name: v.name }));
-  console.log('cliente conectado', clientIp(req));
+  log.info('cliente conectado', clientIp(req));
 });
 setInterval(() => {
   for (const c of wss.clients) { if (!c.isAlive) { c.terminate(); continue; } c.isAlive = false; c.ping(); }
@@ -1579,8 +1570,8 @@ function bindAddrs() {
 for (const addr of bindAddrs()) {
   const s = http.createServer(handler);
   s.on('upgrade', onUpgrade);
-  s.on('error', e => console.error('no se pudo escuchar en', addr, e.code));
-  s.listen(PORT, addr, () => console.log(`escuchando en http://${addr}:${PORT}/ (token maestro en remote/token; nunca se escribe en el registro)`));
+  s.on('error', e => log.error('no se pudo escuchar en', addr, e.code));
+  s.listen(PORT, addr, () => log.info(`escuchando en http://${addr}:${PORT}/ (token maestro en remote/token; nunca se escribe en el registro)`));
 }
 cdp.connect();
 startPointer();
