@@ -1562,7 +1562,7 @@ for (const addr of bindAddrs()) {
   const s = http.createServer(handler);
   s.on('upgrade', onUpgrade);
   s.on('error', e => console.error('no se pudo escuchar en', addr, e.code));
-  s.listen(PORT, addr, () => console.log(`escuchando en http://${addr}:${PORT}/?t=${TOKEN}`));
+  s.listen(PORT, addr, () => console.log(`escuchando en http://${addr}:${PORT}/ (token maestro en remote/token; nunca se escribe en el registro)`));
 }
 cdp.connect();
 startPointer();
