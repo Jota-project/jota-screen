@@ -70,9 +70,56 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .in{width:100%;height:52px;border-radius:17px;border:1px solid var(--line);background:var(--surface);color:var(--tx);font:500 17px "Inter",system-ui,-apple-system,sans-serif;padding:0 16px;outline:none;-webkit-user-select:text;user-select:text;touch-action:manipulation;-webkit-appearance:none}
 .in:focus{border-color:var(--accent)}
 .in::placeholder{color:var(--text-faint)}
-.keys{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
-.keys .bt{height:46px;border-radius:15px;font-size:14px}
-.keys .bt.ac{background:var(--accent);color:var(--on-accent);border-color:transparent}
+/* escribir en la tele: pantalla completa, pensada con el teclado del móvil abierto (TVC Diseño - Teclado) */
+:root,:root[data-theme=oscuro]{--tv:#15121b;--tv-line:#5d5470;--tv-field:rgba(246,243,240,.1);--tv-text:#f6f3f0;--tv-ink:#a99ad1;--kbd:#1f1b27;--kbd-text:#8c8499}
+:root[data-theme=claro]{--tv:#2a2433;--tv-line:#2a2433;--tv-field:rgba(246,243,240,.1);--tv-text:#f6f3f0;--tv-ink:#a99ad1;--kbd:#dcd6d0;--kbd-text:#6a6377}
+.kbV{position:fixed;left:0;right:0;top:var(--vt,0px);height:var(--vh,100%);z-index:6;background:var(--bg);color:var(--text);display:flex;flex-direction:column;visibility:hidden;opacity:0;transition:opacity .18s,visibility 0s .18s}
+.kbV.on{visibility:visible;opacity:1;transition:opacity .18s}
+.kbB{flex:1;min-height:0;width:100%;max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:14px;padding:max(16px,env(safe-area-inset-top)) max(20px,env(safe-area-inset-right)) 0 max(20px,env(safe-area-inset-left))}
+.kbH{display:flex;align-items:center;gap:12px;height:48px;flex:none}
+.kbH h1{font:500 28px/1.1 "Fraunces",Georgia,serif;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kbBk{width:48px;height:48px;border-radius:999px;background:var(--surface);border:1px solid var(--edge);color:var(--text);display:grid;place-items:center;flex:none;touch-action:manipulation;cursor:pointer}
+.kbBk svg{width:22px;height:22px}
+.kbV svg{stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.tvM{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px}
+.tvS{width:100%;height:84px;border-radius:14px;border:1.5px solid var(--tv-line);background:var(--tv);padding:0 18px;display:flex;align-items:center}
+.tvF{width:100%;height:40px;border-radius:999px;background:var(--tv-field);color:var(--tv-text);display:flex;align-items:center;gap:10px;padding:0 16px;overflow:hidden}
+.tvF svg{width:16px;height:16px;flex:none;stroke:var(--tv-ink);stroke-width:2}
+.tvM .i-lk,.tvM.pw .i-sr{display:none}.tvM.pw .i-lk{display:block}
+.tvT{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;letter-spacing:.02em;min-width:0}
+.tvT.ph{opacity:.5}
+.tvC{width:2px;height:18px;margin-left:-7px;background:var(--tv-ink);flex:none;animation:blk 1.1s steps(1) infinite}
+.tvM.none .tvC{display:none}.tvM.none .tvF svg{opacity:.5}
+@keyframes blk{50%{opacity:0}}
+.tvLeg{width:64px;height:2px;border-radius:2px;background:var(--tv-line)}
+.kbE{flex:1;min-height:0;border-radius:24px;background:var(--surface);border:1.5px solid var(--accent);padding:16px 18px 12px;display:flex;flex-direction:column;gap:8px}
+.kbE label{font-size:13px;font-weight:500;color:var(--text-soft)}
+.kbE.none label{color:var(--warn)}
+.kbE textarea,.kbE input{width:100%;min-width:0;background:transparent;border:0;outline:none;color:var(--text);padding:0;-webkit-user-select:text;user-select:text;touch-action:manipulation;-webkit-appearance:none;appearance:none}
+.kbE textarea{flex:1;min-height:0;resize:none;font:500 24px/1.35 "Inter",system-ui,-apple-system,sans-serif;touch-action:pan-y}
+.kbE textarea::placeholder,.kbE input::placeholder{color:var(--text-soft)}
+.kbE textarea[hidden],.kbPw[hidden]{display:none}
+.kbPw{flex:1;display:flex;align-items:flex-start;gap:10px}
+.kbPw input{flex:1;height:44px;font:500 24px "Inter",system-ui,-apple-system,sans-serif;letter-spacing:.06em}
+.kbRv{height:40px;padding:0 14px;border-radius:999px;background:var(--bg);border:0;color:var(--text);font:600 14px "Inter",system-ui,-apple-system,sans-serif;display:flex;align-items:center;gap:6px;flex:none;touch-action:manipulation;cursor:pointer}
+.kbRv svg{width:18px;height:18px}
+.kbI{display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:13px;color:var(--text-soft)}
+.kbN{font-variant-numeric:tabular-nums;white-space:nowrap}
+.kbSt{display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.kbSt i{width:7px;height:7px;border-radius:999px;background:var(--status);flex:none}
+.kbSt.busy i{background:var(--text-faint);animation:spn 1s linear infinite;border-radius:2px}
+.kbSt.off i{background:var(--warn)}
+.kbK{flex:none;display:flex;justify-content:center;gap:6px;margin-top:-4px;padding-bottom:10px}
+.kbK button{min-width:40px;height:34px;padding:0 9px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--text-soft);font:600 12.5px "Inter",system-ui,-apple-system,sans-serif;display:grid;place-items:center;touch-action:manipulation;cursor:pointer}
+.kbK svg{width:17px;height:17px}
+.kbA{flex:none;background:var(--kbd);display:flex;align-items:center;justify-content:space-between;padding:6px max(12px,env(safe-area-inset-right)) max(6px,env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+.kbV.kb .kbA{padding-bottom:6px}
+.kbA button{height:40px;border-radius:999px;border:0;font:600 15px "Inter",system-ui,-apple-system,sans-serif;display:flex;align-items:center;gap:8px;touch-action:manipulation;cursor:pointer}
+.kbX{padding:0 14px;background:transparent;color:var(--text)}
+.kbGo{padding:0 18px;background:var(--accent);color:var(--on-accent)}
+.kbGo svg{width:16px;height:16px;stroke-width:2}
+.kbV button:active{transform:scale(.96)}
+.kbV button:focus-visible{outline:2px solid var(--accent-text);outline-offset:3px}
 .sh{font-size:12px;letter-spacing:.8px;text-transform:uppercase;color:var(--dim);margin:6px 2px 8px}
 .fld{display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px 14px;padding:11px 2px;border-top:1px solid var(--line)}
 .fld:first-of-type{border-top:0}
@@ -271,19 +318,42 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 <div class="shade" id="shade"></div>
 <div class="pill" id="pill"></div>
 
-<!-- teclado -->
-<div class="sheet" id="kbS" role="dialog" aria-label="Teclado">
-  <div class="grab"></div>
-  <input class="in" id="kin" placeholder="Escribe aquí; sale en la tele" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="send">
-  <div class="keys">
-    <button class="bt" data-a="k:Escape">Esc</button>
-    <button class="bt" data-a="k:Tab" aria-label="Tabulador"><svg><use href="#i-tab"/></svg></button>
-    <button class="bt" data-a="k:Backspace" data-rep aria-label="Borrar"><svg><use href="#i-bksp"/></svg></button>
-    <button class="bt ac" data-a="k:Enter" aria-label="Intro"><svg><use href="#i-enter"/></svg></button>
-    <button class="bt" data-a="k:ArrowLeft" data-rep aria-label="Izquierda"><svg><use href="#i-back"/></svg></button>
-    <button class="bt" data-a="k:ArrowUp" data-rep aria-label="Arriba"><svg><use href="#i-up"/></svg></button>
-    <button class="bt" data-a="k:ArrowDown" data-rep aria-label="Abajo"><svg><use href="#i-down"/></svg></button>
-    <button class="bt" data-a="k:ArrowRight" data-rep aria-label="Derecha"><svg><use href="#i-fwd"/></svg></button>
+<!-- escribir en la tele: el móvil tiene su propio editor; cada cambio manda el texto entero y la selección -->
+<div class="kbV" id="kbS" role="dialog" aria-label="Escribir en la tele">
+  <div class="kbB">
+    <div class="kbH">
+      <button class="kbBk" id="kbBk" type="button" aria-label="Volver al mando"><svg viewBox="0 0 24 24"><use href="#i-back"/></svg></button>
+      <h1>Escribir en la tele</h1>
+    </div>
+    <div class="tvM none" id="tvM" role="img" aria-label="En la tele: ningún campo">
+      <div class="tvS"><div class="tvF">
+        <svg class="i-sr" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+        <svg class="i-lk" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
+        <span class="tvT ph" id="tvT">Ningún campo seleccionado</span><span class="tvC"></span>
+      </div></div>
+      <div class="tvLeg"></div>
+    </div>
+    <div class="kbE" id="kbE">
+      <label id="kbL" for="kbTa">Escribe, borra y corrige aquí</label>
+      <textarea id="kbTa" placeholder="Empieza a escribir" maxlength="2000" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="enter"></textarea>
+      <div class="kbPw" id="kbPwB" hidden>
+        <input id="kbPw" type="password" maxlength="2000" autocomplete="current-password" autocapitalize="off" spellcheck="false" enterkeyhint="enter" aria-labelledby="kbL">
+        <button class="kbRv" id="kbRv" type="button" aria-pressed="false"><svg viewBox="0 0 24 24"><path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg><span>Mostrar</span></button>
+      </div>
+      <div class="kbI"><span class="kbN" id="kbN">0 caracteres</span><span class="kbSt" id="kbSt"><i></i><span>Al día en la tele</span></span></div>
+    </div>
+    <div class="kbK" id="kbK" aria-label="Teclas en la tele">
+      <button type="button" data-k="Escape">Esc</button>
+      <button type="button" data-k="Tab" aria-label="Tabulador"><svg viewBox="0 0 24 24"><use href="#i-tab"/></svg></button>
+      <button type="button" data-k="ArrowLeft" aria-label="Izquierda"><svg viewBox="0 0 24 24"><use href="#i-back"/></svg></button>
+      <button type="button" data-k="ArrowUp" aria-label="Arriba"><svg viewBox="0 0 24 24"><use href="#i-up"/></svg></button>
+      <button type="button" data-k="ArrowDown" aria-label="Abajo"><svg viewBox="0 0 24 24"><use href="#i-down"/></svg></button>
+      <button type="button" data-k="ArrowRight" aria-label="Derecha"><svg viewBox="0 0 24 24"><use href="#i-fwd"/></svg></button>
+    </div>
+  </div>
+  <div class="kbA" id="kbA">
+    <button type="button" class="kbX" id="kbClr">Borrar todo</button>
+    <button type="button" class="kbGo" id="kbGo" aria-label="Pulsar Intro en la tele"><svg viewBox="0 0 24 24"><path d="M19 6v6a2 2 0 0 1-2 2H5M9 10l-4 4 4 4"/></svg>Intro</button>
   </div>
 </div>
 
@@ -500,6 +570,7 @@ async function connect() {
     setTimeout(connect, Math.min(2000, 250 * ++tries));
   };
   ws.onerror = () => {};
+  ws.addEventListener('message', e => { if (e.data.startsWith('{"t":"focus"')) try { onTvFocus(JSON.parse(e.data)); } catch {} }); // campo con foco en la tele
 }
 function ping() { if (ws && ws.readyState === 1 && !document.hidden) send('p' + performance.now()); }
 setInterval(ping, 2000);
@@ -622,16 +693,16 @@ document.addEventListener('pointerdown', e => {
   if (b.hasAttribute('data-rep')) repT = setTimeout(() => { repI = setInterval(() => fire(b), 85); }, 380);
 });
 ['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, stopRep));
-document.addEventListener('mousedown', e => { if (e.target.closest('.keys')) e.preventDefault(); });
+document.addEventListener('mousedown', e => { if (e.target.closest('.kbK,.kbA')) e.preventDefault(); });
 document.addEventListener('contextmenu', e => e.preventDefault());
 
 /* ── hojas ── */
-const spin = $('#spin'), shade = $('#shade'), kin = $('#kin'), gin = $('#gin'), agin = $('#agin'), rep = $('#rep');
+const spin = $('#spin'), shade = $('#shade'), gin = $('#gin'), agin = $('#agin'), rep = $('#rep');
 let sheet = null;
 function openSheet(id) {
   closeSheet();
   sheet = $('#' + id); sheet.classList.add('on'); shade.classList.add('on');
-  if (id === 'kbS') { kin.value = ''; kin.focus(); }
+  if (id === 'kbS') kbOpen();
   if (id === 'goS') { gin.value = ''; gin.focus(); }
   if (id === 'agS') { agin.value = ''; agin.focus(); }
   if (id === 'spS') { spin.value = ''; }
@@ -639,6 +710,7 @@ function openSheet(id) {
 function closeSheet() {
   if (!sheet) return;
   if (sheet.id === 'spS') cmd({ t: 'spwatch', on: false });
+  if (sheet.id === 'kbS') kbClose();
   sheet.classList.remove('on'); shade.classList.remove('on');
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   sheet = null;
@@ -649,23 +721,114 @@ document.addEventListener('click', e => {
   buzz(7);
   ({ kb: () => openSheet('kbS'), go: () => openSheet('goS'), ag: () => openSheet('agS'), sp: spButton, more: () => { refreshSet(); if (ME && ME.role === 'admin') { refreshDevs(); idleLoad(); } openSheet('setS'); } })[b.dataset.a]();
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet && document.activeElement !== kin) closeSheet(); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet && !(sheet.id === 'kbS' && sheet.contains(document.activeElement))) closeSheet(); });
 const vv = window.visualViewport;
 if (vv) {                                              // subir la hoja por encima del teclado del móvil
   const upd = () => document.documentElement.style.setProperty('--kb', Math.max(0, innerHeight - vv.height - vv.offsetTop) + 'px');
   vv.addEventListener('resize', upd); vv.addEventListener('scroll', upd);
 }
 
-/* teclado: el texto sale tal cual por la tele; borrar y teclas especiales como pulsaciones */
-function flushText() { const v = kin.value; if (v) { cmd({ t: 'text', v }); kin.value = ''; } }
-kin.addEventListener('beforeinput', e => { if (e.inputType === 'deleteContentBackward' && !kin.value) cmd({ t: 'key', k: 'Backspace' }); });
-kin.addEventListener('input', e => { if (!e.isComposing) flushText(); });
-kin.addEventListener('compositionend', flushText);
-kin.addEventListener('keydown', e => {
-  if (['Enter', 'Tab', 'Escape', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && !e.isComposing) {
-    e.preventDefault(); flushText(); cmd({ t: 'key', k: e.key });
-  }
+/* escribir en la tele: el móvil tiene su propio editor y en cada cambio manda el texto entero y la selección
+   (agrupado por fotograma); la tele lo aplica al campo con foco. De una contraseña, la tele nunca manda el valor. */
+const kbV = $('#kbS'), kbTa = $('#kbTa'), kbPw = $('#kbPw'), kbPwB = $('#kbPwB'), kbE = $('#kbE');
+let tvF = { kind: 'none', placeholder: '' };            // último foco que ha avisado la tele
+let fSeq = 0, fAck = 0, fRaf = 0, fT = 0, fHold = false, fLast = '', fComp = false, fTyped = 0, fOk = null, fErr = '';
+const kbOn = () => kbV.classList.contains('on');
+const kbEd = () => kbPwB.hidden ? kbTa : kbPw;
+function kbMode(pw) {                                    // contraseña <-> texto; el foco pasa al editor que toque
+  if (pw === !kbPwB.hidden) return;
+  const had = document.activeElement === kbTa || document.activeElement === kbPw;
+  kbPwB.hidden = !pw; kbTa.hidden = pw;
+  kbPw.value = ''; kbPw.type = 'password'; kbRvPaint();
+  $('#kbL').htmlFor = pw ? 'kbPw' : 'kbTa';
+  if (had) kbEd().focus();
+}
+function kbFill(j, replace) {                            // pone en el editor lo que hay en el campo de la tele
+  if (j.kind === 'none') return;                         // sin campo: el editor se queda como está
+  kbMode(j.kind === 'password');
+  if (!replace) return;
+  const e = kbEd(), v = j.kind === 'password' ? '' : String(j.value || '');
+  e.value = v;
+  try { if (document.activeElement === e) e.setSelectionRange(v.length, v.length); } catch {}
+  fLast = v.length + ':' + v.length + ':' + v.length + ':' + v; // ya está así en la tele: no hace falta mandarlo
+}
+function kbOpen() {
+  kbEd().focus();                                        // dentro del toque: si no, iOS no abre el teclado
+  kbFill(tvF, true); kbPaint();
+  cmd({ t: 'focus' });                                   // por si ha cambiado mientras estaba cerrada
+}
+function kbClose() { kbPw.value = ''; kbPw.type = 'password'; kbRvPaint(); }
+function onTvFocus(j) {
+  tvF = j; fOk = null;
+  // con la vista abierta se actualiza el editor, salvo que el usuario esté escribiendo (no se le pisa)
+  if (kbOn()) kbFill(j, !(fComp || Date.now() - fTyped < 1500 || fAck < fSeq));
+  kbPaint();
+}
+function kbPaint() {
+  const pw = !kbPwB.hidden, v = kbEd().value, n = v.length;
+  const none = fOk === false || (fOk === null && tvF.kind === 'none');
+  const m = $('#tvM'), t = $('#tvT');
+  m.classList.toggle('pw', pw); m.classList.toggle('none', none);
+  const shown = none ? '' : pw ? '•'.repeat(Math.min(n, 40)) : (n > 60 ? '…' : '') + v.slice(-60).replace(/\s+/g, ' ');
+  t.textContent = shown || (none ? 'Ningún campo seleccionado' : tvF.placeholder || (pw ? 'Contraseña' : 'Campo vacío'));
+  t.classList.toggle('ph', !shown);
+  m.setAttribute('aria-label', pw ? 'En la tele: contraseña oculta de ' + n + ' caracteres' : 'En la tele: ' + (none ? 'ningún campo' : v || 'campo vacío'));
+  $('#kbN').textContent = n === 1 ? '1 carácter' : n + ' caracteres';
+  kbE.classList.toggle('none', none);
+  $('#kbL').textContent = none ? 'Toca un campo en la tele para escribir' : pw ? 'Contraseña, oculta en el móvil y en la tele' : 'Escribe, borra y corrige aquí';
+  const st = $('#kbSt'), up = ws && ws.readyState === 1;
+  const s = !up ? ['off', 'Sin conexión'] : fAck < fSeq ? ['busy', 'Enviando…'] : fErr ? ['off', 'No se ha podido escribir'] : none ? ['off', 'Sin campo en la tele'] : ['', 'Al día en la tele'];
+  st.className = 'kbSt' + (s[0] ? ' ' + s[0] : ''); st.lastChild.textContent = s[1];
+}
+function kbSched() { if (!fRaf) { fRaf = requestAnimationFrame(kbFlush); fT = setTimeout(kbFlush, 120); } } // por fotograma (y por si no se pinta)
+function kbFlush() {                                     // manda el estado del editor si ha cambiado (texto o selección)
+  if (fRaf) { cancelAnimationFrame(fRaf); clearTimeout(fT); fRaf = 0; }
+  if (fComp || fHold) return;                            // composición (IME, dictado) a medias: se manda al terminar
+  const e = kbEd(), v = e.value, a = e.selectionStart ?? v.length, b = e.selectionEnd ?? a;
+  const sig = v.length + ':' + a + ':' + b + ':' + v;
+  if (sig === fLast) return;
+  fLast = sig;
+  const seq = ++fSeq; kbPaint();
+  rpc({ t: 'field', value: v, selStart: a, selEnd: b, seq }).then(r => {
+    fAck = Math.max(fAck, seq);
+    if (seq === fSeq && !r.stale && !r.skipped) { fErr = r.error || ''; fOk = r.error ? fOk : !r.none; }
+    kbPaint();
+  });
+}
+function kbKey(k) { kbFlush(); cmd({ t: 'key', k }); buzz(8); } // lo escrito llega antes que la tecla
+for (const e of [kbTa, kbPw]) {
+  e.addEventListener('input', ev => { fTyped = Date.now(); kbPaint(); if (!ev.isComposing && !fComp) kbSched(); });
+  e.addEventListener('compositionstart', () => { fComp = true; });
+  e.addEventListener('compositionend', () => { fComp = false; fTyped = Date.now(); kbSched(); });
+  e.addEventListener('select', kbSched);
+  e.addEventListener('keydown', ev => {                  // teclado físico: Intro, Tab y Esc van a la tele (Mayús+Intro, salto de línea)
+    if (ev.isComposing || fComp) return;
+    if ((ev.key === 'Enter' && !ev.shiftKey) || ev.key === 'Tab' || ev.key === 'Escape') { ev.preventDefault(); kbKey(ev.key); }
+  });
+}
+document.addEventListener('selectionchange', () => {
+  const a = document.activeElement;
+  if (fHold && a === kbPw && (kbPw.selectionStart !== fHold.a || kbPw.selectionEnd !== fHold.b)) try { kbPw.setSelectionRange(fHold.a, fHold.b); } catch {}
+  if ((a === kbTa || a === kbPw) && !fComp) kbSched();
 });
+// los botones no le quitan el foco al editor (así el teclado del móvil no se cierra)
+kbV.addEventListener('pointerdown', e => { if (e.target.closest('.kbK button,.kbA button,.kbRv')) e.preventDefault(); });
+kbV.addEventListener('touchmove', e => e.stopPropagation(), { passive: true }); // dejar desplazar el editor
+$('#kbK').addEventListener('click', e => { const b = e.target.closest('[data-k]'); if (b) kbKey(b.dataset.k); });
+$('#kbGo').addEventListener('click', () => kbKey('Enter'));
+$('#kbClr').addEventListener('click', () => { const e = kbEd(); e.value = ''; fTyped = Date.now(); buzz(10); kbPaint(); kbFlush(); });
+$('#kbBk').addEventListener('click', () => { buzz(7); closeSheet(); });
+function kbRvPaint() { const on = kbPw.type === 'text'; $('#kbRv').setAttribute('aria-pressed', on); $('#kbRv span').textContent = on ? 'Ocultar' : 'Mostrar'; }
+$('#kbRv').addEventListener('click', () => {
+  const a = kbPw.selectionStart, b = kbPw.selectionEnd;
+  // Chrome lleva el cursor al principio un poco después: mientras, se repone y no se manda nada
+  fHold = { a, b }; kbPw.type = kbPw.type === 'password' ? 'text' : 'password'; kbRvPaint();
+  setTimeout(() => { try { kbPw.setSelectionRange(a, b); } catch {} fHold = false; kbSched(); }, 250);
+});
+if (vv) {                                              // la vista ocupa lo que se ve: la barra queda pegada encima del teclado
+  const kbVV = () => { kbV.style.setProperty('--vt', vv.offsetTop + 'px'); kbV.style.setProperty('--vh', vv.height + 'px'); kbV.classList.toggle('kb', innerHeight - vv.height > 80); };
+  vv.addEventListener('resize', kbVV); vv.addEventListener('scroll', kbVV); kbVV();
+}
 gin.addEventListener('keydown', e => {
   if (e.key !== 'Enter') return;
   e.preventDefault(); const v = gin.value.trim();
