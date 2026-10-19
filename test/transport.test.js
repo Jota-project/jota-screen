@@ -1,0 +1,89 @@
+'use strict';
+// Transporte HTTP y WebSocket: rutas, cabeceras de seguridad, límites de tamaño y canales que solo abre la tele.
+const { test, before, after } = require('node:test');
+const assert = require('node:assert/strict');
+const path = require('node:path');
+const { start } = require('./helpers/server');
+const { startFakeCdp } = require('./helpers/fake-cdp');
+const WS = require(path.join(__dirname, '..', 'remote', 'node_modules', 'ws'));
+
+let s, cdp;
+const cmd = async body => (await s.api('/api/cmd', s.token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
+const viaProxy = { 'X-Forwarded-For': '203.0.113.9' }; // como llega algo de fuera a través de nginx o Tailscale
+
+before(async () => {
+  cdp = await startFakeCdp();
+  s = await start({ cdpPort: cdp.port });
+  await cdp.waitFor(m => m.method === 'Target.attachToTarget');
+});
+after(async () => { await s.stop(); await cdp.close(); });
+
+test('cada página sale con su CSP y las cabeceras de seguridad', async () => {
+  const idx = await s.get('/');
+  assert.match(idx.headers.get('content-security-policy'), /script-src 'unsafe-inline'; connect-src 'self' ws: wss:/);
+  assert.equal(idx.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(idx.headers.get('referrer-policy'), 'no-referrer');
+  assert.match((await s.get('/idle.html')).headers.get('content-security-policy'), /media-src 'self' blob:/);
+  assert.match((await s.get('/tpl-tasks.html')).headers.get('content-security-policy'), /img-src \* data: blob:/);
+  assert.equal((await s.get('/tv-island.js')).headers.get('content-security-policy'), null);
+  assert.equal((await s.get('/no-existe.js')).status, 404);
+});
+
+test('fuera de la API y de emparejar, solo GET y HEAD', async () => {
+  assert.equal((await s.get('/index.html', { method: 'POST' })).status, 405);
+  const h = await s.get('/index.html', { method: 'HEAD' });
+  assert.equal(h.status, 200);
+  assert.equal((await h.text()).length, 0);
+  assert.equal((await s.get('/pair/info')).status, 405, 'emparejar es solo POST');
+});
+
+test('emparejar: ¿hay admin en línea y tele lista?', async () => {
+  assert.deepEqual(await (await s.post('/pair/info', {})).json(), { adminOnline: false, tv: true });
+  const big = await s.get('/pair/info', { method: 'POST', body: 'x'.repeat(3000) });
+  assert.equal(big.status, 413);
+});
+
+test('API: un cuerpo de más de 1,2 MB se rechaza', async () => {
+  const r = await s.api('/api/cmd', s.token, { method: 'POST', body: 'x'.repeat(1_300_000) });
+  assert.equal(r.status, 413);
+  assert.equal((await s.api('/api/nada')).status, 404);
+});
+
+test('escenario: la página del agente solo la puede pedir la propia tele, con su CSP', async () => {
+  const r = await cmd({ t: 'show', html: '<h1>Hola salón</h1>' });
+  assert.equal(r.ok, 1, JSON.stringify(r));
+  const nav = await cdp.waitFor(m => m.method === 'Page.navigate' && /\/stage\/p\w+\.html$/.test(m.params.url));
+  const p = new URL(nav.params.url).pathname;
+  const page = await s.get(p);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /^<script src="\/tv-stage\.js"><\/script><h1>Hola salón<\/h1>/);
+  assert.match(page.headers.get('content-security-policy'), /connect-src 'self'/);
+  assert.equal((await s.get(p, { headers: viaProxy })).status, 403);
+  assert.equal((await s.get('/stage/pnoexiste.html')).status, 404);
+  assert.equal((await s.get('/idle/art?u=x', { headers: viaProxy })).status, 403);
+  await cmd({ t: 'close' });
+});
+
+test('WebSocket: los canales de la tele no se abren desde fuera; /ws sin token se cierra con 4001', async () => {
+  const refused = url => new Promise(ok => {
+    const w = new WS(url, { headers: viaProxy });
+    w.on('open', () => ok(false)); w.on('error', () => ok(true)); w.on('close', () => ok(true));
+  });
+  assert.equal(await refused(`ws://127.0.0.1:${s.port}/idle-ws`), true);
+  assert.equal(await refused(`ws://127.0.0.1:${s.port}/stage-ws`), true);
+  assert.equal(await refused(`ws://127.0.0.1:${s.port}/otra`), true);
+  const code = await new Promise(ok => { const w = new WS(`ws://127.0.0.1:${s.port}/ws?t=${'0'.repeat(32)}`); w.on('close', c => ok(c)); w.on('error', () => {}); });
+  assert.equal(code, 4001);
+});
+
+test('WebSocket del mando: saludo (estado, ficha y foco) y respuesta con id', async () => {
+  const a = await s.ws(s.token);
+  const st = await a.wait(m => m.t === 'state');
+  assert.equal(st.cdp, true);
+  const me = await a.wait(m => m.t === 'me');
+  assert.equal(me.role, 'admin');
+  await a.wait(m => m.t === 'focus');
+  assert.deepEqual(await a.rpc({ t: 'state' }), { ...st, t: 'state' });
+  a.close();
+});

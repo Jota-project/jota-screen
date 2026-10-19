@@ -5,6 +5,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { WebSocket } = require('ws');
+const { send, TYPES, isLocalTV } = require('../transport/http-util');
+const { STAGE_CSP } = require('../transport/static');
 
 /**
  * @param {{ cdp: { call: Function }, state: { url: string }, cfg: { SELF: string, HOME_URL: string, STAGE_DIR: string },
@@ -12,6 +14,7 @@ const { WebSocket } = require('ws');
  */
 module.exports = function createStage({ cdp, state, cfg, nav }) {
   const { SELF, HOME_URL, STAGE_DIR } = cfg;
+  fs.mkdirSync(STAGE_DIR, { recursive: true });
   // ───────────────────────── escenario: contenido que el agente pone en la tele
   // Plantillas (tasks, reminder, slides) o HTML propio. Los datos se actualizan en vivo por WebSocket local.
   const stage = { kind: null, data: null, prev: null, timer: null };
@@ -110,8 +113,27 @@ module.exports = function createStage({ cdp, state, cfg, nav }) {
     return { ok: 1 };
   }
 
+  /** Una página del escenario se conecta por /stage-ws (solo la tele): recibe los datos y manda sus eventos. */
+  function onSocket(ws) {
+    stageClients.add(ws);
+    ws.on('error', () => {});
+    ws.on('close', () => stageClients.delete(ws));
+    ws.on('message', (d, bin) => { if (bin) return; try { const m = JSON.parse(d.toString()); if (m.t === 'event') stageEvent(m); } catch {} });
+    if (stage.data) ws.send(JSON.stringify({ t: 'data', data: stage.data }));
+  }
+
+  /** Rutas HTTP: las páginas HTML que el agente ha puesto en el escenario (solo las pide el Chrome de la tele). */
+  const routes = [{
+    re: /^\/stage\/(p\w+)\.html$/,
+    run(req, res, { match }) {
+      if (!isLocalTV(req)) return send(res, 403, 'solo desde la tele');
+      let buf; try { buf = fs.readFileSync(path.join(STAGE_DIR, match[1] + '.html')); } catch { return send(res, 404, 'no encontrado'); }
+      return send(res, 200, req.method === 'HEAD' ? '' : buf, { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store', 'Content-Security-Policy': STAGE_CSP });
+    },
+  }];
+
   return {
-    stage, events, clients: stageClients,
+    stage, events, clients: stageClients, onSocket, routes,
     lastEvent: () => evSeq,
     close: stageClose, event: stageEvent, toast,
     /** al navegar fuera del escenario, se olvida (y su cierre automático también) */

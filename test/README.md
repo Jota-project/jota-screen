@@ -14,7 +14,8 @@ node --test test/*.test.js test/unit/*.test.js
 
 `control.test.js` usa un **Chrome falso** (`helpers/fake-cdp.js`): habla lo justo del protocolo CDP, apunta lo que recibe
 y emite eventos como si vinieran de la página. Así se prueban teclas, texto, navegación, el código de emparejar en la tele,
-el aviso de foco y la reconexión sin tele. `spotify.test.js` arranca con estado inicial (`start({ files })`).
+el aviso de foco, el escenario, los avisos, el agente, escribir en directo y la reconexión sin tele. `transport.test.js` cubre
+las rutas HTTP (CSP, métodos, tamaños, páginas del escenario solo para la tele) y los canales WebSocket. `spotify.test.js` arranca con estado inicial (`start({ files })`).
 
 Las capturas de la pantalla en reposo están en `e2e/` (Playwright). La CI (`.github/workflows/ci.yml`) lanza todo en cada push.
 

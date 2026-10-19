@@ -5,6 +5,7 @@
 const crypto = require('node:crypto');
 const { WebSocket } = require('ws');
 const { readJson, writeJson } = require('../core/json-store');
+const { send, TYPES } = require('../transport/http-util');
 
 /**
  * @param {{
@@ -92,7 +93,7 @@ module.exports = function createSpotify({ cdp, cfg, log, clients, idle }) {
     if (!r.ok) throw new Error(j.error?.message || 'Spotify ' + r.status);
     return j;
   }
-  function spLogin(url) { // -> URL de autorización de Spotify
+  function spLogin() { // -> URL de autorización de Spotify
     if (!sp.clientId) return null;
     const verifier = b64u(crypto.randomBytes(48)), state = b64u(crypto.randomBytes(12));
     for (const [k, v] of spPending) if (Date.now() - v.ts > 600_000) spPending.delete(k);
@@ -336,5 +337,25 @@ module.exports = function createSpotify({ cdp, cfg, log, clients, idle }) {
     } },
   ];
 
-  return { spotify, now: spNow, login: spLogin, callback: spCallback, hasScopes: spHasScopes, page, commands };
+  /**
+   * Rutas HTTP para conectar la cuenta: /spotify/login?t=TOKEN (cualquier dispositivo de la red con token) lleva a
+   * Spotify, y /spotify/callback vuelve de allí (se valida con `state`).
+   * @param {{ blocked: (ip: string) => boolean, fail: (ip: string) => void, okToken: (t: any) => boolean }} auth
+   */
+  function httpRoutes({ blocked, fail, okToken }) {
+    return [
+      { path: '/spotify/login', run(req, res, { url, ip }) {
+        if (blocked(ip)) return send(res, 429, 'demasiados intentos');
+        if (!okToken(url.searchParams.get('t'))) { fail(ip); return send(res, 401, 'no autorizado'); }
+        const to = spLogin();
+        return to ? send(res, 302, '', { Location: to, 'Cache-Control': 'no-store' }) : send(res, 400, 'Falta el Client ID de Spotify en spotify.json');
+      } },
+      { path: '/spotify/callback', run(req, res, { url }) {
+        const page = (t, m) => send(res, 200, `<!doctype html><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1"><body style="background:#0b0d10;color:#f3f6fb;font:20px system-ui;display:grid;place-items:center;height:100vh;text-align:center"><div><h1>${t}</h1><p style="opacity:.7">${m}</p></div>`, { 'Content-Type': TYPES['.html'], 'Cache-Control': 'no-store' });
+        return spCallback(url).then(() => page('Spotify conectado ✓', 'Ya puedes cerrar esta pestaña.'), e => page('No se pudo conectar', String(e.message).replace(/[<>&]/g, '')));
+      } },
+    ];
+  }
+
+  return { spotify, now: spNow, httpRoutes, login: spLogin, callback: spCallback, hasScopes: spHasScopes, page, commands };
 };
