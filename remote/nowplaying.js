@@ -152,7 +152,7 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
       };
       emit();
       return now;
-    } catch (e) { log('spotify now:', e.message); return now; }
+    } catch (e) { if (!e.wait) log('spotify now:', e.message); return now; }    // la espera por límite ya se avisa una vez en spApi
     finally { busy = false; }
   }
   function emit() {

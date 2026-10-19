@@ -986,13 +986,23 @@ async function spAccess() {
   if (!sp.access || Date.now() > sp.expires) await spToken({ grant_type: 'refresh_token', refresh_token: sp.refresh });
   return sp.access;
 }
+// Spotify limita las peticiones (429): hasta que pase su Retry-After no se le pide nada, para no alargar el bloqueo
+let spWait = 0;
+function spWaitErr() { const e = new Error(`Spotify pide esperar ${Math.ceil((spWait - Date.now()) / 1000)} s`); e.wait = true; return e; }
 async function spApi(method, p, body) {
+  if (Date.now() < spWait) throw spWaitErr();
   const doit = async () => fetch('https://api.spotify.com/v1' + p, {
     method, headers: { Authorization: 'Bearer ' + await spAccess(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
     body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(10_000),
   });
   let r = await doit();
   if (r.status === 401) { sp.expires = 0; r = await doit(); }
+  if (r.status === 429) {
+    const ra = Number(r.headers.get('retry-after'));                  // segundos; sin cabecera, 30 s
+    spWait = Date.now() + Math.min(Number.isFinite(ra) && ra > 0 ? ra : 30, 3600) * 1000;
+    console.log(`spotify: límite de peticiones, espero ${Math.ceil((spWait - Date.now()) / 1000)} s`);
+    throw spWaitErr();
+  }
   if (r.status === 204 || r.status === 202) return {};
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error?.message || 'Spotify ' + r.status);
