@@ -1126,6 +1126,8 @@ function spTick() {
 }
 setInterval(() => { if (spOpen()) spTick(); }, 500);
 setInterval(() => { if (spOpen() && !document.hidden) cmd({ t: 'spwatch', on: true }); }, 15000); // por si el WebSocket se ha reconectado
+// el servidor deja de contar el panel a los 40 s sin renovar (móvil bloqueado): al volver, se pide al momento
+document.addEventListener('visibilitychange', () => { if (spOpen() && !document.hidden) rpc({ t: 'spwatch', on: true }).then(r => { if (r && 'now' in r) spPaint(r.now); }); });
 const trk = $('#spTrk');
 const frac = e => { const r = trk.getBoundingClientRect(); return Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)); };
 trk.addEventListener('pointerdown', e => { if (!spN || spN.empty) return; trk.setPointerCapture(e.pointerId); trk.classList.add('drag'); spDrag = frac(e); spTick(); });
