@@ -10,7 +10,8 @@
 // Math.random fijo, movimiento reducido y animaciones desactivadas en la captura, fuentes de Google servidas en local, sin
 // el eco de latencia («p<ts>», no se manda). Todo se maneja desde fuera (roles y nombres accesibles, texto visible y
 // mensajes del servidor inyectados en el WebSocket), así que vale igual con el script en línea o partido en módulos.
-// Falla si la página lanza un error (pageerror) o hay una violación de la CSP.
+// Falla si la página lanza un error (pageerror) o hay una violación de la CSP (la real: la pone el propio servidor, sin
+// 'unsafe-inline' desde R6c, así que un style=, un <style> o un <script> en línea hacen fallar la captura).
 'use strict';
 /* global localStorage, PointerEvent */ // se usan dentro de la página
 const fs = require('node:fs');
