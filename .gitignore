@@ -14,3 +14,6 @@ spotify/
 tv-kiosk.service
 remote/idle.json
 remote/access.json
+
+# worktrees de otras sesiones de Claude
+.claude/worktrees/

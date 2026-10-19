@@ -10,6 +10,7 @@ const { WebSocketServer, WebSocket } = require('ws');
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const MODES = ['auto', 'day', 'evening', 'night', 'cinema'];
+const LAYOUTS = ['rotar', 'margen', 'zonas', 'apilada']; // distribuciones del reposo v2
 const DEFAULTS = {
   city: 'Elche', lat: 38.2669, lon: -0.6983, tz: 'Europe/Madrid',
   mode: 'auto',                 // auto | day | evening | night | cinema
@@ -18,6 +19,9 @@ const DEFAULTS = {
   idleMin: 10,                  // minutos sin uso hasta pasar al reposo (0 = nunca)
   dimMin: 20,                   // de noche: minutos hasta dejar solo la hora, muy tenue (0 = nunca)
   music: true,                  // mostrar lo que suena en Spotify
+  layout: 'rotar',              // rotar | margen | zonas | apilada
+  rearrangeMin: 20,             // minutos entre reacomodos de los widgets (0 = nunca); también evita el quemado
+  calm: false,                  // movimiento reducido: luces y ecualizador quietos
 };
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
@@ -55,6 +59,9 @@ module.exports = function createIdle(o) {
     }
     for (const k of ['idleMin', 'dimMin']) if (Number.isFinite(+c[k])) out[k] = Math.min(600, Math.max(0, Math.round(+c[k])));
     if (c.music !== undefined) out.music = !!c.music;
+    if (LAYOUTS.includes(c.layout)) out.layout = c.layout;
+    if (Number.isFinite(+c.rearrangeMin)) out.rearrangeMin = Math.min(120, Math.max(0, Math.round(+c.rearrangeMin)));
+    if (c.calm !== undefined) out.calm = !!c.calm;
     return out;
   }
 
@@ -181,7 +188,7 @@ module.exports = function createIdle(o) {
   const islandSrc = () => { try { return fs.readFileSync(path.join(PUB, 'tv-island.js'), 'utf8'); } catch { return ''; } };
   let overlayOn = false;
   function payload() {
-    return JSON.stringify({ t: 'idle', now: Date.now(), profile, cfg: { city: cfg.city, dimMin: cfg.dimMin, mode: cfg.mode, music: cfg.music }, weather, music, acts: actList() });
+    return JSON.stringify({ t: 'idle', now: Date.now(), profile, cfg: { city: cfg.city, dimMin: cfg.dimMin, mode: cfg.mode, music: cfg.music, layout: cfg.layout, rearrangeMin: cfg.rearrangeMin, calm: cfg.calm }, weather, music, acts: actList() });
   }
   let pTimer = null;
   function push() {

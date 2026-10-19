@@ -391,6 +391,12 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
   <div class="fld"><span>De noche, solo la hora tras</span><select class="sel" id="idDim">
     <option value="0">Nunca</option><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
   <div class="fld"><span>Música en el reposo</span><button class="sw" id="idMus" aria-pressed="true" aria-label="Música en el reposo"></button></div>
+  <div class="fld"><span>Distribución<small>Cómo se colocan la hora, el tiempo y la música</small></span><div class="seg" id="idLay">
+    <button data-l="rotar">Ir cambiando</button><button data-l="margen">Margen</button><button data-l="zonas">Zonas</button><button data-l="apilada">Apilada</button>
+  </div></div>
+  <div class="fld"><span>Recolocar cada<small>Mover las piezas de sitio cuida la pantalla</small></span><select class="sel" id="idRe">
+    <option value="0">Nunca</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
+  <div class="fld"><span>Menos movimiento<small>Las luces del fondo se quedan quietas</small></span><button class="sw" id="idCalm" aria-pressed="false" aria-label="Menos movimiento"></button></div>
   <div class="acts" style="grid-template-columns:1fr;margin-top:8px"><button class="bt" id="idShow" type="button">Ver el reposo ahora</button></div>
   <div class="sh">Personas con acceso</div>
   <div id="devs"></div>
@@ -1065,6 +1071,10 @@ function idlePaint() {
   $('#idIdle').value = String(icfg.idleMin); $('#idDim').value = String(icfg.dimMin);
   if (![...$('#idIdle').options].some(o => o.value === String(icfg.idleMin))) $('#idIdle').add(new Option(icfg.idleMin + ' min', icfg.idleMin, true, true));
   $('#idMus').setAttribute('aria-pressed', !!icfg.music);
+  $('#idLay').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.l === (icfg.layout || 'rotar')));
+  $('#idRe').value = String(icfg.rearrangeMin ?? 20);
+  if (![...$('#idRe').options].some(o => o.value === String(icfg.rearrangeMin))) $('#idRe').add(new Option(icfg.rearrangeMin + ' min', icfg.rearrangeMin, true, true));
+  $('#idCalm').setAttribute('aria-pressed', !!icfg.calm);
   const wk = $('#idWeek'); wk.hidden = !icfg.perDay; wk.textContent = '';
   if (icfg.perDay) for (const [k, n] of DAYN) {
     const w = icfg.week[k] || {};
@@ -1085,6 +1095,9 @@ $('#idPer').addEventListener('click', () => { if (!icfg) return; icfg.perDay = !
 $('#idIdle').addEventListener('change', e => { if (icfg) { icfg.idleMin = +e.target.value; idleSave(); } });
 $('#idDim').addEventListener('change', e => { if (icfg) { icfg.dimMin = +e.target.value; idleSave(); } });
 $('#idMus').addEventListener('click', () => { if (!icfg) return; icfg.music = !icfg.music; idlePaint(); idleSave(); });
+$('#idLay').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || !icfg) return; buzz(7); icfg.layout = b.dataset.l; idlePaint(); idleSave(); });
+$('#idRe').addEventListener('change', e => { if (icfg) { icfg.rearrangeMin = +e.target.value; idleSave(); } });
+$('#idCalm').addEventListener('click', () => { if (!icfg) return; icfg.calm = !icfg.calm; idlePaint(); idleSave(); });
 $('#idShow').addEventListener('click', () => { buzz(7); cmd({ t: 'idle', op: 'show' }); closeSheet(); });
 
 settle().finally(connect);

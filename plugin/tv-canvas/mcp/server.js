@@ -169,7 +169,8 @@ tool('tv_idle',
   'The TV idle screen (animated background by time of day or by the colours of the song playing, big clock, weather for Elche, now playing). ' +
   'op=show opens it now; op=get returns its settings and current profile; op=set changes settings: mode (auto|day|evening|night|cinema), ' +
   'bed/wake ("HH:MM", fixed sleep schedule), perDay + week {mon:{bed,wake},…} for a per-weekday schedule, idleMin (minutes without use before it opens itself, 0 = never), ' +
-  'dimMin (at night, minutes until only a faint clock remains), music (show Spotify), city/lat/lon.',
+  'dimMin (at night, minutes until only a faint clock remains), music (show Spotify), city/lat/lon, ' +
+  'layout (rotar|margen|zonas|apilada: how clock, weather and music are arranged; rotar cycles them), rearrangeMin (minutes between rearrangements, 0 = never), calm (reduced motion).',
   { op: z.enum(['show', 'get', 'set']), cfg: z.record(z.any()).optional() },
   async ({ op, cfg }) => out(await cmd({ t: 'idle', op, cfg })));
 
