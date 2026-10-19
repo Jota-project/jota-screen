@@ -32,7 +32,7 @@ Los fotogramas de vídeo con DRM salen negros en las capturas; es normal. Si la 
 - `tv_events` lee lo que ocurre en la tele (tareas marcadas, diapositivas). `tv_close` vuelve a lo anterior.
 
 ## Reposo y Live Activities
-- La tele vuelve sola a la **pantalla en reposo** (fondo animado según la hora o los colores de la canción, reloj, tiempo de Elche, «ahora suena») tras unos minutos sin uso. `tv_nav home` o `tv_idle op:show` la abren; `tv_idle op:get|set` lee o cambia sus ajustes (modo, horario de sueño fijo o por día, minutos sin uso, atenuado nocturno).
+- La tele vuelve sola a la **pantalla en reposo** (fondo animado según la hora o los colores de la canción, reloj, tiempo de Elche, «ahora suena») tras unos minutos sin uso. `tv_nav home` o `tv_idle op:show` la abren; `tv_idle op:get|set` lee o cambia sus ajustes (modo, horario de sueño fijo o por día, minutos sin uso, atenuado nocturno, `layout` margen|zonas|apilada|rotar, `rearrangeMin` y `calm` para menos movimiento). Las Live Activities también salen dentro del reposo, junto a la fecha y el tiempo.
 - `tv_activity`: píldora en vivo arriba en el centro, por encima de todo (reposo, webs, vídeo a pantalla completa). Para cosas que duran: temporizadores (`seconds`), cronómetros (`elapsed`), progreso (`progress` 0-1), marcadores o estados (`value`). Usa un `id` estable para actualizarla (`quiet` para no expandirla) y `op:end` cuando acabe. Título de 2-4 palabras, un emoji en `icon` y un color en `accent`.
 
 ## Acceso de administrador
