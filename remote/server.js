@@ -269,12 +269,12 @@ function fail(ip) {
 }
 
 // ───────────────────────── estado compartido
-const state = { title: '', url: '', vol: null, muted: false, media: -1 };
+const state = { title: '', url: '', vol: null, muted: false, media: -1, scroll: null }; // scroll: {pos, size} de 0 a 1, o null
 function hostOf(u) { try { return new URL(u).host; } catch { return ''; } }
 function publicState() {
   return {
     t: 'state', title: state.title, url: state.url, host: hostOf(state.url),
-    vol: state.vol, muted: state.muted, media: state.media, cdp: !!(cdp.ready && cdp.session),
+    vol: state.vol, muted: state.muted, media: state.media, cdp: !!(cdp.ready && cdp.session), scroll: state.scroll,
   };
 }
 let bTimer = null;
@@ -340,7 +340,7 @@ const cdp = {
     this.ready = false; this.session = null; this.targetId = null; this.pages.clear();
     for (const [, p] of this.pending) { clearTimeout(p.t); p.rej(new Error('cdp')); }
     this.pending.clear();
-    state.title = ''; state.url = ''; state.media = -1;
+    state.title = ''; state.url = ''; state.media = -1; state.scroll = null;
     broadcast();
   },
 
@@ -1237,6 +1237,7 @@ wss.on('connection', (ws, req) => {
       }).catch(() => {});
     }
     idle.touch();
+    if (c === 119) pollSoon();                                          // "w": scroll desde el mando, el carril se sondea más a menudo
     ptrLine(s);                                                         // "m dx dy", "w dx dy", "c 1", "b 1 1"...
   });
   ws.send(JSON.stringify(publicState()));
@@ -1249,17 +1250,30 @@ setInterval(() => {
   for (const c of wss.clients) { if (!c.isAlive) { c.terminate(); continue; } c.isAlive = false; c.ping(); }
 }, 20_000);
 
-// estado multimedia (reproduciendo / pausa), solo si hay alguien conectado
-setInterval(async () => {
-  if (!wss.clients.size || !cdp.ready || !cdp.session) return;
+// estado de la página: multimedia (reproduciendo / pausa) y posición de scroll, solo si hay alguien conectado.
+// Cada 1,5 s; durante 2 s tras cada scroll del mando, cada 250 ms. Nunca dos lecturas a la vez por CDP.
+const PAGE_PROBE = '(()=>{const v=document.querySelector("video"),e=document.scrollingElement||document.documentElement;' +
+  'return [v?(v.paused?0:1):-1,scrollY,e?e.scrollHeight:0,innerHeight]})()';
+let pollBusy = false, pollLast = 0, pollFastUntil = 0;
+function pollSoon() { pollFastUntil = Date.now() + 2000; }
+const r3 = n => Math.round(n * 1000) / 1000;
+async function pollPage() {
+  if (pollBusy || !wss.clients.size || !cdp.ready || !cdp.session) return;
+  pollBusy = true; pollLast = Date.now();
   try {
-    const r = await cdp.call('Runtime.evaluate', {
-      expression: '(()=>{const v=document.querySelector("video");return v?(v.paused?0:1):-1})()', returnByValue: true,
-    });
-    const m = r?.result?.value;
-    if (typeof m === 'number' && m !== state.media) { state.media = m; broadcast(); }
-  } catch {}
-}, 1500);
+    const r = await cdp.call('Runtime.evaluate', { expression: PAGE_PROBE, returnByValue: true });
+    const v = r?.result?.value;
+    if (!Array.isArray(v)) return;
+    const [m, y, h, ih] = v.map(Number);
+    let ch = false;
+    if (m !== state.media && Number.isFinite(m)) { state.media = m; ch = true; }
+    const max = h - ih;                                 // sin scroll (o sin dato): null y el mando no pinta el carril
+    const sc = Number.isFinite(max) && max > 4 && ih > 0 ? { pos: r3(Math.min(1, Math.max(0, y / max))), size: r3(Math.min(1, ih / h)) } : null;
+    if (JSON.stringify(sc) !== JSON.stringify(state.scroll)) { state.scroll = sc; ch = true; }
+    if (ch) broadcast();
+  } catch {} finally { pollBusy = false; }
+}
+setInterval(() => { const now = Date.now(); if (now - pollLast >= (now < pollFastUntil ? 250 : 1500)) pollPage(); }, 250);
 
 // ───────────────────────── arranque
 function bindAddrs() {
