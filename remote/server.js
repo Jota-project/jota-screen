@@ -988,13 +988,27 @@ async function spAccess() {
 }
 // Spotify limita las peticiones (429): hasta que pase su Retry-After no se le pide nada, para no alargar el bloqueo
 let spWait = 0;
+// contador de peticiones reales a la Web API: con TV_DEBUG, una línea por minuto; sin él, solo si pasan de 30/min
+const spCount = { n: 0, by: {} };
+const spCounted = (method, p, status) => {
+  const k = method + ' ' + p.split('?')[0].replace(/[A-Za-z0-9]{20,}/g, ':id') + (status === 429 ? ' (429)' : '');
+  spCount.n++; spCount.by[k] = (spCount.by[k] || 0) + 1;
+};
+setInterval(() => {
+  const { n, by } = spCount;
+  if (n && (DEBUG || n > 30)) console.log(`spotify: ${n} peticiones en el último minuto (` + Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ') + ')');
+  spCount.n = 0; spCount.by = {};
+}, 60_000).unref();
 function spWaitErr() { const e = new Error(`Spotify pide esperar ${Math.ceil((spWait - Date.now()) / 1000)} s`); e.wait = true; return e; }
 async function spApi(method, p, body) {
   if (Date.now() < spWait) throw spWaitErr();
-  const doit = async () => fetch('https://api.spotify.com/v1' + p, {
-    method, headers: { Authorization: 'Bearer ' + await spAccess(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
-    body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(10_000),
-  });
+  const doit = async () => {
+    const r = await fetch('https://api.spotify.com/v1' + p, {
+      method, headers: { Authorization: 'Bearer ' + await spAccess(), ...(body ? { 'Content-Type': 'application/json' } : {}) },
+      body: body ? JSON.stringify(body) : undefined, signal: AbortSignal.timeout(10_000),
+    });
+    spCounted(method, p, r.status); return r;
+  };
   let r = await doit();
   if (r.status === 401) { sp.expires = 0; r = await doit(); }
   if (r.status === 429) {
@@ -1029,9 +1043,9 @@ async function spDevice() {
   const d = (await spApi('GET', '/me/player/devices')).devices || [];
   return d.find(x => x.name === SP_DEVICE) || null;
 }
-const spInfo = j => !j || !j.item ? { status: 'sin reproducción' } : {
-  status: j.is_playing ? 'reproduciendo' : 'en pausa', title: j.item.name, artist: (j.item.artists || []).map(a => a.name).join(', '),
-  album: j.item.album?.name || '', device: j.device?.name, volume: j.device?.volume_percent,
+const spInfoNow = n => !n || n.empty || !n.track ? { status: 'sin reproducción' } : {        // resumen de spNow para el agente (MCP)
+  status: n.playing ? 'reproduciendo' : 'en pausa', title: n.track.name, artist: n.artist,
+  album: n.album?.name || '', device: n.device?.name, volume: n.device?.volume,
 };
 async function spotify(m) {
   try {
@@ -1040,21 +1054,21 @@ async function spotify(m) {
       if (!sp.clientId) return { connected: false, error: 'Spotify sin configurar: falta el Client ID' };
       if (!sp.refresh) return { connected: false, error: 'Spotify sin conectar: abre /spotify/login en el navegador' };
       const dev = await spDevice();
-      return { connected: true, device: dev ? { name: dev.name, active: dev.is_active, volume: dev.volume_percent } : null, ...spInfo(await spApi('GET', '/me/player')) };
+      return { connected: true, device: dev ? { name: dev.name, active: dev.is_active, volume: dev.volume_percent } : null, ...spInfoNow(await spNow.poll(3000)) };
     }
     const noDev = ['now', 'queue', 'playlists', 'playlist', 'recent'].includes(a); // lecturas: no necesitan el altavoz
     const dev = noDev ? null : await spDevice();
     if (!noDev && !dev) return { error: `el dispositivo «${SP_DEVICE}» no aparece en Spotify (¿está en marcha spotifyd?)` };
     const q = dev ? `?device_id=${encodeURIComponent(dev.id)}` : '';
     const wake = async () => { if (dev && !dev.is_active) await spApi('PUT', '/me/player', { device_ids: [dev.id], play: false }); };
-    const after = async () => { await new Promise(r => setTimeout(r, 700)); return spInfo(await spApi('GET', '/me/player')); };
+    const after = async () => { await new Promise(r => setTimeout(r, 700)); return spInfoNow(await spNow.poll(300)); }; // se une a la consulta de kick()
     switch (a) {
       case 'activate': await spApi('PUT', '/me/player', { device_ids: [dev.id], play: false }); return { ok: 1 };
       case 'play': await wake(); await spApi('PUT', '/me/player/play' + q); spNow.kick(); return after();
       case 'pause': await spApi('PUT', '/me/player/pause' + q); spNow.kick(); return after();
       case 'playpause': {
-        const st = await spApi('GET', '/me/player');
-        await spApi('PUT', '/me/player/' + (st.is_playing ? 'pause' : 'play') + q); spNow.kick(); return after();
+        const st = await spNow.poll(3000);
+        await spApi('PUT', '/me/player/' + (st?.playing ? 'pause' : 'play') + q); spNow.kick(); return after();
       }
       case 'next': await wake(); await spApi('POST', '/me/player/next' + q); spNow.kick(); return after();
       case 'prev': await wake(); await spApi('POST', '/me/player/previous' + q); spNow.kick(); return after();
@@ -1098,7 +1112,7 @@ async function spotify(m) {
         spNow.kick();
         return { uri, ...(await after()) };
       }
-      case 'now': { const n = await spNow.poll(true); return { ...(n || { empty: true }), needsLogin: !spHasScopes() }; }
+      case 'now': { const n = await spNow.poll(2000); return { ...(n || { empty: true }), needsLogin: !spHasScopes() }; }
       case 'seek': {
         const ms = Number.isFinite(+m.ms) ? +m.ms : Number.isFinite(+m.pos) ? Math.round(+m.pos * (spNow.get()?.duration || 0)) : NaN;
         if (!Number.isFinite(ms) || ms < 0) return { error: 'posición no válida' };
@@ -1126,7 +1140,7 @@ async function spotify(m) {
         if (!/^spotify:(track|episode):[A-Za-z0-9]{22}$/.test(uri)) return { error: 'URI no válida' };
         await spApi('POST', `/me/player/queue?uri=${encodeURIComponent(uri)}&device_id=${encodeURIComponent(dev.id)}`); spNow.kick(); return { ok: 1 };
       }
-      case 'queue': { const n = await spNow.poll(true); return { queue: n?.queue || [] }; }
+      case 'queue': { const n = await spNow.panelOpened(); return { queue: n?.queue || [] }; }      // cola fresca
       case 'playlists': {
         const me = await spMe();
         const out = [];
@@ -1184,19 +1198,21 @@ async function spotify(m) {
 }
 
 // ───────────────────────── «ahora suena» completo (nowplaying.js): reposo, mando y agente
+// el mando renueva spwatch cada 15 s mientras se ve; un móvil bloqueado con el panel abierto deja de contar a los 40 s
+const spWatching = c => !!c.spWatch && Date.now() - c.spWatch < 40_000;
 function spBroadcast(n) {
   const s = JSON.stringify({ t: 'sp', now: n ? { ...n, needsLogin: !spHasScopes() } : null });
-  for (const c of wss.clients) if (c.spWatch && c.readyState === WebSocket.OPEN) c.send(s);
+  for (const c of wss.clients) if (spWatching(c) && c.readyState === WebSocket.OPEN) c.send(s);
 }
 const spNow = require('./nowplaying')({
   spApi, spReady: () => !!(sp.clientId && sp.refresh),
-  watching: () => idle.watching() || [...wss.clients].some(c => c.spWatch),
+  watching: () => [...wss.clients].some(spWatching) ? 2 : idle.watching() ? 1 : 0,
   onChange: n => { idle.setMusic(n); spBroadcast(n); }, log: (...a) => console.log(...a),
 });
 
 // ───────────────────────── pantalla en reposo y Live Activities (idle.js)
 const idle = require('./idle')({
-  ROOT, PUB, SELF, cdp, nav, state, onWatch: () => spNow.poll(true).then(n => idle.setMusic(n)),
+  ROOT, PUB, SELF, cdp, nav, state, onWatch: () => spNow.poll(5000).then(n => idle.setMusic(n)),
   stageKind: () => stage.kind, log: (...a) => console.log(...a),
 });
 
@@ -1296,9 +1312,11 @@ async function run(m, ws, ctx = {}) {
       case 'me': return ws ? meOf(ws) : { role: 'admin' };
       case 'spotify': return await spotify(m);
       case 'spwatch': // el panel de Spotify del mando pide (o deja de pedir) el estado en vivo
-        if (ws) ws.spWatch = !!m.on;
-        if (m.on) { const n = await spNow.poll(true); return { now: n ? { ...n, needsLogin: !spHasScopes() } : null }; }
-        return { ok: 1 };
+        if (!m.on) { if (ws) ws.spWatch = 0; return { ok: 1 }; }
+        { const was = ws ? spWatching(ws) : false; if (ws) ws.spWatch = Date.now();
+          // solo al abrirse se pregunta a Spotify (cola y «me gusta» al día); los refrescos cada 15 s usan lo que hay
+          const n = was && spNow.get() ? spNow.get() : await spNow.panelOpened();
+          return { now: n ? { ...n, needsLogin: !spHasScopes() } : null }; }
       case 'idle': return await idle.run(m);
       case 'activity': return idle.activity(m);
       case 'key': { const w = fieldBefore(); if (w) await w; return key(String(m.k)); } // lo escrito antes, primero

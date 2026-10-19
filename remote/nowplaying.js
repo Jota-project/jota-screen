@@ -2,19 +2,31 @@
 // «Ahora suena» de Spotify: un único estado completo que usan el reposo, el mando y el agente.
 // Canción, disco, artista (con foto), desde dónde suena (playlist/álbum), cola, aleatorio/repetición,
 // «Me gusta», volumen, controles permitidos y los colores de la carátula (calculados aquí).
-// Solo se consulta a Spotify mientras alguien lo está mirando (reposo abierto o panel del mando).
+// Solo se consulta a Spotify mientras alguien lo está mirando (reposo abierto o panel del mando), y con calma:
+// Spotify bloquea la cuenta si se le pide demasiado (429). Cada consulta es un `/me/player`; artista, contexto,
+// «me gusta» y colores se piden una vez por canción (también si fallan) y la cola solo cuando cambia algo.
+// El progreso lo interpolan los clientes con `progress` + `at`.
 const jpeg = require('jpeg-js');
+
+// cada cuánto se consulta según quién mira (watching(): 0 nadie, 1 solo el reposo, 2 el panel del mando)
+const EVERY = { 1: { playing: 10_000, paused: 30_000 }, 2: { playing: 5_000, paused: 15_000 } };
+const FAIL_TTL = 10 * 60_000;     // un dato que ha fallado no se vuelve a pedir hasta pasado este tiempo
+const QUEUE_PANEL = 60_000;       // con el panel abierto, la cola se refresca como mucho cada minuto
 
 module.exports = function createNow({ spApi, spReady, watching, onChange, log = () => {} }) {
   let now = null;
   let sig = '';
-  let queue = [], queueFor = '', queueAt = 0;
-  let liked = new Map();          // trackId -> bool
+  let queue = [], queueFor = '', queueAt = 0, queueStale = true;
+  let liked = new Map();          // trackId -> bool | null (null: no se pudo saber)
   let likeOk = true;              // false si faltan permisos de biblioteca
   const artists = new Map();      // id -> {name, image}
   const contexts = new Map();     // uri -> {name, image}
   const colors = new Map();       // url -> paleta
-  let busy = false, lastPoll = 0;
+  const failed = new Map();       // clave -> hora del fallo (artista, contexto, colores)
+  let inflight = null, inflightAt = 0, lastTry = 0, lastOk = 0, endFor = '', cmdAt = 0;
+  const failedRecently = k => { const t = failed.get(k); return t && Date.now() - t < FAIL_TTL; };
+  const fail = (k, e) => { if (e?.wait) return; failed.set(k, Date.now()); if (failed.size > 300) failed.delete(failed.keys().next().value); };
+  const cap = (m, n) => { if (m.size > n) m.delete(m.keys().next().value); };
 
   const img = (list = []) => {
     const s = [...list].sort((a, b) => (b.width || 0) - (a.width || 0));
@@ -39,6 +51,7 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
   async function palette(url) {
     if (!url) return null;
     if (colors.has(url)) return colors.get(url);
+    if (failedRecently('img:' + url)) return null;
     try {
       const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
       const { data } = jpeg.decode(Buffer.from(await r.arrayBuffer()), { useTArray: true, maxResolutionInMP: 2 });
@@ -72,39 +85,47 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
       };
       colors.set(url, p); if (colors.size > 50) colors.delete(colors.keys().next().value);
       return p;
-    } catch (e) { log('colores:', e.message); return null; }
+    } catch (e) { log('colores:', e.message); fail('img:' + url); return null; }
   }
 
-  // ───────── datos auxiliares (con caché)
+  // ───────── datos auxiliares (con caché; un fallo se recuerda FAIL_TTL salvo si es la espera por límite)
   async function artistInfo(a) {
     if (!a?.id) return null;
     if (artists.has(a.id)) return artists.get(a.id);
-    try { const j = await spApi('GET', '/artists/' + a.id); const v = { id: a.id, name: j.name, image: img(j.images) }; artists.set(a.id, v); return v; }
-    catch { return { id: a.id, name: a.name, image: null }; }
+    const fallback = { id: a.id, name: a.name, image: null };
+    if (failedRecently('artist:' + a.id)) return fallback;
+    try { const j = await spApi('GET', '/artists/' + a.id); const v = { id: a.id, name: j.name, image: img(j.images) }; artists.set(a.id, v); cap(artists, 200); return v; }
+    catch (e) { fail('artist:' + a.id, e); return fallback; }
   }
   async function contextInfo(c, item) {
     if (!c?.uri) return null;
-    const [, type, id] = c.uri.split(':');
+    const [, , id] = c.uri.split(':');
     if (contexts.has(c.uri)) return { type: c.type, uri: c.uri, ...contexts.get(c.uri) };
     let v = { name: '', image: null };
+    if (failedRecently('ctx:' + c.uri)) return { type: c.type, uri: c.uri, ...v };
     try {
       if (c.type === 'album') v = { name: item?.album?.name || '', image: img(item?.album?.images) };
       else if (c.type === 'artist') { const a = await artistInfo({ id }); v = { name: a?.name || '', image: a?.image }; }
       else if (c.type === 'playlist') { const j = await spApi('GET', `/playlists/${id}?fields=name,images,owner(display_name)`); v = { name: j.name, image: img(j.images), owner: j.owner?.display_name }; }
       else if (c.type === 'collection' || /:collection$/.test(c.uri)) v = { name: 'Tus me gusta', image: null };
       else if (c.type === 'show') { const j = await spApi('GET', '/shows/' + id); v = { name: j.name, image: img(j.images) }; }
-    } catch {}
-    contexts.set(c.uri, v); if (contexts.size > 100) contexts.delete(contexts.keys().next().value);
-    void type;
+    } catch (e) { fail('ctx:' + c.uri, e); return { type: c.type, uri: c.uri, ...v }; }   // sin cachear: se reintenta pasado el plazo
+    contexts.set(c.uri, v); cap(contexts, 100);
     return { type: c.type, uri: c.uri, ...v };
   }
   async function likedOf(id) {
     if (!id) return null;
     if (liked.has(id)) return liked.get(id);
+    let v = null;
     try {
       const j = await spApi('GET', '/me/library/contains?uris=' + encodeURIComponent('spotify:track:' + id));
-      const v = Array.isArray(j) ? !!j[0] : null; liked.set(id, v); likeOk = true; return v;
-    } catch (e) { if (/403|scope|Insufficient/i.test(e.message)) likeOk = false; return null; }
+      v = Array.isArray(j) ? !!j[0] : null; likeOk = true;
+    } catch (e) {
+      if (e.wait) return null;                                         // en espera por límite: se pregunta luego
+      if (/403|scope|Insufficient/i.test(e.message)) likeOk = false;
+    }
+    liked.set(id, v); cap(liked, 500);                                 // una vez por canción, salga bien o mal
+    return v;
   }
   async function loadQueue(trackId) {
     try {
@@ -113,17 +134,31 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
         uri: t.uri, name: t.name, artist: (t.artists || []).map(a => a.name).join(', ') || t.show?.name || '',
         image: img(t.album?.images || t.images)?.s || null, duration: t.duration_ms || 0,
       }));
-      queueFor = trackId; queueAt = Date.now();
-    } catch {}
+      queueFor = trackId; queueAt = Date.now(); queueStale = false;
+    } catch (e) { if (!e.wait) { queueFor = trackId; queueAt = Date.now(); queueStale = false; } }  // no insistir en cada vuelta
   }
 
   // ───────── consulta
-  async function poll(force) {
-    if (busy || !spReady()) return now;
-    if (!force && !watching()) return now;
-    busy = true; lastPoll = Date.now();
+  // poll(maxAge): devuelve el estado si se consultó hace menos de maxAge ms; si no, consulta (o se une a la consulta
+  // en curso cuando esta empezó dentro de ese margen). poll(0) tras una orden exige una consulta posterior a la llamada.
+  function poll(maxAge = 2000) {
+    if (maxAge === true) maxAge = 2000;                                // compatibilidad: poll(true)
+    const t = Date.now(), since = Math.max(t - maxAge, cmdAt);      // nada anterior a la última orden vale
+    if (!spReady()) return Promise.resolve(now);
+    if (inflight) {
+      if (inflightAt >= since) return inflight;
+      return inflight.then(() => poll(maxAge));
+    }
+    if (now && lastOk && lastOk >= since) return Promise.resolve(now);
+    inflightAt = t; lastTry = t;
+    inflight = fetchNow(t).finally(() => { inflight = null; });
+    return inflight;
+  }
+  async function fetchNow(started) {
     try {
       const j = await spApi('GET', '/me/player?additional_types=episode');
+      const at = Date.now();                                           // el progreso es de este instante, no del final
+      if (started >= cmdAt) lastOk = started;
       const it = j?.item;
       if (!it) {
         if (now?.empty !== true) { now = { empty: true, device: j?.device ? { name: j.device.name, volume: j.device.volume_percent, active: j.device.is_active } : null, needsLogin: !likeOk }; emit(); }
@@ -135,9 +170,11 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
       const [ai, ctx, lk, pal] = await Promise.all([
         a0 ? artistInfo(a0) : null, contextInfo(j.context, it), isEp ? null : likedOf(it.id), palette(art?.s),
       ]);
-      if (queueFor !== it.id || Date.now() - queueAt > 20_000) await loadQueue(it.id);
+      const ctxChanged = (j.context?.uri || '') !== (now?.context?.uri || '');
+      const panelStale = watching() >= 2 && Date.now() - queueAt > QUEUE_PANEL;
+      if (queueStale || queueFor !== it.id || ctxChanged || panelStale) await loadQueue(it.id);
       now = {
-        kind: isEp ? 'episode' : 'track', playing: !!j.is_playing, progress: j.progress_ms || 0, at: Date.now(), duration: it.duration_ms || 0,
+        kind: isEp ? 'episode' : 'track', playing: !!j.is_playing, progress: j.progress_ms || 0, at, duration: it.duration_ms || 0,
         track: { id: it.id, uri: it.uri, name: it.name, explicit: !!it.explicit, number: it.track_number || null, url: it.external_urls?.spotify || '' },
         artists: isEp ? [{ name: it.show?.name || '' }] : (it.artists || []).map(a => ({ id: a.id, name: a.name })),
         artist: isEp ? it.show?.name || '' : (it.artists || []).map(a => a.name).join(', '),
@@ -153,7 +190,6 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
       emit();
       return now;
     } catch (e) { if (!e.wait) log('spotify now:', e.message); return now; }    // la espera por límite ya se avisa una vez en spApi
-    finally { busy = false; }
   }
   function emit() {
     // solo se avisa si cambia algo visible (o la posición se desvía: un salto)
@@ -170,11 +206,26 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
   }
   let lastEmit = 0;
 
-  // tras una orden: refresco rápido (Spotify tarda un poco en reflejarla)
-  function kick() { liked.clear(); setTimeout(() => poll(true), 350); setTimeout(() => poll(true), 1300); }
+  // tras una orden: Spotify tarda un poco en reflejarla; dos consultas frescas (la de 700 ms la comparte after() en server.js)
+  function kick() { queueStale = true; cmdAt = Date.now(); setTimeout(() => poll(0), 600); setTimeout(() => poll(0), 2000); }
   function forgetLiked(id) { liked.delete(id); }
+  // el panel del mando se acaba de abrir: cola y «me gusta» al día (pueden haber cambiado desde el móvil)
+  function panelOpened() {
+    queueStale = true;
+    if (now?.track?.id) liked.delete(now.track.id);
+    return poll(0);
+  }
 
-  setInterval(() => { if (watching() && Date.now() - lastPoll > 2800) poll(); }, 1000);
+  // planificador: intervalo según quién mira y si suena; y una consulta justo al acabar la canción
+  setInterval(() => {
+    const w = watching();
+    if (!w || inflight || !spReady()) return;
+    const t = Date.now(), ev = EVERY[w >= 2 ? 2 : 1];
+    if (now?.playing && now.track && endFor !== now.track.id && now.progress + (t - now.at) >= now.duration + 800) {
+      endFor = now.track.id; poll(0); return;                            // una sola vez por canción: si sigue la vieja, vuelve al intervalo
+    }
+    if (t - lastTry >= (now?.playing ? ev.playing : ev.paused)) poll(0);
+  }, 1000);
 
-  return { poll, get: () => now, kick, forgetLiked, palette };
+  return { poll, get: () => now, kick, forgetLiked, panelOpened, palette };
 };
