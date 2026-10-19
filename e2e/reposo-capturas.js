@@ -16,12 +16,13 @@ const ART = '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><d
   '<stop offset="0" stop-color="#2a1a5e"/><stop offset="1" stop-color="#9a3a8a"/></linearGradient></defs>' +
   '<rect width="600" height="600" fill="url(#g)"/><circle cx="300" cy="280" r="160" fill="#f07a5a"/><rect y="430" width="600" height="170" fill="#14284e"/></svg>';
 
+const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml' };
 const srv = http.createServer((q, r) => {
   const u = q.url.split('?')[0];
   if (u.startsWith('/idle/art')) { r.writeHead(200, { 'content-type': 'image/svg+xml' }); return r.end(ART); }
   const f = path.join(PUB, u === '/' ? 'idle.html' : u);
-  if (!f.startsWith(PUB) || !fs.existsSync(f)) { r.writeHead(404); return r.end(); }
-  r.writeHead(200, { 'content-type': f.endsWith('.js') ? 'text/javascript' : 'text/html' });
+  if (!f.startsWith(PUB) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { r.writeHead(404); return r.end(); }
+  r.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream' });
   r.end(fs.readFileSync(f));
 }).listen(0);
 

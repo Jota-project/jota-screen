@@ -1,0 +1,18 @@
+/* Jota Dusk para la tele: los valores que comparten el reposo (idle.html) y la isla de Live Activities (tv-island.js).
+   Un solo bloque :root de declaraciones simples: el servidor lo lee tal cual y se lo inyecta a la isla (src/tv/tokens.js). */
+:root{
+  --tv-text:#ddd6d0;
+  --tv-text-soft:#bab2c4;
+  --tv-accent:#c3b7e3;
+  --tv-surface:#1d1825;
+  --tv-veil:rgba(246,243,240,.08);
+  --tv-track:rgba(246,243,240,.16);
+  --tv-track-2:rgba(246,243,240,.12);
+  --tv-track-radius:3px;
+  --tv-shadow-float:0 0 0 1px rgba(246,243,240,.08),0 12px 40px rgba(0,0,0,.45);
+  --tv-serif:"Fraunces",Georgia,serif;
+  --tv-sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --tv-ease:cubic-bezier(.32,.72,0,1);
+  --tv-pulse:1.6s;
+  --tv-tick:1s;
+}

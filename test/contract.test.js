@@ -27,6 +27,16 @@ test('estáticos: el mando, el reposo y la isla se sirven con su CSP y sin cach�
   assert.equal((await s.get('/no-existe.js')).status, 404);
 });
 
+test('estáticos: los tokens de la tele (shared/tokens-tv.css) se sirven como CSS y el reposo los enlaza', async () => {
+  const r = await s.get('/shared/tokens-tv.css');
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-type'), /^text\/css/);
+  assert.equal(r.headers.get('cache-control'), 'no-cache');
+  assert.equal(r.headers.get('content-security-policy'), null);
+  assert.match(await r.text(), /--tv-accent:#c3b7e3/);
+  assert.match(await (await s.get('/idle.html')).text(), /<link rel="stylesheet" href="\/shared\/tokens-tv\.css">/);
+});
+
 test('estáticos: ETag con 304 y gzip para HTML', async () => {
   const a = await s.get('/index.html');
   const etag = a.headers.get('etag');
