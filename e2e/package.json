@@ -1,0 +1,13 @@
+{
+  "name": "jota-screen-e2e",
+  "private": true,
+  "description": "Capturas automáticas de la pantalla en reposo con datos de ejemplo",
+  "scripts": {
+    "reposo": "node reposo-capturas.js",
+    "postinstall": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@fontsource-variable/fraunces": "^5.0.0",
+    "playwright": "^1.48.0"
+  }
+}
