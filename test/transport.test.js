@@ -20,7 +20,7 @@ after(async () => { await s.stop(); await cdp.close(); });
 
 test('cada página sale con su CSP y las cabeceras de seguridad', async () => {
   const idx = await s.get('/');
-  assert.match(idx.headers.get('content-security-policy'), /script-src 'unsafe-inline'; connect-src 'self' ws: wss:/);
+  assert.match(idx.headers.get('content-security-policy'), /script-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:/);
   assert.equal(idx.headers.get('x-content-type-options'), 'nosniff');
   assert.equal(idx.headers.get('referrer-policy'), 'no-referrer');
   assert.match((await s.get('/idle.html')).headers.get('content-security-policy'), /media-src 'self' blob:/);
@@ -50,16 +50,22 @@ test('reposo: CSP sin \'unsafe-inline\'; su CSS y su JS van en ficheros', async 
   }
 });
 
-test('mando: su CSS va en un fichero, sin <style> ni style= en el HTML', async () => {
+test('mando: su CSS y su JS van en ficheros, sin <style>, style= ni <script> en línea en el HTML', async () => {
   const html = await (await s.get('/')).text();
   assert.doesNotMatch(html, /<style\b/i, 'sin <style> en línea');
   assert.doesNotMatch(html, /<[^>]+\sstyle\s*=/i, 'sin atributos style=');
+  for (const tag of html.match(/<script\b[^>]*>/gi) || []) assert.match(tag, /\bsrc=/, 'sin <script> en línea: ' + tag);
   assert.match(html, /<link rel="stylesheet" href="\/mando\/styles\/mando\.css">/);
-  const f = await s.get('/mando/styles/mando.css');
-  assert.equal(f.status, 200);
-  assert.match(f.headers.get('content-type'), /^text\/css/);
-  assert.equal(f.headers.get('content-security-policy'), null);
-  assert.equal(f.headers.get('cache-control'), 'no-cache');
+  // el tema, bloqueante en el <head> antes del CSS (para que no parpadee); la app, al final del <body>
+  assert.match(html, /<script src="\/mando\/theme\.js"><\/script>\n<link rel="preconnect"/);
+  assert.match(html, /<script src="\/mando\/app\.js"><\/script>\n<\/body>/);
+  for (const [p, type] of [['/mando/styles/mando.css', /^text\/css/], ['/mando/theme.js', /^text\/javascript/], ['/mando/app.js', /^text\/javascript/]]) {
+    const f = await s.get(p);
+    assert.equal(f.status, 200, p);
+    assert.match(f.headers.get('content-type'), type, p);
+    assert.equal(f.headers.get('content-security-policy'), null, p);
+    assert.equal(f.headers.get('cache-control'), 'no-cache', p);
+  }
 });
 
 test('estáticos: caché por tipo, gzip para texto y nada fuera de public/', async () => {
