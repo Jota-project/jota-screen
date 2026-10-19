@@ -1,9 +1,14 @@
 import { $, el, hide } from './core/dom.js';
 import { persist, cfg, saveCfg, state, initSession, on } from './core/store.js';
-import { send, cmd, rpc, post, connect, reconnect, resetTries, isUp, isLive, getRtt, getTries, handle, onWs, setGate, start } from './core/api.js';
+import { send, cmd, rpc, post, connect, reconnect, resetTries, isUp, getRtt, handle, onWs, setGate, start } from './core/api.js';
 import { buzz } from './ui/haptics.js';
 import { pill } from './ui/pill.js';
 import { applyTheme } from './ui/theme.js';
+import { status, setTitle } from './ui/status.js';
+import { sheets, registerSheet, openSheet, closeSheet, closeSheetSafe, isOpen } from './ui/sheets.js';
+import { actions, registerAct, registerClick } from './ui/actions.js';
+import { gestures } from './ui/gestures.js';
+import { ROLE_N, left, applyMe } from './core/perms.js';
 
 /* ── acceso: cada dispositivo tiene su propio token (se recuerda aquí y en una cookie). El maestro no se guarda nunca. ── */
 initSession();
@@ -44,15 +49,6 @@ for (const k of Array.isArray(cfg.apps) ? cfg.apps : []) {
 }
 
 /* ── conexión ── */
-const dot = $('#dot'), t1 = $('#t1'), t2 = $('#t2');
-
-function paintDot() {
-  const up = isUp(), rtt = getRtt();
-  dot.className = 'dot' + (up ? (rtt && rtt > 150 ? ' bad' : ' ok') : '');
-  dot.setAttribute('aria-label', up ? 'Conectada' : 'Sin conexión');
-}
-/* tras varios intentos (o sin red) se dice «Sin conexión» y se puede reintentar a mano */
-function offline2(on) { $('#sub2').hidden = on; $('#re2').hidden = !on; }
 setGate(() => {
   if (state.token || state.viaCookie) return true;
   return (async () => { // sin token guardado: quizá el navegador conserva la cookie de un emparejamiento anterior
@@ -63,19 +59,11 @@ setGate(() => {
     return true;
   })();
 });
-onWs('open', () => { paintDot(); offline2(false); });
-onWs('rtt', paintDot);
-onWs('close', (ev, lost) => {
-  paintDot();
-  if (lost) return;
-  t1.textContent = 'Reconectando…'; t2.textContent = '';
-  offline2(getTries() >= 4 || navigator.onLine === false);
-});
 on('auth:lost', code => {
   persist.set('token', ''); persist.set('devid', ''); state.token = ''; state.viaCookie = false;
   showPair(code === 4002 ? 'Tu acceso ha caducado. Pídelo de nuevo.' : 'No tienes acceso (o te lo han retirado). Pídelo de nuevo.');
 });
-handle('me', j => applyMe(j));
+handle('me', applyMe);
 handle('pairreq', j => showReq(j));
 handle('pairdone', j => hideReq(j.pid));
 handle('sp', j => { if (spOpen()) spPaint(j.now); });
@@ -83,13 +71,13 @@ handle('ask', j => onAsk(j));
 handle('state', j => onState(j));
 handle('focus', j => onTvFocus(j)); // campo con foco en la tele
 start();
-$('#re2').addEventListener('click', () => { buzz(8); if (isLive()) return; resetTries(); t1.textContent = 'Reconectando…'; offline2(false); connect(); });
+status.init();
 
 function onState(s) {
   if (s.t !== 'state') return;
-  if (!s.cdp) { t1.textContent = 'Navegador no disponible'; t2.textContent = ''; }
-  else if (!s.host) { t1.textContent = 'Inicio'; t2.textContent = ''; }
-  else { t1.textContent = s.title || s.host; t2.textContent = s.host; }
+  if (!s.cdp) setTitle('Navegador no disponible', '');
+  else if (!s.host) setTitle('Inicio', '');
+  else setTitle(s.title || s.host, s.host);
   $('#pp').dataset.m = s.media;
   paint2(s);                                            // el volumen se ve en el balancín: sin aviso flotante
   state.lastState = s;
@@ -192,8 +180,7 @@ function up(e) {
 pad.addEventListener('pointerup', up);
 pad.addEventListener('pointercancel', up);
 pad.addEventListener('contextmenu', e => e.preventDefault());
-document.addEventListener('touchmove', e => { if (!e.target.closest('.sheet,.pairV')) e.preventDefault(); }, { passive: false });
-document.addEventListener('gesturestart', e => e.preventDefault());
+gestures.init();
 
 /* ── botones ── */
 const ACT = {
@@ -205,55 +192,23 @@ const ACT = {
 };
 /* ±10 s (v2): mueve el vídeo de la página; si no hay <video>, la flecha como en el v1 */
 function seek10(s) { rpc({ t: 'seek', s }).then(r => { if (r && r.error) cmd({ t: 'key', k: s < 0 ? 'ArrowLeft' : 'ArrowRight' }); }); }
-function fire(b) {
-  const a = b.dataset.a;
-  if (b.dataset.url) return cmd({ t: 'nav', url: b.dataset.url });
-  if (a && a.startsWith('k:')) return cmd({ t: 'key', k: a.slice(2) });
-  if (ACT[a]) ACT[a]();
-}
-let repT = 0, repI = 0, cur = null;
-function stopRep() { clearTimeout(repT); clearInterval(repI); if (cur) { cur.classList.remove('dn'); cur = null; } }
-document.addEventListener('pointerdown', e => {
-  const b = e.target.closest('.bt,.b2'); if (!b || b.hasAttribute('data-click') || !(b.dataset.a || b.dataset.url)) return;
-  e.preventDefault();                                   // no robar el foco al campo de texto
-  stopRep(); cur = b; b.classList.add('dn'); buzz(7); fire(b);
-  if (b.hasAttribute('data-rep')) repT = setTimeout(() => { repI = setInterval(() => fire(b), 85); }, 380);
-});
-['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, stopRep));
+for (const [k, f] of Object.entries(ACT)) registerAct(k, f);
+actions.init();
 document.addEventListener('mousedown', e => { if (e.target.closest('.kbK,.kbA')) e.preventDefault(); });
-document.addEventListener('contextmenu', e => e.preventDefault());
 
 /* ── hojas ── */
-const spin = $('#spin'), shade = $('#shade'), gin = $('#gin'), agin = $('#agin'), rep = $('#rep');
-let sheet = null;
-function openSheet(id) {
-  closeSheet();
-  sheet = $('#' + id); sheet.classList.add('on'); shade.classList.add('on');
-  if (id === 'kbS') kbOpen();
-  if (id === 'goS') { gin.value = ''; gin.focus(); }
-  if (id === 'agS') { agin.value = ''; agin.focus(); }
-  if (id === 'spS') { spin.value = ''; }
-}
-function closeSheet() {
-  if (!sheet) return;
-  if (sheet.id === 'spS') cmd({ t: 'spwatch', on: false });
-  if (sheet.id === 'kbS') kbClose();
-  sheet.classList.remove('on'); shade.classList.remove('on');
-  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
-  sheet = null;
-}
-shade.addEventListener('pointerdown', e => { e.preventDefault(); closeSheet(); });
-document.addEventListener('click', e => {
-  const b = e.target.closest('[data-click]'); if (!b) return;
-  buzz(7);
-  ({ kb: () => openSheet('kbS'), go: () => openSheet('goS'), ag: () => openSheet('agS'), sp: spButton, more: () => { refreshSet(); if (ME && ME.role === 'admin') { refreshDevs(); idleLoad(); } openSheet('setS'); } })[b.dataset.a]();
-});
-document.addEventListener('keydown', e => { if (e.key === 'Escape' && sheet && !(sheet.id === 'kbS' && sheet.contains(document.activeElement))) closeSheet(); });
+const spin = $('#spin'), gin = $('#gin'), agin = $('#agin'), rep = $('#rep');
+registerSheet('kbS', { open: () => kbOpen(), close: () => kbClose(), keepEscInside: true });
+registerSheet('goS', { open: () => { gin.value = ''; gin.focus(); } });
+registerSheet('agS', { open: () => { agin.value = ''; agin.focus(); } });
+registerSheet('spS', { open: () => { spin.value = ''; }, close: () => cmd({ t: 'spwatch', on: false }) });
+registerClick('kb', () => openSheet('kbS'));
+registerClick('go', () => openSheet('goS'));
+registerClick('ag', () => openSheet('agS'));
+registerClick('sp', () => spButton());
+registerClick('more', () => { refreshSet(); if (state.me && state.me.role === 'admin') { refreshDevs(); idleLoad(); } openSheet('setS'); });
+sheets.init();
 const vv = window.visualViewport;
-if (vv) {                                              // subir la hoja por encima del teclado del móvil
-  const upd = () => document.documentElement.style.setProperty('--kb', Math.max(0, innerHeight - vv.height - vv.offsetTop) + 'px');
-  vv.addEventListener('resize', upd); vv.addEventListener('scroll', upd);
-}
 
 /* escribir en la tele: el móvil tiene su propio editor y en cada cambio manda el texto entero y la selección
    (agrupado por fotograma); la tele lo aplica al campo con foco. De una contraseña, la tele nunca manda el valor. */
@@ -395,7 +350,7 @@ agin.addEventListener('keydown', e => {
 /* spotify: panel completo del dispositivo «Salón», con datos en vivo empujados por el servidor */
 let spN = null, spRecv = 0, spVolT = 0, spTab = 'queue', spDrag = null;
 const mmss = ms => { const t = Math.max(0, Math.floor((ms || 0) / 1000)); return Math.floor(t / 60) + ':' + String(t % 60).padStart(2, '0'); };
-const spOpen = () => document.getElementById('spS').classList.contains('on');
+const spOpen = () => isOpen('spS');
 function spButton() {
   openSheet('spS');
   rpc({ t: 'spwatch', on: true }).then(r => { if (r && 'now' in r) spPaint(r.now); });
@@ -572,9 +527,8 @@ function showPair(msg) {
   post('/pair/info', {}).then(r => { $('#pAsk').hidden = !r.adminOnline; $('#pGo').className = r.adminOnline ? 'bt' : 'bt big'; });
   $('#pName').placeholder = 'Tu nombre (' + uaName() + ')'; $('#pName').value = persist.get('pname', '');
   pSay(msg || state.pairNote || P_HELP); state.pairNote = '';
-  t1.textContent = 'Sin acceso'; t2.textContent = '';
+  setTitle('Sin acceso', '');
 }
-function closeSheetSafe() { try { if (sheet) closeSheet(); } catch {} }
 function paired(r) {
   useToken(r);
   pairV.hidden = true; resetTries(); connect();
@@ -622,7 +576,7 @@ async function pAdmSend() {
 $('#pAdmGo').addEventListener('click', pAdmSend);
 $('#pAdmC').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); pAdmSend(); } });
 $('#clGo').addEventListener('click', async () => {
-  const r = await adminGo($('#clCode').value, ME && ME.name);
+  const r = await adminGo($('#clCode').value, state.me && state.me.name);
   if (!r.token) return pill(r.error || 'Error');
   $('#clCode').value = ''; pill('Ya eres administrador');
   reconnect(); // reconecta con el token (el mismo si se ha ascendido este dispositivo)
@@ -651,11 +605,9 @@ pCode.addEventListener('input', async () => {
 
 /* dispositivos con acceso (ajustes) */
 const ago = ms => { const s = (Date.now() - ms) / 1000; return s < 90 ? 'ahora' : s < 5400 ? 'hace ' + Math.round(s / 60) + ' min' : s < 129600 ? 'hace ' + Math.round(s / 3600) + ' h' : 'hace ' + Math.round(s / 86400) + ' d'; };
-const ROLE_N = { admin: 'Admin', member: 'Miembro', guest: 'Invitado' };
-const left = ms => { const h = (ms - Date.now()) / 3600e3; return h <= 0 ? 'caducado' : h < 1 ? 'caduca en ' + Math.max(1, Math.round(h * 60)) + ' min' : h < 48 ? 'caduca en ' + Math.round(h) + ' h' : 'caduca en ' + Math.round(h / 24) + ' d'; };
-let ME = null, ACC = null, acWho = 'guest';
+let ACC = null, acWho = 'guest';
 async function refreshDevs() {
-  if (!ME || ME.role !== 'admin') return;
+  if (!state.me || state.me.role !== 'admin') return;
   const r = await rpc({ t: 'devices' }); paintDevs(r);
 }
 function paintDevs(r) {
@@ -663,7 +615,7 @@ function paintDevs(r) {
   const box = $('#devs'); box.textContent = '';
   for (const d of r.devices || []) {
     const row = document.createElement('div'); row.className = 'fld';
-    const sp = document.createElement('span'); sp.textContent = d.name + (d.id === ME.id ? ' (este)' : '');
+    const sp = document.createElement('span'); sp.textContent = d.name + (d.id === state.me.id ? ' (este)' : '');
     const ch = document.createElement('span'); ch.className = 'chip ' + d.role; ch.textContent = ROLE_N[d.role] || d.role; sp.appendChild(ch);
     if (d.online) { const on = document.createElement('span'); on.className = 'chip on'; on.textContent = '● conectado'; sp.appendChild(on); }
     const sm = document.createElement('small'); sm.textContent = 'Último uso ' + ago(d.seen) + (d.expires ? ' · ' + left(d.expires) : ''); sp.appendChild(sm);
@@ -713,9 +665,8 @@ $('#acMusic').addEventListener('click', e => { const b = e.target.closest('butto
 $('#acVol').addEventListener('input', e => { $('#acVolV').textContent = e.target.value + ' %'; });
 $('#acVol').addEventListener('change', e => acSet('volMax', +e.target.value));
 /* el mando se adapta a lo que puede hacer cada uno */
-function applyMe(j) {
-  ME = j; const P = j.perms || {};
-  if (j.id) persist.set('devid', j.id);
+on('me', j => {
+  const P = j.perms || {};
   hide('[data-a=go],[data-url]', !P.web);
   hide('[data-a=ag]', P.agent === 'off');
   $('#admBox').hidden = j.role !== 'admin';
@@ -728,7 +679,7 @@ function applyMe(j) {
   const mb = $('#meBox'); mb.textContent = '';
   const b = document.createElement('b'); b.textContent = j.name; mb.append('Estás como ', b, ' · ' + (ROLE_N[j.role] || j.role) + (j.expires ? ' · ' + left(j.expires) : ''));
   if (j.role === 'admin' && $('#setS').classList.contains('on')) refreshDevs();
-}
+});
 /* peticiones de acceso que llegan al administrador */
 let reqPid = null;
 function showReq(j) { reqPid = j.pid; $('#reqName').textContent = j.name; $('#req').hidden = false; buzz(30); }
@@ -759,7 +710,7 @@ $('#swFs').addEventListener('click', () => {
   if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {});
   setTimeout(refreshSet, 250);
 });
-setInterval(() => { if (sheet && sheet.id === 'setS') refreshSet(); }, 1000);
+setInterval(() => { if (isOpen('setS')) refreshSet(); }, 1000);
 
 /* ── pantalla en reposo ── */
 const DAYN = [['mon', 'Lun'], ['tue', 'Mar'], ['wed', 'Mié'], ['thu', 'Jue'], ['fri', 'Vie'], ['sat', 'Sáb'], ['sun', 'Dom']];
