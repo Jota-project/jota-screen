@@ -99,11 +99,17 @@ function initScript({ token, cfg }) {
   W.prototype.send = function (d) {
     if (typeof d === 'string' && d.charCodeAt(0) === 112) return; // «p<ts>»: el eco de latencia no se manda (sin ms en pantalla)
     window.__wsLog.push(String(d));
+    // respuesta falsa a una orden con id (p. ej. las playlists de una cuenta de Spotify que el servidor de prueba no tiene)
+    try { const o = JSON.parse(d), r = o && o.id && window.__wsFake[o.t + ':' + (o.a || '')]; if (r) { setTimeout(() => this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ t: 'res', id: o.id, r }) })), 30); return; } } catch {}
     return send.call(this, d);
   };
-  class WS extends W { constructor(...a) { super(...a); socks.push(this); } }
+  window.__wsFake = {};
+  // __wsBlock: las conexiones nuevas van a un puerto cerrado (como sin red); __wsKill cierra la abierta
+  class WS extends W { constructor(u, ...a) { super(window.__wsBlock ? 'ws://127.0.0.1:9/ws' : u, ...a); socks.push(this); } }
+  window.__wsBlock = false;
   window.WebSocket = WS;
   // como si el servidor mandase este mensaje por el WebSocket abierto
+  window.__wsKill = () => socks.forEach(x => { if (x.readyState === 1) x.close(); });
   window.__wsInject = o => { const s = socks.filter(x => x.readyState === 1).pop(); if (!s) throw new Error('sin WebSocket abierto'); s.dispatchEvent(new MessageEvent('message', { data: JSON.stringify(o) })); };
   document.addEventListener('securitypolicyviolation', e => console.error('[CSP] ' + e.violatedDirective + ' ' + e.blockedURI + ' ' + (e.sourceFile || '') + ':' + (e.lineNumber || '')));
 }
@@ -112,7 +118,8 @@ function initScript({ token, cfg }) {
 // (cuántas líneas salen depende de los fotogramas, y el tamaño de la aceleración por tiempo)
 function normalize(lines) {
   const out = [];
-  const red = s => s.replace(/\b[0-9a-f]{32}\b/g, '<token>').replace(/"pid":"[0-9a-f]+"/g, '"pid":"<pid>"');
+  const red = s => s.replace(/\b[0-9a-f]{32}\b/g, '<token>').replace(/"pid":"[0-9a-f]+"/g, '"pid":"<pid>"')
+    .replace(/"code":"(\d{4}|[0-9A-Z]{5}-[0-9A-Z]{5})"/g, '"code":"<código>"');
   let run = null;
   const sg = n => (n > 0 ? '+' : n < 0 ? '-' : '0');
   const flush = () => { if (run) { out.push(`${run.k} ${sg(run.x)} ${sg(run.y)}  (movimiento)`); run = null; } };
@@ -135,9 +142,9 @@ function normalize(lines) {
 let browser, srv, cdp, binDir;
 const scenes = [];
 
-async function newPage({ token, theme, name }) {
+async function newPage({ token, theme, name, landscape }) {
   const ctx = await browser.newContext({
-    viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: UA,
+    viewport: landscape ? { width: 844, height: 390 } : { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: UA,
     locale: 'es-ES', timezoneId: 'Europe/Madrid', reducedMotion: 'reduce', colorScheme: theme === 'claro' ? 'light' : 'dark',
   });
   const page = await ctx.newPage();
@@ -331,6 +338,127 @@ async function walk(admin) {
   } finally { await takeLog(p, 'recorrido: final'); await p.context().close(); }
 }
 
+// lo que no sale en las escenas de arriba: apaisado, sin navegador, sin conexión, mostrar la contraseña, gestos de Spotify,
+// detalle de una playlist, doble toque con arrastre, roles y quitar dispositivos, horario por día, enlace y código de admin
+// y canje del código de 4 cifras. Van al final porque cambian el estado del servidor (dispositivos y reposo).
+const SP_LISTS = [
+  { name: 'Mi lista n.º 55', by: 'Sito', count: 42, uri: 'spotify:playlist:e2e', image: 'https://i.scdn.co/image/e2e-art' },
+  { name: 'Canciones que te gustan', liked: true, count: 310, uri: 'spotify:collection:e2e' },
+];
+const SP_PL = { name: 'Mi lista n.º 55', description: 'Para estudiar sin distracciones', next: null, items: [
+  { name: 'Wait', by: 'M83', uri: 'spotify:track:e2e1', duration: 343e3, image: 'https://i.scdn.co/image/e2e-art' },
+  { name: 'Outro', by: 'M83', uri: 'spotify:track:e2e2', duration: 247e3 },
+] };
+async function extraScenes(admin) {
+  const run = async (name, fn, o = {}) => { const p = await newPage({ token: admin, theme: 'oscuro', name, ...o }); try { await open(p); await fn(p); } finally { await takeLog(p, name); await p.context().close(); } };
+  await run('extra-apaisado', p => shot(p, 'extra-apaisado'), { landscape: true });
+  await run('extra-sin-navegador', async p => {
+    await inject(p, { t: 'state', title: '', url: '', host: '', vol: 35, muted: false, media: null, cdp: false, scroll: null });
+    await shot(p, 'extra-sin-navegador');
+  });
+  await run('extra-sin-conexion', async p => {
+    await p.evaluate(() => { window.__wsBlock = true; window.__wsKill(); });
+    await btn(p, 'Sin conexión · Reintentar').waitFor({ timeout: 8000 });
+    await shot(p, 'extra-sin-conexion');
+    await p.evaluate(() => { window.__wsBlock = false; });
+    await tap(p, 'Sin conexión · Reintentar', 300);
+    await p.getByRole('img', { name: 'Conectada', exact: true }).waitFor({ state: 'attached' });
+    await settle(p);
+    await shot(p, 'extra-reconectado');
+  });
+  await run('extra-teclado-mostrar', async p => {
+    await focusTv({ kind: 'password', placeholder: 'Contraseña' });
+    await tap(p, 'Escribir en la tele', 700);
+    await p.keyboard.type('secreta1', { delay: 60 });
+    await p.waitForTimeout(600);
+    await tap(p, 'Mostrar', 600); await shot(p, 'extra-teclado-mostrar');
+    await p.keyboard.type('2', { delay: 60 }); await p.waitForTimeout(600);
+    await tap(p, 'Ocultar', 600); await shot(p, 'extra-teclado-ocultar');
+    await focusTv({ kind: 'none' });
+  });
+  await run('extra-trackpad-arrastre', async p => {
+    await padGesture(p, [['pointerdown', 1, 100, 150], ['pointerup', 1, 100, 150], ['pointerdown', 1, 100, 150], ['pointermove', 1, 110, 155], ['pointermove', 1, 130, 165]]);
+    await p.waitForTimeout(300);
+    await padGesture(p, [['pointermove', 1, 150, 175], ['pointerup', 1, 150, 175]]);
+    await p.waitForTimeout(400);
+  });
+  await run('extra-spotify', async p => {
+    await p.evaluate(([a, b]) => { window.__wsFake['spotify:playlists'] = { items: a }; window.__wsFake['spotify:playlist'] = b; }, [SP_LISTS, SP_PL]);
+    await tap(p, 'Abrir Spotify', 900);
+    await inject(p, { t: 'sp', now: SP_NOW });
+    await p.locator('#rSp').evaluate(e => { e.value = '80'; e.dispatchEvent(new Event('input', { bubbles: true })); });
+    await p.waitForTimeout(500);
+    await shot(p, 'extra-spotify-volumen');
+    const b = await p.locator('#spTrk').boundingBox();
+    await p.mouse.move(b.x + b.width * 0.2, b.y + b.height / 2); await p.mouse.down();
+    await p.mouse.move(b.x + b.width * 0.75, b.y + b.height / 2, { steps: 4 });
+    await shot(p, 'extra-spotify-arrastre');
+    await p.mouse.up(); await p.waitForTimeout(400);
+    await tap(p, 'Playlists', 900);
+    await p.getByText('Mi lista n.º 55', { exact: true }).tap(); await p.waitForTimeout(700);
+    await shot(p, 'extra-spotify-playlist');
+    await p.getByText('Outro', { exact: true }).tap(); await p.waitForTimeout(400);
+    await p.locator('.spPlA').getByRole('button', { name: 'Reproducir', exact: true }).tap(); await p.waitForTimeout(400);
+    await tap(p, '‹ Playlists', 500); await shot(p, 'extra-spotify-playlists');
+  });
+  // admin: roles, quitar, horario por día y enlace de admin (dos códigos: uno se canjea en «Tengo un código», otro por enlace)
+  const codes = [];
+  await run('extra-ajustes-admin', async p => {
+    await tap(p, 'Ajustes', 1000);
+    await scrollTo(p, 'Personas con acceso');
+    await p.getByRole('combobox', { name: 'Rol de Tablet de la cocina' }).selectOption('guest'); await p.waitForTimeout(700);
+    await shot(p, 'extra-ajustes-rol');
+    await p.getByRole('combobox', { name: 'Rol de Tablet de la cocina' }).selectOption('member'); await p.waitForTimeout(700);
+    const quitar = p.locator('#devs .fld').filter({ hasText: 'Móvil de Ana' }).getByRole('button', { name: 'Quitar' });
+    await quitar.tap(); await p.waitForTimeout(300);
+    await shot(p, 'extra-ajustes-seguro');
+    await p.locator('#devs .fld').filter({ hasText: 'Móvil de Ana' }).getByRole('button', { name: '¿Seguro?' }).tap(); await p.waitForTimeout(800);
+    await shot(p, 'extra-ajustes-quitado');
+    await scrollTo(p, 'Pantalla en reposo');
+    await tap(p, 'Horario por día', 600); await shot(p, 'extra-ajustes-dias');
+    await p.getByLabel('Mié acostarse', { exact: true }).fill('23:15'); await p.waitForTimeout(700);
+    await tap(p, 'Horario por día', 700);
+    for (let i = 0; i < 2; i++) {
+      await tap(p, 'Hacer administrador a otro dispositivo', 800);
+      codes.push(await p.locator('#alBox b').textContent());
+    }
+  });
+  await run('extra-canjear-admin', async p => {
+    await tap(p, 'Ajustes', 1000);
+    await p.locator('#clCode').fill(codes[0]);
+    await tap(p, 'Canjear', 300);
+    await p.getByText('Ya eres administrador').waitFor();
+    await p.getByRole('img', { name: 'Conectada', exact: true }).waitFor({ state: 'attached' });
+    await p.waitForTimeout(800);
+  }, { token: MEMBER_TOKEN });
+  { // enlace de admin: /#admin=código en un navegador sin acceso
+    const p = await newPage({ theme: 'oscuro', name: 'extra-enlace-admin' });
+    try {
+      await p.goto(srv.base + '/#admin=' + codes[1]);
+      await p.getByRole('img', { name: 'Conectada', exact: true }).waitFor({ state: 'attached' });
+      await settle(p);
+      await shot(p, 'extra-enlace-admin');
+    } finally { await takeLog(p, 'extra-enlace-admin'); await p.context().close(); }
+  }
+  { // código de 4 cifras de la tele: uno mal y luego el bueno
+    await noAdminOnline();
+    await wait(4200);
+    const p = await newPage({ theme: 'oscuro', name: 'extra-canje-codigo' });
+    try {
+      await open(p, { connected: false });
+      const n0 = cdp.calls.length;
+      await tap(p, 'Mostrar un código en la tele', 800);
+      const m = await cdp.waitFor(c => cdp.calls.indexOf(c) >= n0 && c.method === 'Runtime.evaluate' && /"code":"\d{4}"/.test(c.params.expression), 5000);
+      const code = /"code":"(\d{4})"/.exec(m.params.expression)[1];
+      await p.getByLabel('Código de 4 cifras', { exact: true }).fill(String((+code + 1) % 10000).padStart(4, '0'));
+      await p.waitForTimeout(600); await shot(p, 'extra-canje-mal');
+      await p.getByLabel('Código de 4 cifras', { exact: true }).fill(code);
+      await p.getByRole('img', { name: 'Conectada', exact: true }).waitFor({ state: 'attached' });
+      await settle(p); await shot(p, 'extra-canje-hecho');
+    } finally { await takeLog(p, 'extra-canje-codigo'); await p.context().close(); }
+  }
+}
+
 (async () => {
   binDir = fakeWpctl();
   process.env.PATH = binDir + ':' + process.env.PATH;                 // el servidor hereda PATH: usa este wpctl
@@ -344,12 +472,15 @@ async function walk(admin) {
     await cdp.waitFor(m => m.method === 'Runtime.addBinding' && m.params.name === '__tvFocus', 10000);
     const r = { token: ADMIN_TOKEN };
     browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
-    for (const theme of ['oscuro', 'claro']) {
-      await adminScenes(theme, r.token);
-      await pairScenes(theme, r.token);
-      await guestScenes(theme);
+    if (!process.env.MANDO_SOLO_EXTRA) { // MANDO_SOLO_EXTRA=1: solo las escenas extra (para depurarlas)
+      for (const theme of ['oscuro', 'claro']) {
+        await adminScenes(theme, r.token);
+        await pairScenes(theme, r.token);
+        await guestScenes(theme);
+      }
+      await walk(r.token);
     }
-    await walk(r.token);
+    await extraScenes(r.token);
   } finally {
     if (browser) await browser.close();
     await srv.stop(); await cdp.close();
