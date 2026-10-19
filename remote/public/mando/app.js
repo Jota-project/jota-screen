@@ -1,40 +1,33 @@
-'use strict';
-const $ = s => document.querySelector(s);
-const store = {
-  get(k, d) { try { const v = localStorage.getItem(k); return v === null ? d : JSON.parse(v); } catch { return d; } },
-  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
-};
+import { $, el, hide } from './core/dom.js';
+import { persist, cfg, saveCfg, state, initSession } from './core/store.js';
+import { buzz } from './ui/haptics.js';
+import { pill } from './ui/pill.js';
+import { applyTheme } from './ui/theme.js';
 
 /* ── acceso: cada dispositivo tiene su propio token (se recuerda aquí y en una cookie). El maestro no se guarda nunca. ── */
-const qs = new URLSearchParams(location.search);
-let token = qs.get('t') || store.get('token', '');
-const adminCode = (/[#&]admin=([0-9A-Za-z-]{6,24})/.exec(location.hash) || [])[1] || '';
-if (qs.has('t') || adminCode) { qs.delete('t'); const q = qs.toString(); history.replaceState(null, '', location.pathname + (q ? '?' + q : '')); }
+initSession();
 function addManifest() {
-  if (!token || document.querySelector('link[rel=manifest]')) return;
-  const m = document.createElement('link'); m.rel = 'manifest'; m.href = '/manifest.webmanifest?t=' + encodeURIComponent(token);
+  if (!state.token || document.querySelector('link[rel=manifest]')) return;
+  const m = document.createElement('link'); m.rel = 'manifest'; m.href = '/manifest.webmanifest?t=' + encodeURIComponent(state.token);
   document.head.appendChild(m);
 }
-function useToken(r) { token = r.token; store.set('token', token); store.set('devid', r.id); addManifest(); }
-let pairNote = '';
+function useToken(r) { state.token = r.token; persist.set('token', state.token); persist.set('devid', r.id); addManifest(); }
 async function settle() { // antes de conectar: canjea el código de admin o el token maestro y renueva la cookie
-  if (adminCode) {
-    const r = await post('/pair/admin', { code: adminCode, name: store.get('pname', '') || uaName(), cur: token });
+  if (state.adminCode) {
+    const r = await post('/pair/admin', { code: state.adminCode, name: persist.get('pname', '') || uaName(), cur: state.token });
     if (r.token) { useToken(r); setTimeout(() => pill('Ya eres administrador'), 600); return; }
-    pairNote = r.error || 'No se pudo usar el enlace de administrador';
+    state.pairNote = r.error || 'No se pudo usar el enlace de administrador';
   }
-  if (!token) return;
-  const r = await post('/pair/me', { t: token });
+  if (!state.token) return;
+  const r = await post('/pair/me', { t: state.token });
   if (r.master) { // enlace maestro (o guardado por una versión anterior): se cambia por un dispositivo admin propio
-    const master = token; store.set('token', ''); token = '';
-    const q = await post('/pair/admin', { t: master, name: store.get('pname', '') || uaName() });
+    const master = state.token; persist.set('token', ''); state.token = '';
+    const q = await post('/pair/admin', { t: master, name: persist.get('pname', '') || uaName() });
     if (q.token) useToken(q);
     return;
   }
-  if (r.ok) { store.set('token', token); addManifest(); }
+  if (r.ok) { persist.set('token', state.token); addManifest(); }
 }
-
-const cfg = Object.assign({ speed: 1.6, scroll: 1, natural: true, haptic: true, theme: 'oscuro', apps: ['spotify', 'netflix'] }, store.get('cfg', {}));
 
 /* accesos del mando: salen de cfg.apps (M5 los hará configurables) */
 const APPS = {
@@ -48,17 +41,9 @@ for (const k of Array.isArray(cfg.apps) ? cfg.apps : []) {
   b.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${a.svg}</svg>`;
   b.append(a.n); $('#apps2').appendChild(b);
 }
-function applyTheme() {                                // el <head> ya lo pone antes de pintar; esto lo cambia en caliente
-  const light = cfg.theme === 'claro';
-  document.documentElement.dataset.theme = light ? 'claro' : 'oscuro';
-  document.querySelector('meta[name=theme-color]').content = light ? '#f6f3f0' : '#2a2433';
-  document.querySelector('meta[name=color-scheme]').content = light ? 'light' : 'dark';
-}
-const saveCfg = () => store.set('cfg', cfg);
-const buzz = n => { if (cfg.haptic && navigator.vibrate) navigator.vibrate(n || 8); };
 
 /* ── conexión ── */
-let ws, tries = 0, rtt = 0, lastState = null;
+let ws, tries = 0, rtt = 0;
 const dot = $('#dot'), t1 = $('#t1'), t2 = $('#t2');
 const send = s => { if (ws && ws.readyState === 1) ws.send(s); };
 const pend = new Map(); let rid = 0;
@@ -77,17 +62,16 @@ function paintDot() {
 /* tras varios intentos (o sin red) se dice «Sin conexión» y se puede reintentar a mano */
 function offline2(on) { $('#sub2').hidden = on; $('#re2').hidden = !on; }
 let retryT = 0;
-let viaCookie = false;
 async function connect() {
   clearTimeout(retryT);                                 // un solo intento a la vez (reintento a mano, visibilidad, temporizador)
-  if (!token && !viaCookie) { // sin token guardado: quizá el navegador conserva la cookie de un emparejamiento anterior
+  if (!state.token && !state.viaCookie) { // sin token guardado: quizá el navegador conserva la cookie de un emparejamiento anterior
     const r = await post('/pair/me', {});
     if (!r.ok) { showPair(); return; }
-    if (r.master) { const q = await post('/pair/admin', { name: store.get('pname', '') || uaName() }); if (!q.token) { showPair(); return; } useToken(q); }
-    else viaCookie = true;
+    if (r.master) { const q = await post('/pair/admin', { name: persist.get('pname', '') || uaName() }); if (!q.token) { showPair(); return; } useToken(q); }
+    else state.viaCookie = true;
   }
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws` + (token ? `?t=${encodeURIComponent(token)}` : ''));
+  ws = new WebSocket(`${proto}://${location.host}/ws` + (state.token ? `?t=${encodeURIComponent(state.token)}` : ''));
   ws.onopen = () => { tries = 0; paintDot(); ping(); offline2(false); };
   ws.onmessage = e => {
     const d = e.data;
@@ -97,7 +81,7 @@ async function connect() {
   ws.onclose = ev => {
     paintDot();
     if (ev.code === 4001 || ev.code === 4002) {
-      store.set('token', ''); store.set('devid', ''); token = ''; viaCookie = false;
+      persist.set('token', ''); persist.set('devid', ''); state.token = ''; state.viaCookie = false;
       showPair(ev.code === 4002 ? 'Tu acceso ha caducado. Pídelo de nuevo.' : 'No tienes acceso (o te lo han retirado). Pídelo de nuevo.'); return;
     }
     t1.textContent = 'Reconectando…'; t2.textContent = '';
@@ -113,8 +97,6 @@ setInterval(ping, 2000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden && (!ws || ws.readyState > 1)) connect(); });
 $('#re2').addEventListener('click', () => { buzz(8); if (ws && ws.readyState <= 1) return; tries = 0; t1.textContent = 'Reconectando…'; offline2(false); connect(); });
 
-let pillT;
-function pill(txt) { const p = $('#pill'); p.textContent = txt; p.classList.add('on'); clearTimeout(pillT); pillT = setTimeout(() => p.classList.remove('on'), 1100); }
 function onState(s) {
   if (s.t !== 'state') return;
   if (!s.cdp) { t1.textContent = 'Navegador no disponible'; t2.textContent = ''; }
@@ -122,7 +104,7 @@ function onState(s) {
   else { t1.textContent = s.title || s.host; t2.textContent = s.host; }
   $('#pp').dataset.m = s.media;
   paint2(s);                                            // el volumen se ve en el balancín: sin aviso flotante
-  lastState = s;
+  state.lastState = s;
 }
 /* v2: número de volumen (el % real del servidor), silencio, play/pausa y carril con el scroll de la página de la tele */
 function paint2(s) {
@@ -435,7 +417,7 @@ function spPaint(n) {
   spN = n; spRecv = Date.now();
   const S = $('#spS');
   $('#spLogin').hidden = !(n && n.needsLogin);
-  $('#spLoginA').href = '/spotify/login?t=' + encodeURIComponent(token);
+  $('#spLoginA').href = '/spotify/login?t=' + encodeURIComponent(state.token);
   if (!n || n.empty || !n.track) {
     $('#spT').textContent = 'Nada sonando'; $('#spA').textContent = 'Busca algo o elige una playlist'; $('#spCtx').textContent = '';
     $('#spArt').style.backgroundImage = ''; $('#spLike').hidden = true; S.classList.remove('tint'); spTick(); spList(); return;
@@ -509,7 +491,6 @@ async function spLoadTab() {
   if (spCache[spTab].error && /403|scope|permis|Insufficient/i.test(spCache[spTab].error)) $('#spLogin').hidden = false;
   if (!(spTab === 'playlists' && spDetail)) spList();
 }
-const el = (tag, cls, txt) => { const e = document.createElement(tag); if (cls) e.className = cls; if (txt != null) e.textContent = txt; return e; };
 function spMsg(t) { const box = $('#spList'); box.textContent = ''; box.appendChild(el('div', 'spEmpty', t)); }
 function spCover(x, cls) {
   const im = el('div', cls || 'im');
@@ -601,8 +582,8 @@ let askT = 0;
 function showPair(msg) {
   closeSheetSafe(); pairV.hidden = false; p1.hidden = false; p2.hidden = true; $('#p3').hidden = true; $('#p4').hidden = true; pid = null; clearTimeout(askT);
   post('/pair/info', {}).then(r => { $('#pAsk').hidden = !r.adminOnline; $('#pGo').className = r.adminOnline ? 'bt' : 'bt big'; });
-  $('#pName').placeholder = 'Tu nombre (' + uaName() + ')'; $('#pName').value = store.get('pname', '');
-  pSay(msg || pairNote || P_HELP); pairNote = '';
+  $('#pName').placeholder = 'Tu nombre (' + uaName() + ')'; $('#pName').value = persist.get('pname', '');
+  pSay(msg || state.pairNote || P_HELP); state.pairNote = '';
   t1.textContent = 'Sin acceso'; t2.textContent = '';
 }
 function closeSheetSafe() { try { if (sheet) closeSheet(); } catch {} }
@@ -611,7 +592,7 @@ function paired(r) {
   pairV.hidden = true; tries = 0; connect();
 }
 async function pairAskGo() {
-  const typed = $('#pName').value.trim(); store.set('pname', typed);
+  const typed = $('#pName').value.trim(); persist.set('pname', typed);
   const r = await post('/pair/start', { name: typed || uaName(), mode: 'ask' });
   if (r.error) { if (r.noAdmin) $('#pAsk').hidden = true; return pSay(r.error, true); }
   pid = r.pid; p1.hidden = true; $('#p3').hidden = false; pSay('Esperando a que el administrador acepte en su móvil…');
@@ -629,7 +610,7 @@ async function pairAskGo() {
 $('#pAsk').addEventListener('click', pairAskGo);
 $('#pCancel').addEventListener('click', () => showPair());
 async function pairGo() {
-  const typed = $('#pName').value.trim(); store.set('pname', typed);
+  const typed = $('#pName').value.trim(); persist.set('pname', typed);
   pSay('Pidiendo código…');
   const r = await post('/pair/start', { name: typed || uaName() });
   if (r.error) return pSay(r.error, true);
@@ -638,14 +619,14 @@ async function pairGo() {
 $('#pGo').addEventListener('click', pairGo);
 /* código de administrador (de un solo uso): lo da el agente, `node remote/admin-link.js` o otro admin */
 async function adminGo(code, name) {
-  const r = await post('/pair/admin', { code, name, cur: token });
+  const r = await post('/pair/admin', { code, name, cur: state.token });
   if (r.token) { useToken(r); return r; }
   return r;
 }
 $('#pAdm').addEventListener('click', () => { p1.hidden = true; $('#p4').hidden = false; pSay('Escribe el código de administrador. Sirve una sola vez y caduca en 10 minutos.'); $('#pAdmC').value = ''; $('#pAdmC').focus(); });
 $('#pAdmBack').addEventListener('click', () => showPair());
 async function pAdmSend() {
-  const typed = $('#pName').value.trim(); store.set('pname', typed);
+  const typed = $('#pName').value.trim(); persist.set('pname', typed);
   const r = await adminGo($('#pAdmC').value, typed || uaName());
   if (r.token) { pairV.hidden = true; tries = 0; connect(); return; }
   pSay(r.error || 'Error', true);
@@ -746,8 +727,7 @@ $('#acVol').addEventListener('change', e => acSet('volMax', +e.target.value));
 /* el mando se adapta a lo que puede hacer cada uno */
 function applyMe(j) {
   ME = j; const P = j.perms || {};
-  if (j.id) store.set('devid', j.id);
-  const hide = (sel, h) => document.querySelectorAll(sel).forEach(e => { if (h) e.setAttribute('data-hide', ''); else e.removeAttribute('data-hide'); });
+  if (j.id) persist.set('devid', j.id);
   hide('[data-a=go],[data-url]', !P.web);
   hide('[data-a=ag]', P.agent === 'off');
   $('#admBox').hidden = j.role !== 'admin';
