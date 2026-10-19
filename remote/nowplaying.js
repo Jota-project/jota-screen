@@ -23,7 +23,7 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
   const contexts = new Map();     // uri -> {name, image}
   const colors = new Map();       // url -> paleta
   const failed = new Map();       // clave -> hora del fallo (artista, contexto, colores)
-  let inflight = null, inflightAt = 0, lastTry = 0, lastOk = 0, endFor = '';
+  let inflight = null, inflightAt = 0, lastTry = 0, lastOk = 0, endFor = '', cmdAt = 0;
   const failedRecently = k => { const t = failed.get(k); return t && Date.now() - t < FAIL_TTL; };
   const fail = (k, e) => { if (e?.wait) return; failed.set(k, Date.now()); if (failed.size > 300) failed.delete(failed.keys().next().value); };
   const cap = (m, n) => { if (m.size > n) m.delete(m.keys().next().value); };
@@ -143,13 +143,13 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
   // en curso cuando esta empezó dentro de ese margen). poll(0) tras una orden exige una consulta posterior a la llamada.
   function poll(maxAge = 2000) {
     if (maxAge === true) maxAge = 2000;                                // compatibilidad: poll(true)
-    const t = Date.now();
+    const t = Date.now(), since = Math.max(t - maxAge, cmdAt);      // nada anterior a la última orden vale
     if (!spReady()) return Promise.resolve(now);
     if (inflight) {
-      if (inflightAt >= t - maxAge) return inflight;
+      if (inflightAt >= since) return inflight;
       return inflight.then(() => poll(maxAge));
     }
-    if (now && lastOk && lastOk >= t - maxAge) return Promise.resolve(now);
+    if (now && lastOk && lastOk >= since) return Promise.resolve(now);
     inflightAt = t; lastTry = t;
     inflight = fetchNow(t).finally(() => { inflight = null; });
     return inflight;
@@ -157,7 +157,8 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
   async function fetchNow(started) {
     try {
       const j = await spApi('GET', '/me/player?additional_types=episode');
-      lastOk = started;
+      const at = Date.now();                                           // el progreso es de este instante, no del final
+      if (started >= cmdAt) lastOk = started;
       const it = j?.item;
       if (!it) {
         if (now?.empty !== true) { now = { empty: true, device: j?.device ? { name: j.device.name, volume: j.device.volume_percent, active: j.device.is_active } : null, needsLogin: !likeOk }; emit(); }
@@ -173,7 +174,7 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
       const panelStale = watching() >= 2 && Date.now() - queueAt > QUEUE_PANEL;
       if (queueStale || queueFor !== it.id || ctxChanged || panelStale) await loadQueue(it.id);
       now = {
-        kind: isEp ? 'episode' : 'track', playing: !!j.is_playing, progress: j.progress_ms || 0, at: Date.now(), duration: it.duration_ms || 0,
+        kind: isEp ? 'episode' : 'track', playing: !!j.is_playing, progress: j.progress_ms || 0, at, duration: it.duration_ms || 0,
         track: { id: it.id, uri: it.uri, name: it.name, explicit: !!it.explicit, number: it.track_number || null, url: it.external_urls?.spotify || '' },
         artists: isEp ? [{ name: it.show?.name || '' }] : (it.artists || []).map(a => ({ id: a.id, name: a.name })),
         artist: isEp ? it.show?.name || '' : (it.artists || []).map(a => a.name).join(', '),
@@ -206,7 +207,7 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
   let lastEmit = 0;
 
   // tras una orden: Spotify tarda un poco en reflejarla; dos consultas frescas (la de 700 ms la comparte after() en server.js)
-  function kick() { queueStale = true; setTimeout(() => poll(0), 600); setTimeout(() => poll(0), 2000); }
+  function kick() { queueStale = true; cmdAt = Date.now(); setTimeout(() => poll(0), 600); setTimeout(() => poll(0), 2000); }
   function forgetLiked(id) { liked.delete(id); }
   // el panel del mando se acaba de abrir: cola y «me gusta» al día (pueden haber cambiado desde el móvil)
   function panelOpened() {
