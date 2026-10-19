@@ -1,5 +1,6 @@
 import { $, el, hide } from './core/dom.js';
-import { persist, cfg, saveCfg, state, initSession } from './core/store.js';
+import { persist, cfg, saveCfg, state, initSession, on } from './core/store.js';
+import { send, cmd, rpc, post, connect, reconnect, resetTries, isUp, isLive, getRtt, getTries, handle, onWs, setGate, start } from './core/api.js';
 import { buzz } from './ui/haptics.js';
 import { pill } from './ui/pill.js';
 import { applyTheme } from './ui/theme.js';
@@ -43,59 +44,46 @@ for (const k of Array.isArray(cfg.apps) ? cfg.apps : []) {
 }
 
 /* ── conexión ── */
-let ws, tries = 0, rtt = 0;
 const dot = $('#dot'), t1 = $('#t1'), t2 = $('#t2');
-const send = s => { if (ws && ws.readyState === 1) ws.send(s); };
-const pend = new Map(); let rid = 0;
-const rpc = o => new Promise(res => {                  // orden con respuesta (sin conexión, falla enseguida)
-  if (!ws || ws.readyState !== 1) return res({ error: 'sin conexión' });
-  const id = ++rid; pend.set(id, res); cmd({ ...o, id });
-  setTimeout(() => { if (pend.delete(id)) res({ error: 'sin respuesta' }); }, 20000);
-});
-const cmd = o => send(JSON.stringify(o));
 
 function paintDot() {
-  const up = ws && ws.readyState === 1;
+  const up = isUp(), rtt = getRtt();
   dot.className = 'dot' + (up ? (rtt && rtt > 150 ? ' bad' : ' ok') : '');
   dot.setAttribute('aria-label', up ? 'Conectada' : 'Sin conexión');
 }
 /* tras varios intentos (o sin red) se dice «Sin conexión» y se puede reintentar a mano */
 function offline2(on) { $('#sub2').hidden = on; $('#re2').hidden = !on; }
-let retryT = 0;
-async function connect() {
-  clearTimeout(retryT);                                 // un solo intento a la vez (reintento a mano, visibilidad, temporizador)
-  if (!state.token && !state.viaCookie) { // sin token guardado: quizá el navegador conserva la cookie de un emparejamiento anterior
+setGate(() => {
+  if (state.token || state.viaCookie) return true;
+  return (async () => { // sin token guardado: quizá el navegador conserva la cookie de un emparejamiento anterior
     const r = await post('/pair/me', {});
-    if (!r.ok) { showPair(); return; }
-    if (r.master) { const q = await post('/pair/admin', { name: persist.get('pname', '') || uaName() }); if (!q.token) { showPair(); return; } useToken(q); }
+    if (!r.ok) { showPair(); return false; }
+    if (r.master) { const q = await post('/pair/admin', { name: persist.get('pname', '') || uaName() }); if (!q.token) { showPair(); return false; } useToken(q); }
     else state.viaCookie = true;
-  }
-  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-  ws = new WebSocket(`${proto}://${location.host}/ws` + (state.token ? `?t=${encodeURIComponent(state.token)}` : ''));
-  ws.onopen = () => { tries = 0; paintDot(); ping(); offline2(false); };
-  ws.onmessage = e => {
-    const d = e.data;
-    if (d.charCodeAt(0) === 112) { const r = performance.now() - parseFloat(d.slice(1)); rtt = rtt ? rtt * 0.6 + r * 0.4 : r; paintDot(); return; }
-    try { const j = JSON.parse(d); if (j.t === 'me') applyMe(j); else if (j.t === 'pairreq') showReq(j); else if (j.t === 'pairdone') hideReq(j.pid); else if (j.t === 'sp') { if (spOpen()) spPaint(j.now); } else if (j.t === 'ask') onAsk(j); else if (j.t === 'res') { const f = pend.get(j.id); if (f) { pend.delete(j.id); f(j.r || {}); } } else onState(j); } catch {}
-  };
-  ws.onclose = ev => {
-    paintDot();
-    if (ev.code === 4001 || ev.code === 4002) {
-      persist.set('token', ''); persist.set('devid', ''); state.token = ''; state.viaCookie = false;
-      showPair(ev.code === 4002 ? 'Tu acceso ha caducado. Pídelo de nuevo.' : 'No tienes acceso (o te lo han retirado). Pídelo de nuevo.'); return;
-    }
-    t1.textContent = 'Reconectando…'; t2.textContent = '';
-    retryT = setTimeout(connect, Math.min(2000, 250 * ++tries));
-    offline2(tries >= 4 || navigator.onLine === false);
-  };
-  ws.onerror = () => {};
-  ws.addEventListener('message', e => { if (e.data.startsWith('{"t":"focus"')) try { onTvFocus(JSON.parse(e.data)); } catch {} }); // campo con foco en la tele
-  ws.addEventListener('open', kbOnline); ws.addEventListener('close', () => kbPaint());
-}
-function ping() { if (ws && ws.readyState === 1 && !document.hidden) send('p' + performance.now()); }
-setInterval(ping, 2000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden && (!ws || ws.readyState > 1)) connect(); });
-$('#re2').addEventListener('click', () => { buzz(8); if (ws && ws.readyState <= 1) return; tries = 0; t1.textContent = 'Reconectando…'; offline2(false); connect(); });
+    return true;
+  })();
+});
+onWs('open', () => { paintDot(); offline2(false); });
+onWs('rtt', paintDot);
+onWs('close', (ev, lost) => {
+  paintDot();
+  if (lost) return;
+  t1.textContent = 'Reconectando…'; t2.textContent = '';
+  offline2(getTries() >= 4 || navigator.onLine === false);
+});
+on('auth:lost', code => {
+  persist.set('token', ''); persist.set('devid', ''); state.token = ''; state.viaCookie = false;
+  showPair(code === 4002 ? 'Tu acceso ha caducado. Pídelo de nuevo.' : 'No tienes acceso (o te lo han retirado). Pídelo de nuevo.');
+});
+handle('me', j => applyMe(j));
+handle('pairreq', j => showReq(j));
+handle('pairdone', j => hideReq(j.pid));
+handle('sp', j => { if (spOpen()) spPaint(j.now); });
+handle('ask', j => onAsk(j));
+handle('state', j => onState(j));
+handle('focus', j => onTvFocus(j)); // campo con foco en la tele
+start();
+$('#re2').addEventListener('click', () => { buzz(8); if (isLive()) return; resetTries(); t1.textContent = 'Reconectando…'; offline2(false); connect(); });
 
 function onState(s) {
   if (s.t !== 'state') return;
@@ -301,6 +289,7 @@ function kbOpen() {
   kbFill(tvF, true); kbPaint();
   cmd({ t: 'focus', open: true });                       // el servidor manda lo que hay en el campo solo con la vista abierta
 }
+onWs('open', kbOnline); onWs('close', () => kbPaint());
 function kbClose() { kbPw.value = ''; kbPw.type = 'password'; kbRvPaint(); cmd({ t: 'focus', open: false }); }
 function kbOnline() {                                    // al (re)conectar: lo escrito sin conexión se manda ahora
   fLast = ''; fAck = fSeq;
@@ -327,7 +316,7 @@ function kbPaint() {
   $('#kbN').textContent = n === 1 ? '1 carácter' : n + ' caracteres';
   kbE.classList.toggle('none', none);
   $('#kbL').textContent = none ? 'Toca un campo en la tele para escribir' : pw ? 'Contraseña, oculta en el móvil y en la tele' : 'Escribe, borra y corrige aquí';
-  const st = $('#kbSt'), up = ws && ws.readyState === 1;
+  const st = $('#kbSt'), up = isUp();
   const s = !up ? ['off', 'Sin conexión'] : fAck < fSeq ? ['busy', 'Enviando…'] : fErr ? ['off', 'No se ha podido escribir'] : none && fBlind ? ['off', 'Enviado sin ver el campo'] : none ? ['off', 'Sin campo en la tele'] : ['', 'Al día en la tele'];
   st.className = 'kbSt' + (s[0] ? ' ' + s[0] : ''); st.lastChild.textContent = s[1];
 }
@@ -577,7 +566,6 @@ const P_HELP = 'Pide acceso al administrador o escribe el código que aparecerá
 let pid = null;
 const uaName = () => { const u = navigator.userAgent; return /iPhone/.test(u) ? 'iPhone' : /iPad/.test(u) ? 'iPad' : /Android/.test(u) ? (/Mobile/.test(u) ? 'Móvil Android' : 'Tablet Android') : /Mac/.test(u) ? 'Mac' : /Windows/.test(u) ? 'Windows' : 'Navegador'; };
 const pSay = (t, err) => { pMsg.textContent = t; pMsg.className = err ? 'err' : ''; };
-async function post(u, b) { try { return await (await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(b) })).json(); } catch { return { error: 'No hay conexión con el mando' }; } }
 let askT = 0;
 function showPair(msg) {
   closeSheetSafe(); pairV.hidden = false; p1.hidden = false; p2.hidden = true; $('#p3').hidden = true; $('#p4').hidden = true; pid = null; clearTimeout(askT);
@@ -589,7 +577,7 @@ function showPair(msg) {
 function closeSheetSafe() { try { if (sheet) closeSheet(); } catch {} }
 function paired(r) {
   useToken(r);
-  pairV.hidden = true; tries = 0; connect();
+  pairV.hidden = true; resetTries(); connect();
 }
 async function pairAskGo() {
   const typed = $('#pName').value.trim(); persist.set('pname', typed);
@@ -628,7 +616,7 @@ $('#pAdmBack').addEventListener('click', () => showPair());
 async function pAdmSend() {
   const typed = $('#pName').value.trim(); persist.set('pname', typed);
   const r = await adminGo($('#pAdmC').value, typed || uaName());
-  if (r.token) { pairV.hidden = true; tries = 0; connect(); return; }
+  if (r.token) { pairV.hidden = true; resetTries(); connect(); return; }
   pSay(r.error || 'Error', true);
 }
 $('#pAdmGo').addEventListener('click', pAdmSend);
@@ -637,7 +625,7 @@ $('#clGo').addEventListener('click', async () => {
   const r = await adminGo($('#clCode').value, ME && ME.name);
   if (!r.token) return pill(r.error || 'Error');
   $('#clCode').value = ''; pill('Ya eres administrador');
-  if (ws) ws.close(); // reconecta con el token (el mismo si se ha ascendido este dispositivo)
+  reconnect(); // reconecta con el token (el mismo si se ha ascendido este dispositivo)
 });
 $('#alGo').addEventListener('click', async () => {
   buzz(8);
@@ -759,7 +747,7 @@ function refreshSet() {
   $('#swNat').setAttribute('aria-pressed', cfg.natural); $('#swHap').setAttribute('aria-pressed', cfg.haptic);
   $('#swDark').setAttribute('aria-pressed', cfg.theme !== 'claro');
   $('#swFs').setAttribute('aria-pressed', !!document.fullscreenElement);
-  $('#foot').textContent = (ws && ws.readyState === 1 ? 'Conectado' : 'Sin conexión') + (rtt ? ' · ' + Math.round(rtt) + ' ms' : '');
+  $('#foot').textContent = (isUp() ? 'Conectado' : 'Sin conexión') + (getRtt() ? ' · ' + Math.round(getRtt()) + ' ms' : '');
 }
 $('#rSpeed').addEventListener('input', e => { cfg.speed = +e.target.value; $('#vSpeed').textContent = cfg.speed.toFixed(1) + '×'; saveCfg(); });
 $('#rScroll').addEventListener('input', e => { cfg.scroll = +e.target.value; $('#vScroll').textContent = cfg.scroll.toFixed(1) + '×'; saveCfg(); });
