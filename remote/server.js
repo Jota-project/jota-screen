@@ -1162,7 +1162,7 @@ async function run(m, ws, ctx = {}) {
   const P = permsOf(dev);
   m = gate(m, P);
   if (m.error) return m;
-  if (DEBUG) console.log('cmd', JSON.stringify(m));
+  if (DEBUG) console.log('cmd', JSON.stringify(m.t === 'field' ? { ...m, value: `(${String(m.value ?? '').length} caracteres)` } : m)); // lo escrito (contraseñas) no va al registro
   if (!['state', 'devices', 'activity', 'idle', 'spwatch', 'focus'].includes(m.t)) idle.touch();
   try {
     switch (m.t) {
