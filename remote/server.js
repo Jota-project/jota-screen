@@ -322,6 +322,7 @@ function spotifyTweak() {
 // El mando tiene su propio editor y en cada cambio manda el texto entero y la selección; aquí se aplica al
 // elemento con foco. Autocontenida: se serializa a la página. Entra en iframes del mismo origen y en shadow DOM abiertos.
 function fieldInPage(o) {
+  if (window.__tvFieldBoot !== o.boot) { window.__tvFieldBoot = o.boot; window.__tvFieldSeq = 0; } // servidor reiniciado: secuencia nueva
   if (o.seq <= (window.__tvFieldSeq || 0)) return { stale: 1 };   // llegó tarde: ya se aplicó uno más nuevo
   window.__tvFieldSeq = o.seq;
   let el = document.activeElement;
@@ -329,11 +330,16 @@ function fieldInPage(o) {
     if (el.shadowRoot && el.shadowRoot.activeElement) { el = el.shadowRoot.activeElement; continue; }
     if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
       let d = null; try { d = el.contentDocument; } catch {}
-      if (d && d.activeElement && d.activeElement !== d.body) { el = d.activeElement; continue; }
+      // el body cuenta si es editable (designMode, editores en iframe como TinyMCE o CKEditor 4)
+      if (d && d.activeElement && (d.activeElement !== d.body || d.designMode === 'on' || (d.body && d.body.isContentEditable))) { el = d.activeElement; continue; }
     }
     break;
   }
   if (!el || !el.tagName) return { none: 1 };
+  // ¿puede haber un editor que no se ve? iframe de otro origen, o un anfitrión de shadow DOM cerrado (con foco sin
+  // ser enfocable por sí mismo). Solo entonces el servidor escribe a ciegas; en el body o en un botón, nunca.
+  const hidden = /^(IFRAME|FRAME|EMBED|OBJECT)$/.test(el.tagName) ||
+    (el !== el.ownerDocument.body && !el.hasAttribute('tabindex') && !/^(A|BUTTON|INPUT|SELECT|TEXTAREA|SUMMARY|AREA|VIDEO|AUDIO)$/.test(el.tagName) && !el.isContentEditable);
   const W = el.ownerDocument.defaultView, doc = el.ownerDocument;
   const v = String(o.value), n = v.length;
   const a = Math.min(n, Math.max(0, o.selStart | 0)), b = Math.min(n, Math.max(a, o.selEnd | 0));
@@ -366,23 +372,35 @@ function fieldInPage(o) {
     try { const r = doc.createRange(); r.setStart(...at(a)); r.setEnd(...at(b)); sel.removeAllRanges(); sel.addRange(r); } catch {}
     return { ok: 1 };
   }
-  return { none: 1 };
+  return hidden ? { none: 1, hidden: 1 } : { none: 1 };
 }
 // Aviso de foco: en cada documento de la pestaña activa. Al entrar o salir de un campo llama al binding __tvFocus
 // (Runtime.addBinding) con {kind, placeholder, value?}. De una contraseña nunca sale el valor.
 function focusWatch() {
   let root = window; try { if (window.top.document) root = window.top; } catch {}
+  const foreign = root !== window.top;                                 // iframe de otro origen: no puede ver el foco de arriba
+  // campos que alguna vez fueron contraseña (el botón del ojo los pasa a type=text): siguen siéndolo
+  const pwSet = window.__tvPw || (window.__tvPw = new WeakSet());
+  const markPw = el => { if (el && el.tagName === 'INPUT' && (el.getAttribute('type') || '').toLowerCase() === 'password') pwSet.add(el); };
   const deep = () => {
     let el = root.document.activeElement;
     for (let i = 0; el && i < 12; i++) {
       if (el.shadowRoot && el.shadowRoot.activeElement) { el = el.shadowRoot.activeElement; continue; }
       if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
         let d = null; try { d = el.contentDocument; } catch {}
-        if (d && d.activeElement && d.activeElement !== d.body) { el = d.activeElement; continue; }
+        if (d && d.activeElement && (d.activeElement !== d.body || d.designMode === 'on' || (d.body && d.body.isContentEditable))) { el = d.activeElement; continue; }
       }
       break;
     }
     return el && el.tagName ? el : null;
+  };
+  const isPw = (el, type) => {                                         // en la duda, contraseña
+    const set = (el.ownerDocument.defaultView || window).__tvPw;
+    if (type === 'password' || (set && set.has(el))) return true;
+    let sec = 'none'; try { sec = getComputedStyle(el).webkitTextSecurity || 'none'; } catch {}
+    if (sec !== 'none') return true;
+    const hint = [el.name, el.id, el.getAttribute('autocomplete')].join(' ');
+    return /pass|pwd|contrase|clave/i.test(hint) || /(^|[^a-z])pin($|[^a-z])/i.test(hint);
   };
   const info = () => {
     const el = deep();
@@ -393,7 +411,7 @@ function focusWatch() {
     else if (tag === 'INPUT' && ['text', 'search', 'email', 'url', 'tel', 'number', 'password'].includes(type)) kind = 'text';
     if (kind === 'none') return { kind, placeholder: '' };
     // también las contraseñas que la web pasa a type=text para «mostrar»
-    if (type === 'password' || /password/i.test(el.getAttribute('autocomplete') || '')) kind = 'password';
+    if (isPw(el, type)) kind = 'password';
     else if (type === 'search' || el.getAttribute('role') === 'searchbox' || el.closest('[role=search]') ||
       /search|busca/i.test([el.name, el.id, el.getAttribute('placeholder'), el.getAttribute('aria-label')].join(' '))) kind = 'search';
     const o = { kind, placeholder: String(el.getAttribute('placeholder') || el.getAttribute('aria-label') || el.getAttribute('data-placeholder') || el.title || '').trim().slice(0, 120) };
@@ -401,7 +419,9 @@ function focusWatch() {
     return o;
   };
   const report = force => {
-    const s = JSON.stringify(info());
+    const o = info();
+    if (foreign && (force || o.kind === 'none')) return;               // un iframe ajeno no pisa el foco de la página
+    const s = JSON.stringify(o);
     if (!force && s === root.__tvFocusLast) return;
     root.__tvFocusLast = s;
     const f = root.__tvFocus || window.__tvFocus;                      // se busca al llamar: el binding se vuelve a poner al cambiar de pestaña
@@ -410,19 +430,31 @@ function focusWatch() {
   if (!window.__tvFocusOn) {
     window.__tvFocusOn = 1;
     const later = () => setTimeout(report, 0);                       // tras focusout llega el focusin del siguiente
-    addEventListener('focusin', later, true); addEventListener('focusout', later, true);
+    addEventListener('focusin', e => { markPw(e.target); markPw(e.composedPath && e.composedPath()[0]); later(); }, true);
+    addEventListener('focusout', later, true);
+    try {
+      document.querySelectorAll('input[type=password]').forEach(markPw);
+      new MutationObserver(ms => { for (const m of ms) if ((m.oldValue || '').toLowerCase() === 'password') pwSet.add(m.target); else markPw(m.target); })
+        .observe(document, { subtree: true, attributes: true, attributeFilter: ['type'], attributeOldValue: true, childList: false });
+    } catch {}
   }
   report(true);
 }
 let tvFocus = { t: 'focus', kind: 'none', placeholder: '' };
+// lo que hay escrito en la tele solo va a quien lo está editando: admin o miembro con la vista del teclado abierta
+// (un invitado nunca lo ve: podría ser una tarjeta, un código o un correo que ha escrito otro)
+function focusFor(c) {
+  const d = c && c.devId ? devices.find(x => x.id === c.devId) : null;
+  if (!c || !c.kbOpen || (d && d.role === 'guest') || !('value' in tvFocus)) return { t: 'focus', kind: tvFocus.kind, placeholder: tvFocus.placeholder };
+  return tvFocus;
+}
 function focusSet(o) {                                                // guarda el último foco y lo empuja a los mandos
   const kind = ['text', 'search', 'password'].includes(o && o.kind) ? o.kind : 'none';
   const f = { t: 'focus', kind, placeholder: kind === 'none' ? '' : String(o.placeholder || '').slice(0, 120) };
   if ((kind === 'text' || kind === 'search') && typeof o.value === 'string') f.value = o.value.slice(0, 2000);
-  const s = JSON.stringify(f);
-  if (s === JSON.stringify(tvFocus)) return;
+  if (JSON.stringify(f) === JSON.stringify(tvFocus)) return;
   tvFocus = f;
-  for (const c of wss.clients) if (c.readyState === WebSocket.OPEN) c.send(s);
+  for (const c of wss.clients) if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify(focusFor(c)));
 }
 
 const cdp = {
@@ -513,8 +545,16 @@ const cdp = {
       case 'Target.detachedFromTarget':
         if (pr.sessionId === this.session) { this.session = null; focusSet(null); broadcast(); }
         break;
-      case 'Runtime.bindingCalled': // aviso de foco desde la página (solo de la sesión activa: las viejas siguen enganchadas)
+      case 'Runtime.bindingCalled': // aviso de foco desde la página (solo de la sesión activa)
         if (pr.name === '__tvFocus' && m.sessionId === this.session) { try { focusSet(JSON.parse(pr.payload)); } catch {} }
+        break;
+      case 'Runtime.executionContextCreated': { // el mundo aislado «tv» del marco principal, para volver a mirar el foco
+        const c = pr.context || {};
+        if (m.sessionId === this.session && c.name === 'tv' && c.auxData && c.auxData.frameId === this.targetId) this.focusCtx = c.id;
+        break;
+      }
+      case 'Runtime.executionContextsCleared':
+        if (m.sessionId === this.session) this.focusCtx = null;
         break;
     }
   },
@@ -527,27 +567,39 @@ const cdp = {
     this.call('Runtime.evaluate', { expression: source }).catch(bad('eval'));
   },
 
-  // aviso de foco: el binding y el script se ponen en cada sesión nueva (al activar otra pestaña también)
+  // aviso de foco: el binding y el script se ponen en cada sesión nueva (al activar otra pestaña también).
+  // Van en un mundo aislado («tv»): la web no ve el binding ni puede llamarlo para inventarse un foco.
   async watchFocus() {
-    const source = `(${focusWatch})()`, sid = this.session;
-    try {
-      await this.call('Runtime.enable');                              // para recibir Runtime.bindingCalled
-      await this.call('Page.enable');                                 // sin él, el script de documento nuevo no se ejecuta
-      await this.call('Runtime.addBinding', { name: '__tvFocus' });
-      await this.call('Page.addScriptToEvaluateOnNewDocument', { source });
-      if (this.session === sid) await this.call('Runtime.evaluate', { expression: source }); // vuelve a avisar del foco actual
-    } catch (e) { console.error('foco', e.message); }
+    const source = `(${focusWatch})()`, sid = this.session, tid = this.targetId;
+    const steps = [
+      () => this.call('Runtime.enable'),                              // para recibir Runtime.bindingCalled
+      () => this.call('Page.enable'),                                 // sin él, el script de documento nuevo no se ejecuta
+      () => this.call('Runtime.addBinding', { name: '__tvFocus', executionContextName: 'tv' }),
+      () => this.call('Page.addScriptToEvaluateOnNewDocument', { source, worldName: 'tv' }),
+      async () => { // el documento actual: su mundo aislado y vuelve a avisar del foco
+        const w = await this.call('Page.createIsolatedWorld', { frameId: tid, worldName: 'tv' });
+        if (this.session !== sid) return;
+        this.focusCtx = w.executionContextId;
+        await this.call('Runtime.evaluate', { expression: source, contextId: w.executionContextId });
+      },
+    ];
+    try { for (const f of steps) { if (this.session !== sid) return; await f(); } } // se aborta si cambia la sesión
+    catch (e) { console.error('foco', e.message); }
+  },
+  focusRefresh() { // vuelve a mirar el campo con foco (por si la web lo ha cambiado por su cuenta, o lo ha escrito un mando)
+    if (!this.focusCtx) return Promise.resolve();
+    return this.call('Runtime.evaluate', { expression: `(${focusWatch})()`, contextId: this.focusCtx }).catch(() => {});
   },
 
   async activate(id) {
     if (this.targetId === id && this.session) return;
     const old = this.session;
-    this.targetId = id; this.session = null; focusSet(null);
+    this.targetId = id; this.session = null; this.focusCtx = null; focusSet(null);
     // la sesión anterior se suelta: si no, sigue enganchada con sus scripts y mandando eventos
     if (old) this.call('Target.detachFromTarget', { sessionId: old }, true).catch(() => {});
     try {
       const r = await this.call('Target.attachToTarget', { targetId: id, flatten: true }, true);
-      if (this.targetId !== id) return;
+      if (this.targetId !== id) { this.call('Target.detachFromTarget', { sessionId: r.sessionId }, true).catch(() => {}); return; } // ya se activó otra
       this.session = r.sessionId;
       const t = this.pages.get(id);
       if (t) { state.title = t.title; state.url = t.url; }
@@ -604,11 +656,18 @@ function key(k) {
   return { ok: 1 };
 }
 
-// escribir en directo: una sola aplicación en marcha; mientras, solo se guarda la más nueva (las intermedias sobran)
-const fieldQ = { busy: false, next: null, idle: [] };
-// las teclas esperan a que se aplique lo escrito: un Intro o un Tab no se adelanta al texto
-const fieldDrain = () => fieldQ.busy || fieldQ.next ? new Promise(r => fieldQ.idle.push(r)) : null;
-let fieldN = Date.now(); // la página recuerda el último aplicado; así sigue creciendo aunque se reinicie el servidor
+// escribir en directo: una sola aplicación en marcha; las pendientes se sustituyen por la más nueva (las intermedias
+// sobran), salvo las que llegaron antes que una tecla: esas se aplican tal cual antes de ella
+const fieldQ = { busy: false, jobs: [], enq: 0, done: 0, barrier: 0, wait: [] };
+// la tecla espera a lo escrito que llegó antes que ella (no a lo que llegue después), con un tope de 3 s
+function fieldBefore() {
+  const k = fieldQ.enq;
+  if (fieldQ.done >= k) return null;
+  fieldQ.barrier = Math.max(fieldQ.barrier, k);
+  return new Promise(r => { const w = { k, r }; fieldQ.wait.push(w); setTimeout(() => { fieldQ.wait = fieldQ.wait.filter(x => x !== w); r(); }, 3000); });
+}
+const BOOT = crypto.randomBytes(4).toString('hex'); // la página reinicia su secuencia si cambia (servidor reiniciado)
+let fieldN = 0;
 function field(m, ws) {
   const seq = Number(m.seq) || 0;
   if (ws && seq) { if (seq <= (ws.fieldSeq || 0)) return { stale: 1, seq }; ws.fieldSeq = seq; } // la secuencia es de cada mando
@@ -616,28 +675,48 @@ function field(m, ws) {
   const pos = (x, d) => Number.isFinite(+x) ? Math.min(n, Math.max(0, Math.floor(+x))) : d;
   const selStart = pos(m.selStart, n), selEnd = Math.max(selStart, pos(m.selEnd, selStart));
   return new Promise(res => {
-    if (fieldQ.next) fieldQ.next.res({ ok: 1, skipped: 1, seq: fieldQ.next.seq });
-    fieldQ.next = { o: { value, selStart, selEnd }, seq, res };
+    const job = { n: ++fieldQ.enq, o: { value, selStart, selEnd }, seq, ws, res };
+    const last = fieldQ.jobs[fieldQ.jobs.length - 1];
+    if (last && last.n > fieldQ.barrier) { last.res({ ok: 1, skipped: 1, seq: last.seq }); fieldQ.jobs[fieldQ.jobs.length - 1] = job; }
+    else fieldQ.jobs.push(job);
     if (!fieldQ.busy) fieldRun();
   });
 }
 async function fieldRun() {
   fieldQ.busy = true;
-  while (fieldQ.next) {
-    const j = fieldQ.next; fieldQ.next = null;
+  while (fieldQ.jobs.length) {
+    const j = fieldQ.jobs.shift();
     let r;
-    try { r = await fieldApply({ ...j.o, seq: ++fieldN }); } catch (e) { r = { error: e.message }; }
-    // el foco guardado lleva el valor al día (sin empujarlo): quien abra el teclado después ve lo escrito
-    if (r.ok && (tvFocus.kind === 'text' || tvFocus.kind === 'search')) tvFocus = { ...tvFocus, value: j.o.value };
+    try { r = await fieldApply({ ...j.o, seq: ++fieldN, boot: BOOT }, j.ws ? j.ws.fieldPrev : undefined); } catch (e) { r = { error: e.message }; }
+    if (j.ws && !r.error && !r.stale) j.ws.fieldPrev = j.o.value;     // lo último que tiene la tele de este mando (para el plan C)
+    fieldQ.done = j.n;
     j.res({ ...r, seq: j.seq });
+    const ready = fieldQ.wait.filter(x => x.k <= fieldQ.done);
+    for (const w of ready) { fieldQ.wait.splice(fieldQ.wait.indexOf(w), 1); w.r(); }
+    if (ready.length) await new Promise(r => setImmediate(r));       // que salgan esas teclas antes del siguiente field
   }
   fieldQ.busy = false;
-  for (const r of fieldQ.idle.splice(0)) r();
 }
-async function fieldApply(o) {
+// plan C (no se ve el campo: iframe de otro origen, shadow DOM cerrado): como antes, a ciegas con teclas.
+// Se borra lo que sobra respecto a lo último enviado por este mando y se escribe lo nuevo (supone el cursor al final).
+async function fieldBlind(v, prev = '') {
+  const a = Array.from(prev), b = Array.from(v);
+  let i = 0; while (i < a.length && i < b.length && a[i] === b[i]) i++;
+  const del = Math.min(a.length - i, 2000), add = b.slice(i).join('');
+  if (!del && !add) return { none: 1, blind: 1 };                     // solo ha cambiado la selección: no se puede llevar
+  const p = keyParams('Backspace');
+  for (let k = 0; k < del; k++) {
+    await cdp.call('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...p });
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', ...p });
+  }
+  if (add) await cdp.call('Input.insertText', { text: add });
+  return { ok: 1, typed: 1, blind: 1 };
+}
+async function fieldApply(o, prev) {
   const r = await cdp.call('Runtime.evaluate', { expression: `(${fieldInPage})(${JSON.stringify(o)})`, returnByValue: true });
   const v = r && !r.exceptionDetails && r.result && r.result.value;
   if (!v || typeof v !== 'object') return { error: 'la página no ha aceptado el texto' };
+  if (v.none && v.hidden) return fieldBlind(o.value, prev);
   if (!v.fallback) return v;
   // plan B (editores que rechazan el valor): ya está todo seleccionado; se escribe encima como si se tecleara
   if (o.value) await cdp.call('Input.insertText', { text: o.value });
@@ -1212,13 +1291,14 @@ async function run(m, ws, ctx = {}) {
         return { ok: 1 };
       case 'idle': return await idle.run(m);
       case 'activity': return idle.activity(m);
-      case 'key': { const w = fieldDrain(); if (w) await w; return key(String(m.k)); }
+      case 'key': { const w = fieldBefore(); if (w) await w; return key(String(m.k)); } // lo escrito antes, primero
       case 'text': cdp.fire('Input.insertText', { text: String(m.v ?? '').slice(0, 2000) }); return { ok: 1 };
       case 'field': return await field(m, ws);
-      case 'focus': // el mando lo pide al abrir el teclado: va lo guardado y, si la web ha cambiado el campo, llega otro aviso
-        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(tvFocus));
-        cdp.call('Runtime.evaluate', { expression: `(${focusWatch})()` }).catch(() => {});
-        return tvFocus;
+      case 'focus': // el mando avisa al abrir o cerrar el teclado; va lo guardado y, si la web ha cambiado el campo, llega otro aviso
+        if (ws && typeof m.open === 'boolean') ws.kbOpen = m.open;
+        if (!ws || ws.kbOpen) await cdp.focusRefresh();               // primero se mira el campo: así no va un valor viejo
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(focusFor(ws)));
+        return ws ? focusFor(ws) : { t: 'focus', kind: tvFocus.kind, placeholder: tvFocus.placeholder };
       case 'nav': return await nav(m.url);
       case 'home': return await nav(HOME_URL);
       case 'back': return await hist(-1);
@@ -1419,7 +1499,7 @@ wss.on('connection', (ws, req) => {
   });
   ws.send(JSON.stringify(publicState()));
   ws.send(JSON.stringify(meOf(ws)));
-  ws.send(JSON.stringify(tvFocus));
+  ws.send(JSON.stringify(focusFor(ws)));
   if (permsOf(ws.devId ? devices.find(d => d.id === ws.devId) : null).admin) // peticiones de acceso pendientes
     for (const [pid, v] of pairs) if (v.ask && !v.result && !v.denied) ws.send(JSON.stringify({ t: 'pairreq', pid, name: v.name }));
   console.log('cliente conectado', clientIp(req));
