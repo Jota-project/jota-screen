@@ -317,6 +317,114 @@ function spotifyTweak() {
   new MutationObserver(sweep).observe(document, { childList: true, subtree: true });
   sweep();
 }
+
+// ───────────────────────── escribir en la tele en directo
+// El mando tiene su propio editor y en cada cambio manda el texto entero y la selección; aquí se aplica al
+// elemento con foco. Autocontenida: se serializa a la página. Entra en iframes del mismo origen y en shadow DOM abiertos.
+function fieldInPage(o) {
+  if (o.seq <= (window.__tvFieldSeq || 0)) return { stale: 1 };   // llegó tarde: ya se aplicó uno más nuevo
+  window.__tvFieldSeq = o.seq;
+  let el = document.activeElement;
+  for (let i = 0; el && i < 12; i++) {
+    if (el.shadowRoot && el.shadowRoot.activeElement) { el = el.shadowRoot.activeElement; continue; }
+    if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
+      let d = null; try { d = el.contentDocument; } catch {}
+      if (d && d.activeElement && d.activeElement !== d.body) { el = d.activeElement; continue; }
+    }
+    break;
+  }
+  if (!el || !el.tagName) return { none: 1 };
+  const W = el.ownerDocument.defaultView, doc = el.ownerDocument;
+  const v = String(o.value), n = v.length;
+  const a = Math.min(n, Math.max(0, o.selStart | 0)), b = Math.min(n, Math.max(a, o.selEnd | 0));
+  const isTa = el.tagName === 'TEXTAREA';
+  const isIn = el.tagName === 'INPUT' && ['text', 'search', 'email', 'url', 'tel', 'number', 'password'].includes((el.getAttribute('type') || 'text').toLowerCase());
+  if (isIn || isTa) {
+    if (el.readOnly || el.disabled) return { none: 1 };
+    if (el.value !== v) {
+      // setter nativo: las webs hechas con React no ven un `el.value = …` normal
+      Object.getOwnPropertyDescriptor((isTa ? W.HTMLTextAreaElement : W.HTMLInputElement).prototype, 'value').set.call(el, v);
+      el.dispatchEvent(W.InputEvent ? new W.InputEvent('input', { bubbles: true, inputType: 'insertReplacementText' }) : new W.Event('input', { bubbles: true }));
+      el.dispatchEvent(new W.Event('change', { bubbles: true }));
+      if (el.value !== v) { try { el.select(); } catch {} return { fallback: 1 }; } // lo rechaza: el servidor lo teclea encima
+    }
+    try { el.setSelectionRange(a, b); } catch {}                       // number y email no admiten selección
+    return { ok: 1 };
+  }
+  if (el.isContentEditable) {
+    const sel = doc.getSelection();
+    if (el.innerText.replace(/ /g, ' ').replace(/\n$/, '') !== v) {
+      const r = doc.createRange(); r.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(r);
+      if (!doc.execCommand(v ? 'insertText' : 'delete', false, v)) return { fallback: 1 };
+    }
+    // selección por posiciones de texto (aproximada si hay saltos de línea)
+    const at = off => {
+      const w = doc.createTreeWalker(el, 4); let t;
+      while ((t = w.nextNode())) { if (off <= t.length) return [t, off]; off -= t.length; }
+      return [el, el.childNodes.length];
+    };
+    try { const r = doc.createRange(); r.setStart(...at(a)); r.setEnd(...at(b)); sel.removeAllRanges(); sel.addRange(r); } catch {}
+    return { ok: 1 };
+  }
+  return { none: 1 };
+}
+// Aviso de foco: en cada documento de la pestaña activa. Al entrar o salir de un campo llama al binding __tvFocus
+// (Runtime.addBinding) con {kind, placeholder, value?}. De una contraseña nunca sale el valor.
+function focusWatch() {
+  let root = window; try { if (window.top.document) root = window.top; } catch {}
+  const deep = () => {
+    let el = root.document.activeElement;
+    for (let i = 0; el && i < 12; i++) {
+      if (el.shadowRoot && el.shadowRoot.activeElement) { el = el.shadowRoot.activeElement; continue; }
+      if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
+        let d = null; try { d = el.contentDocument; } catch {}
+        if (d && d.activeElement && d.activeElement !== d.body) { el = d.activeElement; continue; }
+      }
+      break;
+    }
+    return el && el.tagName ? el : null;
+  };
+  const info = () => {
+    const el = deep();
+    if (!el || el.readOnly || el.disabled) return { kind: 'none', placeholder: '' };
+    const tag = el.tagName, type = (el.getAttribute('type') || 'text').toLowerCase(), ce = tag !== 'INPUT' && tag !== 'TEXTAREA';
+    let kind = 'none';
+    if (tag === 'TEXTAREA' || (ce && el.isContentEditable)) kind = 'text';
+    else if (tag === 'INPUT' && ['text', 'search', 'email', 'url', 'tel', 'number', 'password'].includes(type)) kind = 'text';
+    if (kind === 'none') return { kind, placeholder: '' };
+    // también las contraseñas que la web pasa a type=text para «mostrar»
+    if (type === 'password' || /password/i.test(el.getAttribute('autocomplete') || '')) kind = 'password';
+    else if (type === 'search' || el.getAttribute('role') === 'searchbox' || el.closest('[role=search]') ||
+      /search|busca/i.test([el.name, el.id, el.getAttribute('placeholder'), el.getAttribute('aria-label')].join(' '))) kind = 'search';
+    const o = { kind, placeholder: String(el.getAttribute('placeholder') || el.getAttribute('aria-label') || el.getAttribute('data-placeholder') || el.title || '').trim().slice(0, 120) };
+    if (kind !== 'password') o.value = String(ce ? el.innerText.replace(/\n$/, '') : el.value).slice(0, 2000);
+    return o;
+  };
+  const report = force => {
+    const s = JSON.stringify(info());
+    if (!force && s === root.__tvFocusLast) return;
+    root.__tvFocusLast = s;
+    const f = root.__tvFocus || window.__tvFocus;                      // se busca al llamar: el binding se vuelve a poner al cambiar de pestaña
+    if (typeof f === 'function') try { f(s); } catch {}
+  };
+  if (!window.__tvFocusOn) {
+    window.__tvFocusOn = 1;
+    const later = () => setTimeout(report, 0);                       // tras focusout llega el focusin del siguiente
+    addEventListener('focusin', later, true); addEventListener('focusout', later, true);
+  }
+  report(true);
+}
+let tvFocus = { t: 'focus', kind: 'none', placeholder: '' };
+function focusSet(o) {                                                // guarda el último foco y lo empuja a los mandos
+  const kind = ['text', 'search', 'password'].includes(o && o.kind) ? o.kind : 'none';
+  const f = { t: 'focus', kind, placeholder: kind === 'none' ? '' : String(o.placeholder || '').slice(0, 120) };
+  if ((kind === 'text' || kind === 'search') && typeof o.value === 'string') f.value = o.value.slice(0, 2000);
+  const s = JSON.stringify(f);
+  if (s === JSON.stringify(tvFocus)) return;
+  tvFocus = f;
+  for (const c of wss.clients) if (c.readyState === WebSocket.OPEN) c.send(s);
+}
+
 const cdp = {
   ws: null, id: 0, pending: new Map(), session: null, targetId: null, pages: new Map(), ready: false,
 
@@ -341,6 +449,7 @@ const cdp = {
     for (const [, p] of this.pending) { clearTimeout(p.t); p.rej(new Error('cdp')); }
     this.pending.clear();
     state.title = ''; state.url = ''; state.media = -1; state.scroll = null;
+    focusSet(null);
     broadcast();
   },
 
@@ -395,14 +504,17 @@ const cdp = {
       case 'Target.targetDestroyed': {
         this.pages.delete(pr.targetId);
         if (pr.targetId === this.targetId) {
-          this.targetId = null; this.session = null;
+          this.targetId = null; this.session = null; focusSet(null);
           const next = [...this.pages.keys()].pop();
           if (next) this.activate(next); else broadcast();
         }
         break;
       }
       case 'Target.detachedFromTarget':
-        if (pr.sessionId === this.session) { this.session = null; broadcast(); }
+        if (pr.sessionId === this.session) { this.session = null; focusSet(null); broadcast(); }
+        break;
+      case 'Runtime.bindingCalled': // aviso de foco desde la página (solo de la sesión activa: las viejas siguen enganchadas)
+        if (pr.name === '__tvFocus' && m.sessionId === this.session) { try { focusSet(JSON.parse(pr.payload)); } catch {} }
         break;
     }
   },
@@ -415,9 +527,24 @@ const cdp = {
     this.call('Runtime.evaluate', { expression: source }).catch(bad('eval'));
   },
 
+  // aviso de foco: el binding y el script se ponen en cada sesión nueva (al activar otra pestaña también)
+  async watchFocus() {
+    const source = `(${focusWatch})()`, sid = this.session;
+    try {
+      await this.call('Runtime.enable');                              // para recibir Runtime.bindingCalled
+      await this.call('Page.enable');                                 // sin él, el script de documento nuevo no se ejecuta
+      await this.call('Runtime.addBinding', { name: '__tvFocus' });
+      await this.call('Page.addScriptToEvaluateOnNewDocument', { source });
+      if (this.session === sid) await this.call('Runtime.evaluate', { expression: source }); // vuelve a avisar del foco actual
+    } catch (e) { console.error('foco', e.message); }
+  },
+
   async activate(id) {
     if (this.targetId === id && this.session) return;
-    this.targetId = id; this.session = null;
+    const old = this.session;
+    this.targetId = id; this.session = null; focusSet(null);
+    // la sesión anterior se suelta: si no, sigue enganchada con sus scripts y mandando eventos
+    if (old) this.call('Target.detachFromTarget', { sessionId: old }, true).catch(() => {});
     try {
       const r = await this.call('Target.attachToTarget', { targetId: id, flatten: true }, true);
       if (this.targetId !== id) return;
@@ -425,6 +552,7 @@ const cdp = {
       const t = this.pages.get(id);
       if (t) { state.title = t.title; state.url = t.url; }
       if (!process.env.TV_SPOTIFY_BANNER) this.tweak();
+      this.watchFocus();
       broadcast();
     } catch {}
   },
@@ -474,6 +602,51 @@ function key(k) {
     type: 'keyUp', key: p.key, code: p.code, windowsVirtualKeyCode: p.windowsVirtualKeyCode, nativeVirtualKeyCode: p.nativeVirtualKeyCode,
   });
   return { ok: 1 };
+}
+
+// escribir en directo: una sola aplicación en marcha; mientras, solo se guarda la más nueva (las intermedias sobran)
+const fieldQ = { busy: false, next: null, idle: [] };
+// las teclas esperan a que se aplique lo escrito: un Intro o un Tab no se adelanta al texto
+const fieldDrain = () => fieldQ.busy || fieldQ.next ? new Promise(r => fieldQ.idle.push(r)) : null;
+let fieldN = Date.now(); // la página recuerda el último aplicado; así sigue creciendo aunque se reinicie el servidor
+function field(m, ws) {
+  const seq = Number(m.seq) || 0;
+  if (ws && seq) { if (seq <= (ws.fieldSeq || 0)) return { stale: 1, seq }; ws.fieldSeq = seq; } // la secuencia es de cada mando
+  const value = String(m.value ?? '').slice(0, 2000), n = value.length;
+  const pos = (x, d) => Number.isFinite(+x) ? Math.min(n, Math.max(0, Math.floor(+x))) : d;
+  const selStart = pos(m.selStart, n), selEnd = Math.max(selStart, pos(m.selEnd, selStart));
+  return new Promise(res => {
+    if (fieldQ.next) fieldQ.next.res({ ok: 1, skipped: 1, seq: fieldQ.next.seq });
+    fieldQ.next = { o: { value, selStart, selEnd }, seq, res };
+    if (!fieldQ.busy) fieldRun();
+  });
+}
+async function fieldRun() {
+  fieldQ.busy = true;
+  while (fieldQ.next) {
+    const j = fieldQ.next; fieldQ.next = null;
+    let r;
+    try { r = await fieldApply({ ...j.o, seq: ++fieldN }); } catch (e) { r = { error: e.message }; }
+    // el foco guardado lleva el valor al día (sin empujarlo): quien abra el teclado después ve lo escrito
+    if (r.ok && (tvFocus.kind === 'text' || tvFocus.kind === 'search')) tvFocus = { ...tvFocus, value: j.o.value };
+    j.res({ ...r, seq: j.seq });
+  }
+  fieldQ.busy = false;
+  for (const r of fieldQ.idle.splice(0)) r();
+}
+async function fieldApply(o) {
+  const r = await cdp.call('Runtime.evaluate', { expression: `(${fieldInPage})(${JSON.stringify(o)})`, returnByValue: true });
+  const v = r && !r.exceptionDetails && r.result && r.result.value;
+  if (!v || typeof v !== 'object') return { error: 'la página no ha aceptado el texto' };
+  if (!v.fallback) return v;
+  // plan B (editores que rechazan el valor): ya está todo seleccionado; se escribe encima como si se tecleara
+  if (o.value) await cdp.call('Input.insertText', { text: o.value });
+  else {
+    const p = keyParams('Backspace');
+    await cdp.call('Input.dispatchKeyEvent', { type: 'rawKeyDown', ...p });
+    await cdp.call('Input.dispatchKeyEvent', { type: 'keyUp', ...p });
+  }
+  return { ok: 1, typed: 1 };
 }
 
 function normUrl(s) {
@@ -997,8 +1170,8 @@ async function run(m, ws, ctx = {}) {
   const P = permsOf(dev);
   m = gate(m, P);
   if (m.error) return m;
-  if (DEBUG) console.log('cmd', JSON.stringify(m));
-  if (!['state', 'devices', 'activity', 'idle', 'spwatch'].includes(m.t)) idle.touch();
+  if (DEBUG) console.log('cmd', JSON.stringify(m.t === 'field' ? { ...m, value: `(${String(m.value ?? '').length} caracteres)` } : m)); // lo escrito (contraseñas) no va al registro
+  if (!['state', 'devices', 'activity', 'idle', 'spwatch', 'focus'].includes(m.t)) idle.touch();
   try {
     switch (m.t) {
       case 'present': return await present(m);
@@ -1039,8 +1212,13 @@ async function run(m, ws, ctx = {}) {
         return { ok: 1 };
       case 'idle': return await idle.run(m);
       case 'activity': return idle.activity(m);
-      case 'key': return key(String(m.k));
+      case 'key': { const w = fieldDrain(); if (w) await w; return key(String(m.k)); }
       case 'text': cdp.fire('Input.insertText', { text: String(m.v ?? '').slice(0, 2000) }); return { ok: 1 };
+      case 'field': return await field(m, ws);
+      case 'focus': // el mando lo pide al abrir el teclado: va lo guardado y, si la web ha cambiado el campo, llega otro aviso
+        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(tvFocus));
+        cdp.call('Runtime.evaluate', { expression: `(${focusWatch})()` }).catch(() => {});
+        return tvFocus;
       case 'nav': return await nav(m.url);
       case 'home': return await nav(HOME_URL);
       case 'back': return await hist(-1);
@@ -1242,6 +1420,7 @@ wss.on('connection', (ws, req) => {
   });
   ws.send(JSON.stringify(publicState()));
   ws.send(JSON.stringify(meOf(ws)));
+  ws.send(JSON.stringify(tvFocus));
   if (permsOf(ws.devId ? devices.find(d => d.id === ws.devId) : null).admin) // peticiones de acceso pendientes
     for (const [pid, v] of pairs) if (v.ask && !v.result && !v.denied) ws.send(JSON.stringify({ t: 'pairreq', pid, name: v.name }));
   console.log('cliente conectado', clientIp(req));
