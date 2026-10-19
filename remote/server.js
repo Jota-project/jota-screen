@@ -15,6 +15,8 @@ const { loadConfig } = require('./src/core/config');
 const { createLog } = require('./src/core/log');
 const { readJson, writeJson } = require('./src/core/json-store');
 const { createRateLimiter } = require('./src/auth/ratelimit');
+const { createAccess } = require('./src/auth/access');
+const { createCommands } = require('./src/transport/commands');
 
 // configuración (entorno y rutas): src/core/config.js
 const CFG = loadConfig();
@@ -25,155 +27,26 @@ const { OC_BIN, OC_AGENT, OC_ENV } = CFG;
 const ASK_PREFIX = '[Voz desde el mando del salón. Responde en una sola frase corta, sin markdown ni rodeos. ' +
   'Para actuar sobre la tele usa las herramientas tv-canvas.] ';
 
-// ───────────────────────── token
-const TOKEN_FILE = CFG.FILES.token;
-let TOKEN = '';
-try { TOKEN = fs.readFileSync(TOKEN_FILE, 'utf8').trim(); } catch {}
-if (TOKEN.length < 16) {
-  TOKEN = crypto.randomBytes(16).toString('hex');
-  fs.writeFileSync(TOKEN_FILE, TOKEN + '\n', { mode: 0o600 });
-}
-const TOKEN_BUF = Buffer.from(TOKEN);
+// ───────────────────────── acceso: token maestro, dispositivos, roles y emparejamiento (src/auth/access.js)
+let acc = null;
 // registro con redacción: el token maestro, los ?t= y los Bearer nunca llegan al journal (src/core/log.js)
-const log = createLog({ secrets: () => [TOKEN], debug: DEBUG });
-// Dispositivos emparejados: cada uno tiene su propio token (aquí solo se guarda su hash) y se puede retirar.
-// El token maestro (./token) queda para el agente y el MCP.
-const DEV_FILE = CFG.FILES.devices;
-let devices = readJson(DEV_FILE, []); if (!Array.isArray(devices)) devices = [];
-const devSave = () => writeJson(DEV_FILE, devices);
-const sha = x => crypto.createHash('sha256').update(x).digest('hex');
-// Roles: admin (el dueño), member (registrado por un admin) y guest (con el código de la tele; caduca).
-const ROLES = ['admin', 'member', 'guest'];
-let migrated = false;
-for (const d of devices) if (!ROLES.includes(d.role)) { d.role = 'admin'; migrated = true; } // los emparejados antes de los roles eran de Sito
-if (migrated) devSave();
-function tokenDev(t) { // -> dispositivo emparejado dueño de este token, o null (los caducados se borran)
-  if (typeof t !== 'string' || t.length < 16 || t.length > 128) return null;
-  const h = sha(t);
-  const d = devices.find(x => x.h === h) || null;
-  if (d && d.expires && Date.now() > d.expires) { expireDevice(d); return null; }
-  return d;
-}
-function expireDevice(d) {
-  const i = devices.indexOf(d); if (i >= 0) { devices.splice(i, 1); devSave(); }
-  for (const c of wss.clients) if (c.devId === d.id) c.close(4002, 'caducado');
-  log.info('acceso caducado:', d.name);
-}
-setInterval(() => { for (const d of [...devices]) if (d.expires && Date.now() > d.expires) expireDevice(d); }, 60_000);
-
-// Permisos de invitados y miembros (los admin pueden todo). Configurables por el admin desde el mando.
-const ACCESS_FILE = CFG.FILES.access;
-const PERM_DEFAULT = { web: true, agent: 'guest', music: 'play', library: false, volMax: 100, stage: false };
-const ADMIN_PERMS = { web: true, agent: 'full', music: 'play', library: true, volMax: 100, stage: true, admin: true };
-function permSan(p = {}, base = PERM_DEFAULT) {
-  const o = { ...base };
-  if (p.web !== undefined) o.web = !!p.web;
-  if (['off', 'guest', 'full'].includes(p.agent)) o.agent = p.agent;
-  if (['play', 'queue', 'off'].includes(p.music)) o.music = p.music;
-  if (p.library !== undefined) o.library = !!p.library;
-  if (Number.isFinite(+p.volMax)) o.volMax = Math.min(100, Math.max(10, Math.round(+p.volMax)));
-  if (p.stage !== undefined) o.stage = !!p.stage;
-  return o;
-}
-let access = { guestHours: 24, guest: { ...PERM_DEFAULT }, member: { ...PERM_DEFAULT } };
-try {
-  const a = JSON.parse(fs.readFileSync(ACCESS_FILE, 'utf8'));
-  access = { guestHours: Number.isFinite(+a.guestHours) ? +a.guestHours : 24, guest: permSan(a.guest), member: permSan(a.member) };
-} catch {}
-const accessSave = () => writeJson(ACCESS_FILE, access, { pretty: true });
-const permsOf = dev => !dev || dev.role === 'admin' ? ADMIN_PERMS : { ...(access[dev.role] || access.guest), admin: false };
-const guestExpiry = () => access.guestHours > 0 ? Date.now() + access.guestHours * 3600e3 : null;
-function newDevice(name, role) {
-  const token = crypto.randomBytes(16).toString('hex');
-  const dev = { id: crypto.randomBytes(4).toString('hex'), name, role, h: sha(token), created: Date.now(), seen: Date.now(),
-    expires: role === 'guest' ? guestExpiry() : null };
-  devices.push(dev); devSave();
-  log.info('dispositivo emparejado:', dev.name, dev.role);
-  return { token, id: dev.id, role: dev.role, expires: dev.expires };
-}
-function okToken(t) {
-  if (typeof t !== 'string' || t.length > 128) return false;
-  if (isMaster(t)) return true;
-  const d = tokenDev(t);
-  if (!d) return false;
-  if (Date.now() - d.seen > 3_600_000) { d.seen = Date.now(); devSave(); }
-  return true;
-}
-const listDevices = () => devices.map(d => ({ id: d.id, name: d.name, role: d.role, created: d.created, seen: d.seen, expires: d.expires || null,
-  online: [...wss.clients].some(c => c.devId === d.id) }));
+const log = createLog({ secrets: () => (acc ? [acc.masterToken()] : []), debug: DEBUG });
+// lo que el acceso necesita de las conexiones del mando y de la tele (wss y cdp se crean más abajo; se usan al llamar)
+const devOf = c => (c && c.devId ? acc.byId(c.devId) : null);
+const adminSockets = () => [...wss.clients].filter(c => c.readyState === WebSocket.OPEN && acc.permsOf(devOf(c)).admin);
 function meOf(ws) {
-  const d = ws.devId ? devices.find(x => x.id === ws.devId) : null;
-  return { t: 'me', id: d?.id || null, name: d?.name || 'Enlace maestro', role: d ? d.role : 'admin', expires: d?.expires || null, perms: permsOf(d), guestHours: access.guestHours };
+  const d = devOf(ws);
+  return { t: 'me', id: d?.id || null, name: d?.name || 'Enlace maestro', role: d ? d.role : 'admin', expires: d?.expires || null, perms: acc.permsOf(d), guestHours: acc.settings().guestHours };
 }
 function pushMe(devId) { for (const c of wss.clients) if (c.devId === devId && c.readyState === WebSocket.OPEN) c.send(JSON.stringify(meOf(c))); }
-function setRole(id, role) {
-  const d = devices.find(x => x.id === id);
-  if (!d) return { error: 'no existe' };
-  if (!ROLES.includes(role)) return { error: 'rol no válido' };
-  if (d.role === 'admin' && role !== 'admin' && devices.filter(x => x.role === 'admin').length === 1) return { error: 'Tiene que quedar al menos un administrador' };
-  d.role = role; d.expires = role === 'guest' ? guestExpiry() : null; devSave(); pushMe(id);
-  return { ok: 1, devices: listDevices() };
-}
-function extendDevice(id, hours) {
-  const d = devices.find(x => x.id === id);
-  if (!d || d.role !== 'guest') return { error: 'solo se amplía a invitados' };
-  const h = Number(hours) > 0 ? Number(hours) : access.guestHours || 24;
-  d.expires = Math.max(Date.now(), d.expires || 0) + h * 3600e3; devSave(); pushMe(id);
-  return { ok: 1, devices: listDevices() };
-}
-function renameDevice(id, name) {
-  const d = devices.find(x => x.id === id); if (!d) return { error: 'no existe' };
-  d.name = String(name || '').replace(/[^\p{L}\p{N} ._'-]/gu, '').trim().slice(0, 24) || d.name; devSave(); pushMe(id);
-  return { ok: 1, devices: listDevices() };
-}
-function kickGuests() {
-  for (const d of devices.filter(x => x.role === 'guest')) revokeDevice(d.id);
-  return { ok: 1, devices: listDevices() };
-}
-const adminSockets = () => [...wss.clients].filter(c => c.readyState === WebSocket.OPEN && permsOf(c.devId ? devices.find(d => d.id === c.devId) : null).admin);
-function revokeDevice(id) {
-  const i = devices.findIndex(d => d.id === id);
-  if (i < 0) return { error: 'no existe' };
-  devices.splice(i, 1); devSave();
-  for (const c of wss.clients) if (c.devId === id) c.close(4001, 'token');
-  return { ok: 1, devices: listDevices() };
-}
-
-// Emparejar: el código aparece en la tele y se escribe en el dispositivo nuevo (así hay que estar en el salón).
-const pairs = new Map(); // pid -> {code, name, ts, tries} o {ask: true, name, ts, result?, denied?}
-const PAIR_TTL = 120_000;
-let pairLast = new Map();
-function pairClean() {
-  for (const [k, v] of pairs) if (Date.now() - v.ts > PAIR_TTL) { pairs.delete(k); if (v.ask) pairDone(k); }
-  if (![...pairs.values()].some(v => !v.ask)) pairHide();
-}
-function pairDone(pid) { const s = JSON.stringify({ t: 'pairdone', pid }); for (const c of adminSockets()) c.send(s); }
-function pairAsk(ip, name) { // pedir acceso a un admin conectado (sin molestar en la tele)
-  const admins = adminSockets();
-  if (!admins.length) return { error: 'No hay ningún administrador conectado ahora. Usa el código de la tele.', noAdmin: true };
-  const pid = crypto.randomBytes(8).toString('hex');
-  pairs.set(pid, { ask: true, name, ts: Date.now() });
-  const s = JSON.stringify({ t: 'pairreq', pid, name });
-  for (const c of admins) c.send(s);
-  setTimeout(pairClean, PAIR_TTL + 500);
-  return { pid, mode: 'ask' };
-}
-function pairAnswer(pid, ok, role) {
-  const p = pairs.get(String(pid));
-  if (!p || !p.ask || p.result || p.denied) return { error: 'Esa petición ya no está pendiente' };
-  if (ok) p.result = newDevice(p.name, ['member', 'guest'].includes(role) ? role : 'guest');
-  else p.denied = true;
-  p.ts = Date.now(); // un poco más de vida para que el invitado recoja la respuesta
-  pairDone(String(pid));
-  return { ok: 1 };
-}
-function pairPoll(pid) {
-  const p = pairs.get(String(pid));
-  if (!p || !p.ask) return { error: 'La petición ha caducado', dead: true };
-  if (p.denied) { pairs.delete(String(pid)); return { denied: true }; }
-  if (p.result) { pairs.delete(String(pid)); return p.result; }
-  return { pending: true };
-}
+const sessions = {
+  isOnline: id => [...wss.clients].some(c => c.devId === id),
+  close: (id, code, reason) => { for (const c of wss.clients) if (c.devId === id) c.close(code, reason); },
+  pushMe,
+  adminCount: () => adminSockets().length,
+  notifyAdmins: msg => { const s = JSON.stringify(msg); for (const c of adminSockets()) c.send(s); },
+};
+// el código de emparejar se pinta encima de lo que haya en la tele
 function pairInPage(o) {
   const old = document.getElementById('__tvpair'); if (old) old.remove();
   if (!o) return;
@@ -191,65 +64,10 @@ function pairInPage(o) {
 }
 const pairShow = (code, name) => cdp.call('Runtime.evaluate', { expression: `(${pairInPage})(${JSON.stringify({ code, name })})` }).catch(() => {});
 function pairHide() { cdp.call('Runtime.evaluate', { expression: `(${pairInPage})(null)` }).catch(() => {}); }
-async function pairStart(ip, nameIn, mode) {
-  pairClean();
-  if (Date.now() - (pairLast.get(ip) || 0) < 4000) return { error: 'Espera unos segundos' };
-  if (pairs.size >= 4) return { error: 'Hay otras peticiones pendientes; prueba en un minuto' };
-  const name = cleanName(nameIn) || 'Un dispositivo';
-  if (mode === 'ask') { const r = pairAsk(ip, name); if (!r.error) pairLast.set(ip, Date.now()); return r; }
-  if (!cdp.ready || !cdp.session) return { error: 'La tele no está disponible ahora mismo' };
-  pairLast.set(ip, Date.now());
-  const code = String(crypto.randomInt(0, 10000)).padStart(4, '0');
-  const pid = crypto.randomBytes(8).toString('hex');
-  pairs.set(pid, { code, name, ts: Date.now(), tries: 0 });
-  await pairShow(code, name);
-  setTimeout(pairClean, PAIR_TTL + 500);
-  return { pid };
-}
-function pairConfirm(pid, code) {
-  pairClean();
-  const p = pairs.get(String(pid));
-  if (!p || p.ask) return { error: 'La petición ha caducado. Pide un código nuevo.' };
-  if (String(code).trim() !== p.code) {
-    if (++p.tries >= 3) { pairs.delete(String(pid)); pairClean(); return { error: 'Demasiados fallos. Pide un código nuevo.', dead: true }; }
-    return { error: 'Código incorrecto' };
-  }
-  pairs.delete(String(pid)); pairClean();
-  return newDevice(p.name, 'guest');
-}
-
-// Enlace o código de admin: un solo uso, caduca en 10 min. Lo genera el token maestro (MCP, agente,
-// remote/admin-link.js) o un admin conectado. Así el token maestro no tiene que llegar nunca al móvil.
-const ADMIN_TTL = 10 * 60_000;
-// dirección canónica para los enlaces de admin (la del mando en casa). TV_PUBLIC_URL es otra cosa: la de Spotify, con https.
-const { ADMIN_URL } = CFG;
-const CODE_ABC = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ'; // sin 0/O ni 1/I para poder teclearlo
-const adminCodes = new Map(); // sha(código) -> caducidad
-const codeNorm = c => String(c || '').toUpperCase().replace(/[^0-9A-Z]/g, '');
-const cleanName = n => String(n || '').replace(/[^\p{L}\p{N} ._'-]/gu, '').trim().slice(0, 24);
-function adminLink() {
-  for (const [k, exp] of adminCodes) if (Date.now() > exp) adminCodes.delete(k);
-  if (adminCodes.size >= 8) return { error: 'Hay demasiados enlaces sin usar; espera unos minutos' };
-  let c = ''; for (const x of crypto.randomBytes(10)) c += CODE_ABC[x & 31];
-  const expires = Date.now() + ADMIN_TTL;
-  adminCodes.set(sha(c), expires);
-  const code = c.slice(0, 5) + '-' + c.slice(5);
-  return { ok: 1, code, url: ADMIN_URL + '/#admin=' + code, expires, minutes: ADMIN_TTL / 60_000 };
-}
-function adminClaim(code, name, cur) { // cur: token que ya tiene este navegador; si es de un dispositivo, se asciende ese
-  const h = sha(codeNorm(code)), exp = adminCodes.get(h);
-  if (!exp || Date.now() > exp) { adminCodes.delete(h); return { error: 'El código no vale o ha caducado. Pide otro.' }; }
-  adminCodes.delete(h);
-  return adminDevice(name, cur);
-}
-function adminDevice(name, cur) {
-  const d = tokenDev(cur);
-  if (!d) return newDevice(cleanName(name) || 'Admin', 'admin');
-  d.role = 'admin'; d.expires = null; devSave(); pushMe(d.id);
-  log.info('dispositivo ascendido a admin:', d.name);
-  return { token: cur, id: d.id, role: 'admin', expires: null };
-}
-const isMaster = t => { const b = Buffer.from(typeof t === 'string' ? t : ''); return b.length === TOKEN_BUF.length && crypto.timingSafeEqual(b, TOKEN_BUF); };
+acc = createAccess({ files: CFG.FILES, adminUrl: CFG.ADMIN_URL, log, sessions,
+  tv: { ready: () => !!(cdp.ready && cdp.session), showCode: pairShow, hideCode: pairHide } });
+acc.start();
+const { isMaster, tokenDev, okToken, permsOf } = acc;
 
 // IP real del cliente cuando llega a través de un proxy local (nginx, tailscale serve)
 function clientIp(req) {
@@ -436,7 +254,7 @@ let tvFocus = { t: 'focus', kind: 'none', placeholder: '' };
 // lo que hay escrito en la tele solo va a quien lo está editando: admin o miembro con la vista del teclado abierta
 // (un invitado nunca lo ve: podría ser una tarjeta, un código o un correo que ha escrito otro)
 function focusFor(c) {
-  const d = c && c.devId ? devices.find(x => x.id === c.devId) : null;
+  const d = devOf(c);
   if (!c || !c.kbOpen || (d && d.role === 'guest') || !('value' in tvFocus)) return { t: 'focus', kind: tvFocus.kind, placeholder: tvFocus.placeholder };
   return tvFocus;
 }
@@ -1236,100 +1054,85 @@ async function ask(text, ws, mode = 'full', who = '') {
 }
 
 // Qué puede hacer cada rol. Devuelve un error o la orden (a veces ajustada: volumen con tope, peticiones a la cola).
-const NOPE = t => ({ error: t || 'No tienes permiso para esto' });
-function gate(m, P) {
-  const t = m.t;
-  if (['devices', 'revoke', 'role', 'extend', 'rename', 'kickguests', 'access', 'pairanswer', 'adminlink'].includes(t)) return P.admin ? m : NOPE('Solo el administrador');
-  if (['present', 'show', 'stage', 'close', 'toast', 'activity'].includes(t)) return P.stage ? m : NOPE('Las presentaciones no están permitidas');
-  if (t === 'shot') return P.admin ? m : NOPE();
-  if (['nav', 'links', 'clicktext', 'click'].includes(t)) return P.web ? m : NOPE('Abrir webs no está permitido');
-  if (t === 'ask') return P.agent === 'off' ? NOPE('El agente no está disponible para ti') : m;
-  if (t === 'idle' && m.op === 'set') return P.admin ? m : NOPE('Solo el administrador');
-  if (t === 'volset') return { ...m, v: Math.min(Number(m.v) || 0, P.volMax) };
-  if (t === 'vol' && m.d === 'up' && state.vol !== null && state.vol >= P.volMax) return NOPE('Volumen máximo: ' + P.volMax + ' %');
-  if (t === 'spotify') {
-    const a = m.a;
-    if (['playlists', 'playlist', 'recent', 'like'].includes(a) && !P.library) return NOPE('La biblioteca de Spotify es privada');
-    if (['uri', 'search_play', 'queue_add'].includes(a)) {
-      if (P.music === 'off') return NOPE('Pedir canciones no está permitido');
-      if (P.music === 'queue' && a !== 'queue_add') return { ...m, asQueue: true };
-    }
-    if (a === 'volume') return { ...m, v: Math.min(Number(m.v) || 0, P.volMax) };
-  }
+// ───────────────────────── órdenes (src/transport/commands.js): cada una con su permiso al lado
+const spotifyPerm = (m, P) => {
+  if (['playlists', 'playlist', 'recent', 'like'].includes(m.a) && !P.library) return 'La biblioteca de Spotify es privada';
+  if (['uri', 'search_play', 'queue_add'].includes(m.a) && P.music === 'off') return 'Pedir canciones no está permitido';
+  return null;
+};
+const spotifyClamp = (m, P) => {
+  if (['uri', 'search_play'].includes(m.a) && P.music === 'queue') return { ...m, asQueue: true }; // solo puede encolar
+  if (m.a === 'volume') return { ...m, v: Math.min(Number(m.v) || 0, P.volMax) };
   return m;
-}
+};
+const devArg = m => String(m.dev || '');
+const commands = createCommands({ permsOf, onUse: () => idle.touch(), log });
+commands.register([
+  // escenario: presentaciones, páginas del agente, avisos y Live Activities
+  { t: 'present', perm: 'stage', run: m => present(m) },
+  { t: 'show', perm: 'stage', run: m => show(m) },
+  { t: 'stage', perm: 'stage', run: m => stageUpdate(m) },
+  { t: 'close', perm: 'stage', run: () => stageClose() },
+  { t: 'toast', perm: 'stage', run: m => toast(m) },
+  { t: 'activity', perm: 'stage', quiet: true, run: m => idle.activity(m) },
+  // webs y navegación
+  { t: 'nav', perm: 'web', run: m => nav(m.url) },
+  { t: 'links', perm: 'web', run: m => links(m.text) },
+  { t: 'clicktext', perm: 'web', run: m => clickText(m.text) },
+  { t: 'click', perm: 'web', run: m => clickAt(m.x, m.y) },
+  { t: 'home', run: () => nav(HOME_URL) },
+  { t: 'back', run: () => hist(-1) },
+  { t: 'forward', run: () => hist(1) },
+  { t: 'reload', run: async () => { await cdp.call('Page.reload', {}); return { ok: 1 }; } },
+  { t: 'shot', perm: 'adminQuiet', run: m => shot(m) },
+  // reproducción y volumen
+  { t: 'pp', run: () => playpause() },
+  { t: 'seek', run: m => seek(m.s) },
+  { t: 'fs', run: () => key('f') },
+  { t: 'vol', perm: (m, P) => (m.d === 'up' && state.vol !== null && state.vol >= P.volMax ? 'Volumen máximo: ' + P.volMax + ' %' : null), run: m => vol(m.d) },
+  { t: 'volset', clamp: (m, P) => ({ ...m, v: Math.min(Number(m.v) || 0, P.volMax) }), run: m => volSet(m.v) },
+  // teclado
+  { t: 'key', run: async m => { const w = fieldBefore(); if (w) await w; return key(String(m.k)); } }, // lo escrito antes, primero
+  { t: 'text', run: m => { cdp.fire('Input.insertText', { text: String(m.v ?? '').slice(0, 2000) }); return { ok: 1 }; } },
+  { t: 'field', run: (m, { ws }) => field(m, ws) },
+  { t: 'focus', quiet: true, run: async (m, { ws }) => { // el mando avisa al abrir o cerrar el teclado; va lo guardado y, si la web ha cambiado el campo, llega otro aviso
+  if (ws && typeof m.open === 'boolean') ws.kbOpen = m.open;
+  if (!ws || ws.kbOpen) await cdp.focusRefresh();               // primero se mira el campo: así no va un valor viejo
+  if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(focusFor(ws)));
+  return ws ? focusFor(ws) : { t: 'focus', kind: tvFocus.kind, placeholder: tvFocus.placeholder };
+  } },
+  // agente
+  { t: 'ask', perm: 'agent', run: (m, { ws, dev, P }) => ask(m.text, ws, P.agent, dev && dev.role !== 'admin' ? dev.name : '') },
+  // Spotify
+  { t: 'spotify', perm: spotifyPerm, clamp: spotifyClamp, run: m => spotify(m) },
+  { t: 'spwatch', quiet: true, run: async (m, { ws }) => { // el panel de Spotify del mando pide (o deja de pedir) el estado en vivo
+  if (!m.on) { if (ws) ws.spWatch = 0; return { ok: 1 }; }
+  { const was = ws ? spWatching(ws) : false; if (ws) ws.spWatch = Date.now();
+    // solo al abrirse se pregunta a Spotify (cola y «me gusta» al día); los refrescos cada 15 s usan lo que hay
+    const n = was && spNow.get() ? spNow.get() : await spNow.panelOpened();
+    return { now: n ? { ...n, needsLogin: !spHasScopes() } : null }; }
+  } },
+  // pantalla en reposo
+  { t: 'idle', perm: (m, P) => (m.op === 'set' && !P.admin ? 'Solo el administrador' : null), quiet: true, run: m => idle.run(m) },
+  // acceso (solo admin)
+  { t: 'devices', perm: 'admin', quiet: true, run: () => ({ devices: acc.devices.list(), access: acc.settings() }) },
+  { t: 'revoke', perm: 'admin', run: m => acc.devices.revoke(devArg(m)) },
+  { t: 'role', perm: 'admin', run: m => acc.devices.setRole(devArg(m), m.role) },
+  { t: 'extend', perm: 'admin', run: m => acc.devices.extend(devArg(m), m.hours) },
+  { t: 'rename', perm: 'admin', run: m => acc.devices.rename(devArg(m), m.name) },
+  { t: 'kickguests', perm: 'admin', run: () => acc.devices.kickGuests() },
+  { t: 'pairanswer', perm: 'admin', run: m => acc.pairing.answer(m.pid, !!m.ok, m.role) },
+  { t: 'adminlink', perm: 'admin', run: () => acc.admin.link() },
+  { t: 'access', perm: 'admin', run: m => ({ access: m.op === 'set' ? acc.setAccess(m.cfg || {}) : acc.settings() }) },
+  { t: 'me', run: (m, { ws }) => (ws ? meOf(ws) : { role: 'admin' }) },
+  { t: 'state', quiet: true, run: () => publicState() },
+]);
 
-async function run(m, ws, ctx = {}) {
+async function run(m, ws, ctx = {}) { // mando (ws), API y MCP (ctx.dev)
   if (!m || typeof m !== 'object') return { error: 'mensaje no válido' };
-  const dev = ws ? (ws.devId ? devices.find(d => d.id === ws.devId) : null) : ctx.dev || null;
+  const dev = ws ? devOf(ws) : ctx.dev || null;
   if (ws && ws.devId && !dev) return { error: 'acceso retirado' };
-  const P = permsOf(dev);
-  m = gate(m, P);
-  if (m.error) return m;
-  log.debug('cmd', JSON.stringify(m.t === 'field' ? { ...m, value: `(${String(m.value ?? '').length} caracteres)` } : m)); // lo escrito (contraseñas) no va al registro
-  if (!['state', 'devices', 'activity', 'idle', 'spwatch', 'focus'].includes(m.t)) idle.touch();
-  try {
-    switch (m.t) {
-      case 'present': return await present(m);
-      case 'show': return await show(m);
-      case 'stage': return stageUpdate(m);
-      case 'close': return await stageClose();
-      case 'toast': return await toast(m);
-      case 'clicktext': return await clickText(m.text);
-      case 'links': return await links(m.text);
-      case 'click': return await clickAt(m.x, m.y);
-      case 'shot': return await shot(m);
-      case 'seek': return await seek(m.s);
-      case 'volset': return await volSet(m.v);
-      case 'ask': return await ask(m.text, ws, P.agent, dev && dev.role !== 'admin' ? dev.name : '');
-      case 'devices': return { devices: listDevices(), access };
-      case 'revoke': return revokeDevice(String(m.dev || ''));
-      case 'role': return setRole(String(m.dev || ''), m.role);
-      case 'extend': return extendDevice(String(m.dev || ''), m.hours);
-      case 'rename': return renameDevice(String(m.dev || ''), m.name);
-      case 'kickguests': return kickGuests();
-      case 'pairanswer': return pairAnswer(m.pid, !!m.ok, m.role);
-      case 'adminlink': return adminLink();
-      case 'access':
-        if (m.op === 'set') {
-          const c = m.cfg || {};
-          if (Number.isFinite(+c.guestHours)) access.guestHours = Math.min(24 * 30, Math.max(0, +c.guestHours));
-          if (c.guest) access.guest = permSan(c.guest, access.guest);
-          if (c.member) access.member = permSan(c.member, access.member);
-          accessSave();
-          for (const c2 of wss.clients) if (c2.devId) pushMe(c2.devId);
-        }
-        return { access };
-      case 'me': return ws ? meOf(ws) : { role: 'admin' };
-      case 'spotify': return await spotify(m);
-      case 'spwatch': // el panel de Spotify del mando pide (o deja de pedir) el estado en vivo
-        if (!m.on) { if (ws) ws.spWatch = 0; return { ok: 1 }; }
-        { const was = ws ? spWatching(ws) : false; if (ws) ws.spWatch = Date.now();
-          // solo al abrirse se pregunta a Spotify (cola y «me gusta» al día); los refrescos cada 15 s usan lo que hay
-          const n = was && spNow.get() ? spNow.get() : await spNow.panelOpened();
-          return { now: n ? { ...n, needsLogin: !spHasScopes() } : null }; }
-      case 'idle': return await idle.run(m);
-      case 'activity': return idle.activity(m);
-      case 'key': { const w = fieldBefore(); if (w) await w; return key(String(m.k)); } // lo escrito antes, primero
-      case 'text': cdp.fire('Input.insertText', { text: String(m.v ?? '').slice(0, 2000) }); return { ok: 1 };
-      case 'field': return await field(m, ws);
-      case 'focus': // el mando avisa al abrir o cerrar el teclado; va lo guardado y, si la web ha cambiado el campo, llega otro aviso
-        if (ws && typeof m.open === 'boolean') ws.kbOpen = m.open;
-        if (!ws || ws.kbOpen) await cdp.focusRefresh();               // primero se mira el campo: así no va un valor viejo
-        if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(focusFor(ws)));
-        return ws ? focusFor(ws) : { t: 'focus', kind: tvFocus.kind, placeholder: tvFocus.placeholder };
-      case 'nav': return await nav(m.url);
-      case 'home': return await nav(HOME_URL);
-      case 'back': return await hist(-1);
-      case 'forward': return await hist(1);
-      case 'reload': await cdp.call('Page.reload', {}); return { ok: 1 };
-      case 'vol': return await vol(m.d);
-      case 'fs': return key('f');
-      case 'pp': return await playpause();
-      case 'state': return publicState();
-      default: return { error: 'orden desconocida' };
-    }
-  } catch (e) { return { error: e.message }; }
+  return commands.dispatch(m, { dev, ws });
 }
 
 // ───────────────────────── HTTP (estáticos + API para agentes)
@@ -1396,13 +1199,13 @@ async function pairHttp(req, res, p, ip) {
   for await (const c of req) { size += c.length; if (size > 2048) return send(res, 413, ''); chunks.push(c); }
   let b = {}; try { b = JSON.parse(Buffer.concat(chunks).toString() || '{}'); } catch {}
   if (p === '/pair/info') return json(res, 200, { adminOnline: adminSockets().length > 0, tv: !!(cdp.ready && cdp.session) });
-  if (p === '/pair/start') { const r = await pairStart(ip, b.name, b.mode); return json(res, r.error && !r.noAdmin ? 429 : 200, r); }
+  if (p === '/pair/start') { const r = await acc.pairing.start(ip, b.name, b.mode); return json(res, r.error && !r.noAdmin ? 429 : 200, r); }
   if (p === '/pair/confirm') {
-    const r = pairConfirm(b.pid, b.code);
+    const r = acc.pairing.confirm(b.pid, b.code);
     if (r.error) fail(ip);
     return json(res, r.error ? 403 : 200, r, r.token ? setCookie(r.token, r.expires) : {});
   }
-  if (p === '/pair/poll') { const r = pairPoll(b.pid); return json(res, 200, r, r.token ? setCookie(r.token, r.expires) : {}); }
+  if (p === '/pair/poll') { const r = acc.pairing.poll(b.pid); return json(res, 200, r, r.token ? setCookie(r.token, r.expires) : {}); }
   if (p === '/pair/me') { // ¿sigue valiendo este dispositivo? (token del navegador o cookie); renueva la cookie
     const t = (typeof b.t === 'string' && b.t) || cookieTok(req);
     if (!okToken(t)) return json(res, 200, { ok: false });
@@ -1413,8 +1216,8 @@ async function pairHttp(req, res, p, ip) {
   if (p === '/pair/admin') { // canjear un código de admin, o el token maestro, por un dispositivo admin propio
     const cur = (typeof b.cur === 'string' && b.cur) || cookieTok(req);
     let r;
-    if (isMaster(b.t) || (!b.code && isMaster(cur))) r = adminDevice(b.name, cur); // también el maestro que una versión anterior dejó en la cookie
-    else if (b.code) r = adminClaim(b.code, b.name, cur);
+    if (isMaster(b.t) || (!b.code && isMaster(cur))) r = acc.admin.device(b.name, cur); // también el maestro que una versión anterior dejó en la cookie
+    else if (b.code) r = acc.admin.claim(b.code, b.name, cur);
     else r = { error: 'Falta el código' };
     if (r.error) fail(ip);
     return json(res, r.error ? 403 : 200, r, r.token ? setCookie(r.token, r.expires) : {});
@@ -1520,8 +1323,8 @@ wss.on('connection', (ws, req) => {
   ws.send(JSON.stringify(publicState()));
   ws.send(JSON.stringify(meOf(ws)));
   ws.send(JSON.stringify(focusFor(ws)));
-  if (permsOf(ws.devId ? devices.find(d => d.id === ws.devId) : null).admin) // peticiones de acceso pendientes
-    for (const [pid, v] of pairs) if (v.ask && !v.result && !v.denied) ws.send(JSON.stringify({ t: 'pairreq', pid, name: v.name }));
+  if (permsOf(devOf(ws)).admin) // peticiones de acceso pendientes
+    for (const p of acc.pairing.pendingAsks()) ws.send(JSON.stringify({ t: 'pairreq', ...p }));
   log.info('cliente conectado', clientIp(req));
 });
 setInterval(() => {
