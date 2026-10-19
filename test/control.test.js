@@ -5,14 +5,14 @@ const assert = require('node:assert/strict');
 const { start } = require('./helpers/server');
 const { startFakeCdp } = require('./helpers/fake-cdp');
 
-let s, cdp, adminTok;
+let s, cdp, adminTok, fieldReply = { ok: 1 };
 const SID = 'S-P1';
 const cmd = async body => (await s.api('/api/cmd', s.token, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json();
 const since = n => cdp.calls.slice(n);
 
 before(async () => {
-  // playpause devuelve 1 (suena); el resto de evaluaciones, nada
-  cdp = await startFakeCdp({ evaluate: expr => (expr.includes('v.paused){v.play()') ? 1 : undefined) });
+  // playpause devuelve 1 (suena); escribir en directo responde lo que diga fieldReply
+  cdp = await startFakeCdp({ evaluate: expr => (expr.includes('v.paused){v.play()') ? 1 : expr.includes('"boot":"') ? fieldReply : undefined) });
   s = await start({ cdpPort: cdp.port });
   await cdp.waitFor(m => m.method === 'Target.attachToTarget');
   adminTok = (await (await s.post('/pair/admin', { t: s.token, name: 'Pruebas' })).json()).token;
@@ -95,6 +95,72 @@ test('emparejar con el código que sale en la tele', async () => {
   assert.equal(ok.role, 'guest');
   assert.match(ok.token, /^[a-f0-9]{32}$/);
   await cdp.waitFor(m => m.method === 'Runtime.evaluate' && m.params.expression.endsWith('(null)') && cdp.calls.indexOf(m) > cdp.calls.indexOf(ev));
+});
+
+test('escenario: presentar tareas, datos en vivo, eventos de vuelta y cerrar volviendo a donde estaba', async () => {
+  const path = require('node:path');
+  const WS = require(path.join(__dirname, '..', 'remote', 'node_modules', 'ws'));
+  const prevUrl = (await (await s.api('/api/state')).json()).url;
+  const data = { title: 'Compra', items: [{ id: '1', text: 'Pan' }, { id: '2', text: 'Leche' }] };
+  const r = await cmd({ t: 'present', kind: 'tasks', data });
+  assert.equal(r.ok, 1, JSON.stringify(r));
+  await cdp.waitFor(m => m.method === 'Page.navigate' && /\/tpl-tasks\.html$/.test(m.params.url));
+  assert.equal((await (await s.api('/api/state')).json()).stage, 'tasks');
+  assert.match((await cmd({ t: 'present', kind: 'otra', data })).error, /kind/);
+  // la página del escenario (solo desde la propia tele) recibe los datos y manda eventos
+  const ws = new WS(`ws://127.0.0.1:${s.port}/stage-ws`);
+  const first = await new Promise((ok, ko) => { ws.once('message', d => ok(JSON.parse(d.toString()))); ws.once('error', ko); });
+  assert.deepEqual(first, { t: 'data', data });
+  ws.send(JSON.stringify({ t: 'event', name: 'toggle', payload: { id: '1' } }));
+  await new Promise(x => setTimeout(x, 100));
+  const ev = await (await s.api('/api/events?since=0')).json();
+  assert.ok(ev.last >= 1);
+  assert.equal(ev.events.at(-1).name, 'toggle');
+  assert.equal(ev.data.items[0].done, true, 'marcar una tarea en la tele la marca en los datos');
+  const up = await cmd({ t: 'stage', data: { title: 'Compra del sábado' } });
+  assert.equal(up.data.title, 'Compra del sábado');
+  assert.equal(up.data.items.length, 2, 'actualizar mezcla con lo que había');
+  ws.close();
+  const n = cdp.calls.length;
+  await cmd({ t: 'close' });
+  await cdp.waitFor(m => m.method === 'Page.navigate' && m.params.url === prevUrl && cdp.calls.indexOf(m) >= n);
+  assert.equal((await (await s.api('/api/state')).json()).stage, null);
+});
+
+test('escenario: un aviso emergente se pinta encima de lo que se vea', async () => {
+  assert.deepEqual(await cmd({ t: 'toast', title: 'La pasta', text: 'Escurrir', seconds: 3 }), { ok: 1 });
+  const e = await cdp.waitFor(m => m.method === 'Runtime.evaluate' && m.params.expression.includes('"title":"La pasta"'));
+  assert.match(e.params.expression, /"secs":3/);
+  assert.match((await cmd({ t: 'toast' })).error, /title/);
+});
+
+test('agente: sin respuesta de OpenClaw lo dice, y avisa en la tele de lo entendido', async () => {
+  const r = await cmd({ t: 'ask', text: 'pon algo de jazz' });
+  assert.equal(r.error, 'sin respuesta del agente');
+  await cdp.waitFor(m => m.method === 'Runtime.evaluate' && m.params.expression.includes('pon algo de jazz'));
+  assert.match((await cmd({ t: 'ask', text: '  ' })).error, /vacío/);
+});
+
+test('escribir en directo: el texto llega, lo atrasado se descarta, plan B escribe encima y plan C manda solo la diferencia', async () => {
+  const a = await s.ws(adminTok);
+  await a.wait(m => m.t === 'me');
+  fieldReply = { ok: 1 };
+  const r1 = await a.rpc({ t: 'field', value: 'hola', selStart: 4, selEnd: 4, seq: 1 });
+  assert.equal(r1.ok, 1);
+  const ev = await cdp.waitFor(m => m.method === 'Runtime.evaluate' && m.params.expression.includes('"value":"hola"'));
+  assert.match(ev.params.expression, /"selStart":4,"selEnd":4/);
+  assert.deepEqual(await a.rpc({ t: 'field', value: 'viejo', seq: 1 }), { stale: 1, seq: 1 }, 'lo que llega tarde se descarta');
+  fieldReply = { fallback: true };                       // la web rechaza el valor: plan B
+  await a.rpc({ t: 'field', value: 'adiós', seq: 2 });
+  await cdp.waitFor(m => m.method === 'Input.insertText' && m.params.text === 'adiós');
+  fieldReply = { none: true, hidden: true };             // no se ve el campo: plan C, a ciegas con la diferencia
+  const n = cdp.calls.length;
+  const r3 = await a.rpc({ t: 'field', value: 'adiós!', seq: 3 });
+  assert.equal(r3.blind, 1);
+  const typed = cdp.calls.slice(n).filter(m => m.method === 'Input.insertText');
+  assert.deepEqual(typed.map(m => m.params.text), ['!']);
+  fieldReply = { ok: 1 };
+  a.close();
 });
 
 test('si Chrome se cae, el estado se vacía y vuelve a conectarse solo', async () => {
