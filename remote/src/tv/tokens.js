@@ -8,6 +8,7 @@ const path = require('node:path');
 
 const TOKENS = path.join('shared', 'tokens-tv.css');
 const ISLAND = 'tv-island.js';
+const TALK = 'tv-talk.js';
 
 /**
  * Cuerpo del único bloque `:root{…}` de tokens-tv.css (las declaraciones, sin llaves ni comentarios).
@@ -33,7 +34,21 @@ function readTokens(pubDir) {
  * @returns {string}
  */
 function islandSource(pubDir) {
-  return 'var __TV_TOKENS=' + JSON.stringify(readTokens(pubDir)) + ';\n' + fs.readFileSync(path.join(pubDir, ISLAND), 'utf8');
+  return withTokens(pubDir, ISLAND);
 }
 
-module.exports = { readTokens, islandSource };
+/**
+ * Fuente de la capa de conversación (tv-talk.js), con los tokens delante como la isla.
+ * @param {string} pubDir carpeta public/
+ * @returns {string}
+ */
+function talkSource(pubDir) {
+  return withTokens(pubDir, TALK);
+}
+
+/** @param {string} pubDir @param {string} file */
+function withTokens(pubDir, file) {
+  return 'var __TV_TOKENS=' + JSON.stringify(readTokens(pubDir)) + ';\n' + fs.readFileSync(path.join(pubDir, file), 'utf8');
+}
+
+module.exports = { readTokens, islandSource, talkSource };

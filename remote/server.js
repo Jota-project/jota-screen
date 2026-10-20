@@ -24,6 +24,7 @@ const { createPagePoll } = require('./src/tv/page-poll');
 const { createGatewayClient } = require('./src/gateway/client');
 const createTalk = require('./src/features/talk');
 const { createSpeaker } = require('./src/tv/speaker');
+const { createTalkView } = require('./src/tv/talk-view');
 const createStage = require('./src/features/stage');
 const createKeyboard = require('./src/features/keyboard');
 const createControl = require('./src/features/control');
@@ -57,16 +58,17 @@ const { state, publicState, broadcast } = tv;
 // ───────────────────────── Chrome (CDP): lo que pasa en la pestaña activa se reparte entre las capacidades
 // (los ganchos solo se disparan tras cdp.connect(), al final, cuando todas las capacidades ya existen)
 cdp = createCdp({ port: CDP_PORT, log, hooks: {
-  onDown() { tv.clearPage(); keyboard.focusSet(null); broadcast(); },
+  onDown() { tv.clearPage(); keyboard.focusSet(null); talkView.reset(); broadcast(); },
   onActivating() { keyboard.focusSet(null); },
   onAttached(t) {
     if (t) { state.title = t.title; state.url = t.url; }
+    talkView.reset(); // otra pestaña: la conversación se vuelve a inyectar en ella
     spotify.page.attached();
     keyboard.watchFocus();
     broadcast();
   },
   onPage(t) {
-    if (t.url !== state.url) idle.onNav(t.url);
+    if (t.url !== state.url) { idle.onNav(t.url); talkView.reset(); }
     state.title = t.title; state.url = t.url; broadcast();
     spotify.page.changed(t.url); // al cambiar de página dentro de Spotify (o llegar a él) se repasa el retoque
   },
@@ -99,7 +101,9 @@ const gw = CFG.GATEWAY_URL
   ? createGatewayClient({ url: CFG.GATEWAY_URL, key: CFG.GATEWAY_KEY, agent: CFG.AGENT, log })
   : { ensure: async () => false, send() {}, on: () => () => {}, audio() {}, end() {}, isReady: () => false, close() {} };
 const speaker = createSpeaker({ runtimeDir: CFG.XDG_RUNTIME_DIR, cmd: CFG.SPEAKER_CMD, log });
-const talk = createTalk({ gw, cfg: CFG, media: () => state.media, speaker, log });
+// la conversación en la tele: isla con vídeo, panel sin él (se inyecta una vez por página)
+const talkView = createTalkView({ cdp, pub: PUB, log: log.info });
+const talk = createTalk({ gw, cfg: CFG, media: () => state.media, view: talkView, speaker, log });
 
 // ───────────────────────── órdenes: cada una con su permiso al lado, en su capacidad
 const commands = createCommands({ permsOf: acc.permsOf, onUse: () => idle.touch(), log });
