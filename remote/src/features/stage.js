@@ -1,4 +1,5 @@
 'use strict';
+// @ts-check
 // Capacidad «escenario»: contenido que el agente pone en la tele. Plantillas (tasks, reminder, slides) o HTML propio,
 // con datos que se actualizan en vivo por un WebSocket local (/stage-ws), eventos de vuelta (tv.emit) y avisos
 // emergentes (toast) encima de lo que se esté viendo.
@@ -138,6 +139,7 @@ module.exports = function createStage({ cdp, state, cfg, nav }) {
     close: stageClose, event: stageEvent, toast,
     /** al navegar fuera del escenario, se olvida (y su cierre automático también) */
     leave() { stage.kind = null; clearTimeout(stage.timer); },
+    /** @type {import('../transport/commands').Command[]} */
     commands: [
       { t: 'present', perm: 'stage', run: m => present(m) },
       { t: 'show', perm: 'stage', run: m => show(m) },

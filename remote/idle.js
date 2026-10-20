@@ -28,6 +28,14 @@ const DEFAULTS = {
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
 
+/**
+ * @typedef {{
+ *   ROOT: string, PUB: string, SELF: string,
+ *   cdp: { call: Function, session: string | null }, nav: (url: string) => Promise<any>, state: { url: string },
+ *   stageKind: () => string | null, onWatch?: () => void, log?: (...a: any[]) => void,
+ * }} IdleDeps
+ */
+/** @param {IdleDeps} o */
 module.exports = function createIdle(o) {
   const { ROOT, PUB, SELF, cdp, nav, state, stageKind, log = () => {} } = o;
   const URL_IDLE = SELF + '/idle.html';
@@ -99,12 +107,12 @@ module.exports = function createIdle(o) {
   // ───────── tiempo (Open-Meteo, sin clave)
   async function fetchWeather() {
     try {
-      const q = new URLSearchParams({
+      const q = new URLSearchParams(/** @type {Record<string, any>} */ ({
         latitude: cfg.lat, longitude: cfg.lon, timezone: cfg.tz, forecast_days: 2, timeformat: 'unixtime',
         current: 'temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m',
         daily: 'temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,weather_code',
         hourly: 'precipitation_probability', forecast_hours: 6,
-      });
+      }));
       const r = await fetch('https://api.open-meteo.com/v1/forecast?' + q, { signal: AbortSignal.timeout(10_000) });
       const j = await r.json();
       if (!j.current) throw new Error('sin datos');

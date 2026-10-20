@@ -72,7 +72,7 @@ function createStatic({ dir, maxDepth = 2 }) {
 
 /**
  * Manifiesto dinámico: si llega el token de un dispositivo, el acceso directo instalado lo conserva (el maestro, nunca).
- * @param {{ get: Function, has: Function }} statics @param {(t: any) => any} tokenDev
+ * @param {{ get: Function, has: Function, serve: Function }} statics @param {(t: any) => any} tokenDev
  */
 function manifestRoute(statics, tokenDev) {
   return {

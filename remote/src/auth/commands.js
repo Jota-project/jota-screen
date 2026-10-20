@@ -3,6 +3,7 @@
 // Órdenes de acceso: gestionar dispositivos, roles, emparejamientos y ajustes de invitados (solo admin), y «me».
 /**
  * @param {{ acc: any, meOf: (ws: any) => object }} o
+ * @returns {import('../transport/commands').Command[]}
  */
 module.exports = function createAccessCommands({ acc, meOf }) {
   const devArg = m => String(m.dev || '');

@@ -1,0 +1,21 @@
+{
+  // Comprobación de tipos del servidor (JavaScript con JSDoc, sin build ni TypeScript): npm run check.
+  // Modo laxo para empezar (strict, noImplicitAny y strictNullChecks apagados); los tipos vienen del JSDoc.
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "target": "ES2023",
+    // DOM: varias capacidades llevan funciones que se serializan y se ejecutan en la página de la tele (CDP);
+    // las marcas que dejan en window están en types/page.d.ts
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "node16",
+    "moduleResolution": "node16",
+    "types": ["node"],
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "skipLibCheck": true
+  },
+  "include": ["server.js", "src/**/*.js", "idle.js", "nowplaying.js", "types/*.d.ts"]
+}

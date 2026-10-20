@@ -1,4 +1,5 @@
 'use strict';
+// @ts-check
 // Capacidad «Spotify»: spotifyd («Salón») es el altavoz Spotify Connect de la tele y se maneja con la Web API de Spotify
 // (app propia, PKCE). Aquí viven el token, el límite de peticiones (429, con la espera guardada), todas las acciones de
 // la orden `spotify`, el «ahora suena» en vivo (nowplaying.js) para el mando y el reposo, y el retoque de la web de Spotify.
@@ -11,7 +12,7 @@ const { send, TYPES } = require('../transport/http-util');
  * @param {{
  *   cdp: { call: Function, session: string | null },
  *   cfg: { FILES: { spotify: string }, SP_DEVICE: string, PUBLIC_URL: string, DEBUG: boolean, SPOTIFY_BANNER: boolean },
- *   log: { info: Function, error: Function },
+ *   log: { info: (...a: any[]) => void, error: (...a: any[]) => void },
  *   clients: () => Iterable<any>,              // sockets del mando (para «ahora suena» en vivo)
  *   idle: () => { watching: () => boolean, setMusic: Function },   // la pantalla en reposo se crea después
  * }} deps
@@ -68,7 +69,7 @@ module.exports = function createSpotify({ cdp, cfg, log, clients, idle }) {
     if (n && (DEBUG || n > 30)) log.info(`spotify: ${n} peticiones en el último minuto (` + Object.entries(by).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${v}`).join(', ') + ')');
     spCount.n = 0; spCount.by = {};
   }, 60_000).unref();
-  function spWaitErr() { const e = new Error(`Spotify pide esperar ${Math.ceil((spWait - Date.now()) / 1000)} s`); e.wait = true; return e; }
+  function spWaitErr() { const e = /** @type {Error & { wait?: boolean }} */ (new Error(`Spotify pide esperar ${Math.ceil((spWait - Date.now()) / 1000)} s`)); e.wait = true; return e; }
   async function spApi(method, p, body) {
     if (Date.now() < spWait) throw spWaitErr();
     const doit = async () => {
@@ -292,7 +293,7 @@ module.exports = function createSpotify({ cdp, cfg, log, clients, idle }) {
       if (!bar) return;
       for (const b of bar.querySelectorAll('button')) {
         if (!RE.test((b.textContent || '').trim())) continue;
-        let el = b;
+        let el = /** @type {HTMLElement} */ (b);
         while (el.parentElement && el.parentElement !== bar) el = el.parentElement;
         if (el !== b && !el.querySelector('[data-testid="player-controls"]') && el.style.display !== 'none') el.style.setProperty('display', 'none', 'important');
       }
@@ -325,6 +326,7 @@ module.exports = function createSpotify({ cdp, cfg, log, clients, idle }) {
     if (m.a === 'volume') return { ...m, v: Math.min(Number(m.v) || 0, P.volMax) };
     return m;
   };
+  /** @type {import('../transport/commands').Command[]} */
   const commands = [
     { t: 'spotify', perm: spotifyPerm, clamp: spotifyClamp, run: m => spotify(m) },
     { t: 'spwatch', quiet: true, async run(m, { ws }) { // el panel de Spotify del mando pide (o deja de pedir) el estado en vivo

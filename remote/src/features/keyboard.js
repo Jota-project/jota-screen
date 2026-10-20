@@ -1,4 +1,5 @@
 'use strict';
+// @ts-check
 // Capacidad «teclado»: teclas, texto y escribir en la tele en directo desde el editor del mando (orden `field`:
 // el texto entero + la selección, en una cola que descarta lo intermedio), con plan B (escribir encima) y plan C
 // (a ciegas con teclas). Y el aviso de foco: un script en un mundo aislado de la página avisa de qué campo tiene
@@ -17,7 +18,7 @@ module.exports = function createKeyboard({ cdp, log, clients, devOf }) {
     if (window.__tvFieldBoot !== o.boot) { window.__tvFieldBoot = o.boot; window.__tvFieldSeq = 0; } // servidor reiniciado: secuencia nueva
     if (o.seq <= (window.__tvFieldSeq || 0)) return { stale: 1 };   // llegó tarde: ya se aplicó uno más nuevo
     window.__tvFieldSeq = o.seq;
-    let el = document.activeElement;
+    /** @type {any} */ let el = document.activeElement;
     for (let i = 0; el && i < 12; i++) {
       if (el.shadowRoot && el.shadowRoot.activeElement) { el = el.shadowRoot.activeElement; continue; }
       if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
@@ -56,6 +57,7 @@ module.exports = function createKeyboard({ cdp, log, clients, devOf }) {
         if (!doc.execCommand(v ? 'insertText' : 'delete', false, v)) return { fallback: 1 };
       }
       // selección por posiciones de texto (aproximada si hay saltos de línea)
+      /** @param {number} off @returns {[any, number]} */
       const at = off => {
         const w = doc.createTreeWalker(el, 4); let t;
         while ((t = w.nextNode())) { if (off <= t.length) return [t, off]; off -= t.length; }
@@ -69,13 +71,13 @@ module.exports = function createKeyboard({ cdp, log, clients, devOf }) {
   // Aviso de foco: en cada documento de la pestaña activa. Al entrar o salir de un campo llama al binding __tvFocus
   // (Runtime.addBinding) con {kind, placeholder, value?}. De una contraseña nunca sale el valor.
   function focusWatch() {
-    let root = window; try { if (window.top.document) root = window.top; } catch {}
+    /** @type {Window} */ let root = window; try { if (window.top.document) root = window.top; } catch {}
     const foreign = root !== window.top;                                 // iframe de otro origen: no puede ver el foco de arriba
     // campos que alguna vez fueron contraseña (el botón del ojo los pasa a type=text): siguen siéndolo
     const pwSet = window.__tvPw || (window.__tvPw = new WeakSet());
     const markPw = el => { if (el && el.tagName === 'INPUT' && (el.getAttribute('type') || '').toLowerCase() === 'password') pwSet.add(el); };
     const deep = () => {
-      let el = root.document.activeElement;
+      /** @type {any} */ let el = root.document.activeElement;
       for (let i = 0; el && i < 12; i++) {
         if (el.shadowRoot && el.shadowRoot.activeElement) { el = el.shadowRoot.activeElement; continue; }
         if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {
@@ -89,7 +91,7 @@ module.exports = function createKeyboard({ cdp, log, clients, devOf }) {
     const isPw = (el, type) => {                                         // en la duda, contraseña
       const set = (el.ownerDocument.defaultView || window).__tvPw;
       if (type === 'password' || (set && set.has(el))) return true;
-      let sec = 'none'; try { sec = getComputedStyle(el).webkitTextSecurity || 'none'; } catch {}
+      let sec = 'none'; try { sec = /** @type {any} */ (getComputedStyle(el)).webkitTextSecurity || 'none'; } catch {}
       if (sec !== 'none') return true;
       const hint = [el.name, el.id, el.getAttribute('autocomplete')].join(' ');
       return /pass|pwd|contrase|clave/i.test(hint) || /(^|[^a-z])pin($|[^a-z])/i.test(hint);
@@ -279,6 +281,7 @@ module.exports = function createKeyboard({ cdp, log, clients, devOf }) {
   return {
     key, keyParams, field, fieldBefore, focusFor, focusSet, watchFocus, focusRefresh,
     focus: () => tvFocus,
+    /** @type {import('../transport/commands').Command[]} */
     commands: [
       { t: 'key', run: async m => { const w = fieldBefore(); if (w) await w; return key(String(m.k)); } }, // lo escrito antes, primero
       { t: 'text', run: m => { cdp.fire('Input.insertText', { text: String(m.v ?? '').slice(0, 2000) }); return { ok: 1 }; } },

@@ -1,4 +1,5 @@
 'use strict';
+// @ts-check
 // Capacidad «agente»: preguntar a Jota (OpenClaw, por su CLI) desde el mando y enseñar lo entendido en la tele.
 // La respuesta vuelve por el mismo WebSocket del mando que preguntó. Admin: sesión «tv»; invitados: «tv-guest», con
 // instrucciones que le impiden tocar nada personal de Sito.
@@ -42,6 +43,7 @@ module.exports = function createAgent({ cfg, toast }) {
   return {
     ask,
     busy: () => askBusy,
+    /** @type {import('../transport/commands').Command[]} */
     commands: [
       { t: 'ask', perm: 'agent', run: (m, { ws, dev, P }) => ask(m.text, ws, P.agent, dev && dev.role !== 'admin' ? dev.name : '') },
     ],

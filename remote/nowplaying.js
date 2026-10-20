@@ -13,6 +13,13 @@ const EVERY = { 1: { playing: 10_000, paused: 30_000 }, 2: { playing: 5_000, pau
 const FAIL_TTL = 10 * 60_000;     // un dato que ha fallado no se vuelve a pedir hasta pasado este tiempo
 const QUEUE_PANEL = 60_000;       // con el panel abierto, la cola se refresca como mucho cada minuto
 
+/**
+ * @typedef {{
+ *   spApi: (method: string, p: string, body?: any) => Promise<any>, spReady: () => boolean,
+ *   watching: () => 0 | 1 | 2, onChange: (now: any) => void, log?: (...a: any[]) => void,
+ * }} NowDeps
+ */
+/** @param {NowDeps} deps */
 module.exports = function createNow({ spApi, spReady, watching, onChange, log = () => {} }) {
   let now = null;
   let sig = '';
@@ -141,6 +148,7 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
   // ───────── consulta
   // poll(maxAge): devuelve el estado si se consultó hace menos de maxAge ms; si no, consulta (o se une a la consulta
   // en curso cuando esta empezó dentro de ese margen). poll(0) tras una orden exige una consulta posterior a la llamada.
+  /** @param {number | true} [maxAge] */
   function poll(maxAge = 2000) {
     if (maxAge === true) maxAge = 2000;                                // compatibilidad: poll(true)
     const t = Date.now(), since = Math.max(t - maxAge, cmdAt);      // nada anterior a la última orden vale

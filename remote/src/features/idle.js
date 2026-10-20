@@ -1,4 +1,5 @@
 'use strict';
+// @ts-check
 // Capacidad «reposo»: la pantalla en reposo y las Live Activities. La lógica vive en remote/idle.js (reposo v2);
 // aquí se le ponen sus órdenes, su ruta HTTP (carátulas) y su canal WebSocket, como al resto de capacidades.
 const createIdleCore = require('../../idle');
@@ -8,6 +9,7 @@ const { send, isLocalTV } = require('../transport/http-util');
 module.exports = function createIdle(deps) {
   const idle = createIdleCore(deps);
   return Object.assign(idle, {
+    /** @type {import('../transport/commands').Command[]} */
     commands: [
       // Live Activities (el resto del escenario se registra desde src/features/stage.js)
       { t: 'activity', perm: 'stage', quiet: true, run: m => idle.activity(m) },

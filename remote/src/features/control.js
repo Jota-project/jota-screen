@@ -1,4 +1,5 @@
 'use strict';
+// @ts-check
 // Capacidad «control»: lo que hace un mando de toda la vida sobre la página de la tele. Navegar (con la dirección
 // saneada), historial, reproducir/pausar y saltar en el vídeo, volumen de PipeWire, pulsar por texto o coordenadas,
 // listar enlaces y capturar la pantalla. Cada orden lleva su permiso al lado.
@@ -74,7 +75,7 @@ module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg
   function clickable(pat, list) {
     const re = pat ? new RegExp(pat, 'i') : null;
     const out = [];
-    for (const el of document.querySelectorAll('a,button,[role=button],[role=link],[role=menuitem],[role=tab],[tabindex],[aria-label]')) {
+    for (const el of /** @type {NodeListOf<HTMLElement & { href?: string }>} */ (document.querySelectorAll('a,button,[role=button],[role=link],[role=menuitem],[role=tab],[tabindex],[aria-label]'))) {
       const t = (el.getAttribute('aria-label') || el.innerText || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 120);
       if (!t || (re && !re.test(t))) continue;
       const r = el.getBoundingClientRect();
@@ -135,6 +136,7 @@ module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg
     return { vol: state.vol, muted: state.muted };
   }
 
+  /** @type {import('../transport/commands').Command[]} */
   const commands = [
     // webs y navegación
     { t: 'nav', perm: 'web', run: m => nav(m.url) },
