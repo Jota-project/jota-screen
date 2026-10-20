@@ -97,7 +97,7 @@ test('acceso: token maestro creado con 0600 y comparación segura', () => {
 
 test('acceso: dispositivos, roles y último admin', () => {
   const s = setup(); const a = s.make();
-  const adm = a.devices.newDevice('Sito', 'admin');
+  const adm = a.devices.newDevice('Ana', 'admin');
   const g = a.devices.newDevice('Visita', 'guest');
   assert.equal(a.tokenDev(adm.token).role, 'admin');
   assert.equal(a.permsOf(a.tokenDev(g.token)).admin, false);

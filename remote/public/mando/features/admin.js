@@ -77,7 +77,7 @@ export const admin = {
       box.textContent = '';
       const b = document.createElement('b'); b.textContent = r.code;
       box.append('Código ', b, ` · caduca en ${r.minutes} min y sirve una vez. Ábrelo en el otro dispositivo o escribe el código en «Tengo un código de administrador».`);
-      try { if (navigator.share) await navigator.share({ title: 'Mando del salón (admin)', url: r.url }); else { await navigator.clipboard.writeText(r.url); pill('Enlace copiado'); } } catch {}
+      try { if (navigator.share) await navigator.share({ title: document.title + ' (admin)', url: r.url }); else { await navigator.clipboard.writeText(r.url); pill('Enlace copiado'); } } catch {}
     });
     $('#kickG').addEventListener('click', async () => {
       const b = $('#kickG');

@@ -1,4 +1,4 @@
-// Spotify: panel completo del dispositivo «Salón», con datos en vivo empujados por el servidor.
+// Spotify: panel completo del altavoz de la pantalla (TV_SPOTIFY_DEVICE), con datos en vivo empujados por el servidor.
 import { $, hide } from '../core/dom.js';
 import { state, on } from '../core/store.js';
 import { cmd, rpc } from '../core/api.js';

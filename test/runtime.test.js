@@ -1,6 +1,6 @@
 'use strict';
-// Producto replicable: el servidor arranca sin configuración personal (estado en TV_STATE_DIR, sin
-// tiempo si no hay ubicación), toma la ubicación del entorno y trae el estado de las ubicaciones antiguas.
+// Producto replicable: el servidor arranca sin configuración personal (nombre «Pantalla», estado en TV_STATE_DIR, sin
+// tiempo si no hay ubicación), toma el nombre y la ubicación del entorno y trae el estado de las ubicaciones antiguas.
 // Las peticiones a Open-Meteo las intercepta test/helpers/fetch-spy.js: nunca se sale a internet.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
@@ -16,10 +16,17 @@ async function until(fn, ms = 3000) {
   return fn();
 }
 
-test('sin configuración: estado privado en TV_STATE_DIR y el reposo sin tiempo (no lo pide)', async () => {
+test('sin configuración: «Pantalla», estado privado en TV_STATE_DIR y el reposo sin tiempo (no lo pide)', async () => {
   const s = await start({ env: SPY });
   try {
     assert.equal(fs.statSync(s.state).mode & 0o777, 0o700);
+    const html = await (await s.get('/index.html')).text();
+    assert.match(html, /<b>Pantalla<\/b>/);
+    assert.match(html, /<h1>Mando · Pantalla<\/h1>/);
+    assert.doesNotMatch(html, /\{\{|Salón|salón/);
+    assert.match(await (await s.get('/idle.html')).text(), /<title>Pantalla<\/title>/);
+    const man = await (await s.get('/manifest.webmanifest')).json();
+    assert.equal(man.name, 'Mando · Pantalla');
     await sleep(400);
     const r = await cmd(s, { t: 'idle', op: 'get' });
     assert.equal(r.weather, null);
@@ -39,9 +46,11 @@ test('sin configuración: estado privado en TV_STATE_DIR y el reposo sin tiempo 
   } finally { await s.stop(); }
 });
 
-test('TV_CITY, TV_LAT, TV_LON y TV_TZ del entorno', async () => {
-  const s = await start({ env: { ...SPY, TV_CITY: 'Lugo', TV_LAT: '43.01', TV_LON: '-7.55', TV_TZ: 'Atlantic/Canary' } });
+test('TV_NAME, TV_CITY, TV_LAT, TV_LON y TV_TZ del entorno', async () => {
+  const s = await start({ env: { ...SPY, TV_NAME: 'Cocina <3', TV_CITY: 'Lugo', TV_LAT: '43.01', TV_LON: '-7.55', TV_TZ: 'Atlantic/Canary' } });
   try {
+    assert.match(await (await s.get('/index.html')).text(), /<b>Cocina &#60;3<\/b>/, 'el nombre va escapado');
+    assert.equal((await (await s.get('/manifest.webmanifest')).json()).name, 'Mando · Cocina <3');
     const r = await until(async () => { const g = await cmd(s, { t: 'idle', op: 'get' }); return g.weather && g; });
     assert.deepEqual([r.cfg.city, r.cfg.lat, r.cfg.lon, r.cfg.tz], ['Lugo', 43.01, -7.55, 'Atlantic/Canary']);
     assert.equal(r.weather.temp, 21);

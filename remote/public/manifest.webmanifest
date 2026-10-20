@@ -1,7 +1,7 @@
 {
-  "name": "Mando del salón",
+  "name": "Mando · {{TV_NAME}}",
   "short_name": "Mando",
-  "description": "Control remoto de la tele del salón: touchpad, teclado y atajos.",
+  "description": "Control remoto de la pantalla «{{TV_NAME}}»: touchpad, teclado y atajos.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",

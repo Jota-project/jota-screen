@@ -2,7 +2,7 @@
   "name": "tv-remote",
   "version": "1.0.0",
   "private": true,
-  "description": "Mando web para la tele del salón",
+  "description": "Mando web para la pantalla (jota-screen)",
   "main": "server.js",
   "dependencies": {
     "jpeg-js": "^0.4.4",

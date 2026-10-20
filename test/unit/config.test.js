@@ -9,6 +9,7 @@ const path = require('node:path');
 const R = path.join(__dirname, '..', '..', 'remote', 'src');
 const { loadConfig } = require(path.join(R, 'core', 'config'));
 const { prepareStateDir } = require(path.join(R, 'core', 'state-dir'));
+const { prompts } = require(path.join(R, 'features', 'agent'));
 
 const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-cfg-'));
 const PERSONAL = /sito|sal[oó]n|elche|green-house|ts\.net|tailf2c|madrid|38\.26|-0\.69|192\.168/i;
@@ -36,6 +37,7 @@ test('config: sin entorno, valores por defecto del contrato y nada personal', ()
     const rest = { ...d }; delete rest.OC_ENV;
     const seen = JSON.stringify({ ...rest, PLACE: { ...d.PLACE, tz: '' } }).replaceAll(d.ROOT, '<repo>').replaceAll(home, '~');
     assert.doesNotMatch(seen, PERSONAL);
+    assert.doesNotMatch(JSON.stringify(prompts(d.NAME, d.OWNER)), PERSONAL, 'las instrucciones del agente son genéricas');
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
 });
 

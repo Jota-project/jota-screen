@@ -107,7 +107,7 @@ async function run(m, sock, ctx = {}) {
 }
 
 // ───────────────────────── transporte: HTTP (rutas + estáticos) y WebSocket
-const statics = createStatic({ dir: PUB });
+const statics = createStatic({ dir: PUB, vars: { TV_NAME: CFG.NAME } }); // {{TV_NAME}} en el HTML y el manifiesto
 const handler = createHttp({
   routes: [
     ...createApiRoutes({ limiter, auth: acc, run, publicState, stage, agentBusy: () => agent.busy() }),

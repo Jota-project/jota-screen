@@ -467,7 +467,8 @@ async function extraScenes(admin) {
     evaluate: expr => (expr.includes('scrollingElement') ? [1, 900, 4000, 1000]   // sondeo: vídeo reproduciendo y scroll a un tercio
       : expr.includes('"boot":"') ? { ok: 1 } : undefined),                        // escribir en el campo: aplicado
   });
-  srv = await start({ cdpPort: cdp.port, files: { 'devices.json': DEVICES, 'access.json': ACCESS } });
+  // TV_NAME=Salón: el nombre de la pantalla con el que se hicieron las capturas de referencia
+  srv = await start({ cdpPort: cdp.port, files: { 'devices.json': DEVICES, 'access.json': ACCESS }, env: { TV_NAME: 'Salón' } });
   try {
     await cdp.waitFor(m => m.method === 'Runtime.addBinding' && m.params.name === '__tvFocus', 10000);
     const r = { token: ADMIN_TOKEN };
