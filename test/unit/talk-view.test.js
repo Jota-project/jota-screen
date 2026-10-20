@@ -143,6 +143,52 @@ test('durante el turno se atenúa la isla de actividades (TVIsland.dim(0)) y al 
   assert.ok(last.includes('TVTalk.hide()') && last.includes('window.TVIsland&&window.TVIsland.dim(1)'));
 });
 
+test('error (o jota/you) sin turn() abre un intercambio nuevo y no toca el anterior', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const cdp = fakeCdp();
+  const v = createTalkView({ cdp, pub: PUB });
+  v.turn('island'); v.you('p1', true); v.jota('r1'); v.done();
+  t.mock.timers.tick(100); await flushMicro();
+  v.error('Jota no está disponible.');
+  t.mock.timers.tick(100); await flushMicro();
+  let p = payload(cdp.exprs.at(-1));
+  assert.equal(p.mode, 'island', 'sin turn() se queda con el último formato');
+  assert.equal(p.live, false);
+  assert.deepEqual(p.lines.map(l => l.who + ':' + l.text), ['jota:Jota no está disponible.']);
+  // en el panel, el intercambio anterior sigue intacto y el error va aparte
+  v.turn('panel'); v.you('p2', true); v.jota('r2'); v.done();
+  v.error('Jota no está disponible.');
+  v.jota('suelta');
+  t.mock.timers.tick(100); await flushMicro();
+  p = payload(cdp.exprs.at(-1));
+  assert.deepEqual(p.lines.map(l => l.who + ':' + l.text),
+    ['jota:r1', 'jota:Jota no está disponible.', 'you:p2', 'jota:r2', 'jota:Jota no está disponible.', 'jota:suelta']);
+});
+
+test('una página donde TVTalk no llega a existir recibe la fuente como mucho una vez más (hasta reset)', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const cdp = fakeCdp();
+  const v = createTalkView({ cdp, pub: PUB });
+  v.turn('panel'); v.you('a', true);
+  t.mock.timers.tick(100); await flushMicro();
+  cdp.has = false;
+  for (let i = 0; i < 5; i++) { v.you('a' + i, true); t.mock.timers.tick(100); await flushMicro(); await flushMicro(); }
+  assert.equal(cdp.exprs.filter(injects).length, 2, 'la primera y un solo reintento');
+  v.reset();
+  t.mock.timers.tick(100); await flushMicro(); await flushMicro();
+  assert.equal(cdp.exprs.filter(injects).length, 3, 'tras reset se vuelve a intentar');
+});
+
+test('ocultar devuelve la isla de actividades a 1 aunque TVTalk.hide falle', () => {
+  const v = createTalkView({ cdp: fakeCdp(), pub: PUB });
+  assert.ok(v);
+  const e = require(path.join(__dirname, '..', '..', 'remote', 'src', 'tv', 'talk-view')).HIDE;
+  let dim = null;
+  const window = { TVTalk: { hide() { throw new Error('x'); } }, TVIsland: { dim(x) { dim = x; } } };
+  assert.throws(() => new Function('window', e)(window));
+  assert.equal(dim, 1);
+});
+
 test('sin sesión de CDP no se llama a nada', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const cdp = fakeCdp(); cdp.session = null;

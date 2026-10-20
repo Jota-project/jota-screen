@@ -81,6 +81,8 @@ test('Gateway no disponible (ensure false): error, el móvil lo ve y busy vuelve
   assert.deepEqual(t.msgs, [{ t: 'talk', ev: 'error', error: 'Jota no está disponible.' }]);
   assert.equal(t.talk.busy(), false);
   assert.equal(t.sent.length, 0);
+  // la tele abre su propio intercambio antes del error: no se mezcla con la conversación anterior
+  assert.deepEqual(t.views, [['turn', 'panel'], ['you', 'hola', true], ['error', 'Jota no está disponible.']]);
 });
 
 test('down o turn_error a mitad del turno: ev:error «Jota no está disponible.» y busy false', async () => {

@@ -196,11 +196,12 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     const result = new Promise(res => { finish = res; });
     const mine = turn = { ws, turnId: null, sent: /** @type {boolean} */ (false), reply: '', timer: null, finish, out: OUTS.includes(out) ? out : 'none' };
     endTail(true); spk('stop');                            // una respuesta anterior que aún suene se corta
+    // la tele abre el intercambio ya, como vstart: un error al conectar va en él y no en la conversación anterior
+    try { view.turn(media() === 1 ? 'island' : 'panel'); view.you(text, true); } catch (e) { log.warn('talk: vista con error', e); }
     let ok = false;
     try { ok = await gw.ensure(); } catch (e) { log.warn('talk: ensure con error', e); }
     if (turn !== mine) return /** @type {any} */ (result);   // el turno se cerró mientras se conectaba (down)
     if (!ok) { fail(DOWN); return /** @type {any} */ (result); }
-    try { view.turn(media() === 1 ? 'island' : 'panel'); view.you(text, true); } catch (e) { log.warn('talk: vista con error', e); }
     mine.sent = true; arm();
     gw.send(prefix(mode, who) + text);
     return /** @type {any} */ (result);

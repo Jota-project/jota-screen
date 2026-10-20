@@ -16,7 +16,7 @@
   background:var(--tv-surface);border-radius:36px;padding:18px 32px 20px;box-shadow:var(--tv-shadow-float);
   display:flex;flex-direction:column;gap:6px;animation:in .5s var(--tv-ease) both}
 .pan{position:fixed;top:32px;right:32px;bottom:32px;width:34%;box-sizing:border-box;
-  background:color-mix(in srgb,var(--tv-surface) 94%,transparent);border-radius:32px;padding:26px 30px 30px;
+  background:var(--tv-surface);border-radius:32px;padding:26px 30px 30px;
   box-shadow:var(--tv-shadow-float);display:flex;flex-direction:column;animation:side .5s var(--tv-ease) both}
 .hd{flex:none;display:flex;align-items:center;gap:10px;font-family:var(--tv-serif);font-size:24px;color:var(--tv-accent);margin-bottom:18px}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--tv-accent)}
