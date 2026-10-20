@@ -21,7 +21,8 @@ const createPairRoutes = require('./src/auth/pair-http');
 const { createCdp } = require('./src/tv/cdp');
 const { createPointer, createAudio, createPairScreen } = require('./src/tv/devices');
 const { createPagePoll } = require('./src/tv/page-poll');
-const createAgent = require('./src/features/agent');
+const { createGatewayClient } = require('./src/gateway/client');
+const createTalk = require('./src/features/talk');
 const createStage = require('./src/features/stage');
 const createKeyboard = require('./src/features/keyboard');
 const createControl = require('./src/features/control');
@@ -93,11 +94,15 @@ const idle = createIdle({
   PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
   stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info,
 });
-const agent = createAgent({ cfg: CFG, toast: m => stage.toast(m) });
+// J Gateway (voz): sin TV_GATEWAY_URL el cliente no se crea y todo se comporta como un Gateway caído
+const gw = CFG.GATEWAY_URL
+  ? createGatewayClient({ url: CFG.GATEWAY_URL, key: CFG.GATEWAY_KEY, agent: CFG.AGENT, log })
+  : { ensure: async () => false, send() {}, on: () => () => {}, audio() {}, end() {}, isReady: () => false, close() {} };
+const talk = createTalk({ gw, cfg: CFG, media: () => state.media, log });
 
 // ───────────────────────── órdenes: cada una con su permiso al lado, en su capacidad
 const commands = createCommands({ permsOf: acc.permsOf, onUse: () => idle.touch(), log });
-for (const list of [agent.commands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
+for (const list of [talk.commands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
   createAccessCommands({ acc, meOf }), tv.commands]) commands.register(list);
 
 /** Una orden del mando (sock), de la API o del MCP (ctx.dev), con los permisos de su dispositivo. */
@@ -116,7 +121,7 @@ const statics = createStatic({ dir: PUB, vars: { TV_NAME: CFG.NAME }, secure: CF
 const handler = createHttp({
   routes: [
     ...voice.routes,                                    // antes que la API: su prefijo /api/ se comería /api/voice
-    ...createApiRoutes({ limiter, auth: acc, run, publicState, stage, agentBusy: () => agent.busy() }),
+    ...createApiRoutes({ limiter, auth: acc, run, publicState, stage, agentBusy: () => talk.busy() }),
     ...createPairRoutes({ acc, limiter, adminOnline: () => sessions.adminSockets().length > 0, tvReady: tvPair.ready }),
     ...spotify.httpRoutes({ ...limiter, okToken: acc.okToken }),
     manifestRoute(statics, acc.tokenDev),

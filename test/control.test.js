@@ -144,10 +144,9 @@ test('Live Activities: encima de una web, la isla se inyecta por CDP con los tok
   await cmd({ t: 'activity', op: 'clear' });
 });
 
-test('agente: sin respuesta de OpenClaw lo dice, y avisa en la tele de lo entendido', async () => {
+test('agente: sin Gateway configurado dice que Jota no está disponible', async () => {
   const r = await cmd({ t: 'ask', text: 'pon algo de jazz' });
-  assert.equal(r.error, 'sin respuesta del agente');
-  await cdp.waitFor(m => m.method === 'Runtime.evaluate' && m.params.expression.includes('pon algo de jazz'));
+  assert.equal(r.error, 'Jota no está disponible.');
   assert.match((await cmd({ t: 'ask', text: '  ' })).error, /vacío/);
 });
 

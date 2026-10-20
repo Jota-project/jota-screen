@@ -9,7 +9,7 @@ const path = require('node:path');
 const R = path.join(__dirname, '..', '..', 'remote', 'src');
 const { loadConfig } = require(path.join(R, 'core', 'config'));
 const { prepareStateDir } = require(path.join(R, 'core', 'state-dir'));
-const { prompts } = require(path.join(R, 'features', 'agent'));
+const { prompts } = require(path.join(R, 'features', 'talk'));
 
 const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-cfg-'));
 const PERSONAL = /sito|sal[oó]n|elche|green-house|ts\.net|tailf2c|madrid|38\.26|-0\.69|192\.168/i;

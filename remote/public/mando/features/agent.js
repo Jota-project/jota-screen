@@ -1,5 +1,6 @@
 // Hablar con Jota (v3): un velo con luces sobre el mando. Lo que se escribe (o se dicta con el micrófono del teclado) va
-// a OpenClaw; la frase entra palabra a palabra, las luces crecen mientras piensa y la respuesta llega por el WebSocket.
+// al J Gateway; la frase entra palabra a palabra, las luces crecen mientras piensa y la respuesta se escribe en directo
+// por el WebSocket (`talk`: final, token con lo acumulado, done, error).
 import { $, el } from '../core/dom.js';
 import { cmd } from '../core/api.js';
 import { buzz } from '../ui/haptics.js';
@@ -28,16 +29,17 @@ function ask(text) {
   const rep = $('#rep'); rep.className = 'rep wait'; rep.textContent = 'Pensando';
   stage('wait');
 }
-function onAsk(j) {
+function onTalk(j) {
   const rep = $('#rep');
-  if (j.stage === 'thinking') { rep.className = 'rep wait'; rep.textContent = 'Pensando'; stage('wait'); return; }
-  rep.className = 'rep'; rep.textContent = j.reply || 'No he recibido respuesta.'; buzz(12);
-  stage('done');
+  if (j.ev === 'final') { said(j.text || ''); return; }
+  if (j.ev === 'token') { rep.className = 'rep'; rep.textContent = j.text || ''; stage('wait'); return; }   // la respuesta acumulada, en directo
+  if (j.ev === 'done') { rep.className = 'rep'; rep.textContent = j.reply || 'No he recibido respuesta.'; buzz(12); stage('done'); return; }
+  if (j.ev === 'error') { rep.className = 'rep'; rep.textContent = j.error || 'Jota no está disponible.'; stage('idle'); }
 }
 
 export const agent = {
   name: 'agent',
-  msgs: { ask: onAsk },
+  msgs: { talk: onTalk },
   sheets: { agS: {
     open() {
       const agin = $('#agin'); agin.value = ''; if (!mic) agin.focus(); $('#shade').classList.add('vz');   // con micro, sin teclado encima del orbe
