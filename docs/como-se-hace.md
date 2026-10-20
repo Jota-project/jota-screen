@@ -117,7 +117,7 @@ ninguna carpeta de `public/` lo tape. Pruebas: `test/transport.test.js` (contrat
 3. **Registro** en `mando/app.js`: `import { ej } from './features/ej.js';`, añadirlo a `register([...])` y a la lista
    de `init()` (el orden importa: es el de los listeners). Para reaccionar al rol: `on('me', j => …)` de `core/store.js`.
 4. **Precarga** en `index.html`: `<link rel="modulepreload" href="/mando/features/ej.js">`.
-5. **Pruebas**: `node --test test/unit/mando.test.js` falla si falta el `modulepreload`, si queda un módulo suelto, si
+5. **Pruebas**: `node --test test/unit/mando.test.js` (o `npm test`) falla si falta el `modulepreload`, si queda un módulo suelto, si
    hay un ciclo o una capa al revés, si algo se ejecuta al cargarse o si un fichero queda a más de 2 niveles de
    `public/`. Después, capturas antes/después (abajo) y, si es una pantalla nueva, su escena en `e2e/mando-capturas.js`.
 
@@ -127,20 +127,37 @@ Se cambian en `remote/public/shared/tokens-tv.css` (Jota Dusk de la tele): un so
 simples, sin nada fuera. El reposo lo enlaza (`idle.html`) y la isla lo recibe del servidor delante de
 `tv-island.js` (`src/tv/tokens.js`). No poner colores sueltos en `tv-island.js` (`test/unit/tv.test.js` lo vigila).
 El mando (`mando/styles/mando.css`) y las plantillas del escenario (`stage.css`) tienen sus propios tokens. Como los
-estáticos se cargan al arrancar, en la tele el reposo cambia tras reiniciar `tv-remote`. Comprobar con las capturas
+estáticos se cargan al arrancar, en la tele el reposo cambia tras reiniciar `jota-screen`. Comprobar con las capturas
 del reposo.
+
+## Textos con el nombre de la pantalla
+
+En el HTML de `public/` y en el manifiesto, `{{TV_NAME}}` se sustituye al cargar los estáticos por el nombre de la
+pantalla (`TV_NAME`, escapado para HTML o JSON; `createStatic({ vars })` en `src/transport/static.js`). Nada de nombres
+de casa, personas ni lugares en el código, las plantillas o las pruebas: `test/unit/config.test.js` y
+`test/unit/scripts.test.js` lo vigilan. En el servidor, el nombre llega como `cfg.NAME` (`src/core/config.js`); el del
+dueño, solo para las instrucciones del agente, como `cfg.OWNER` (`TV_OWNER`).
+
+## Una variable de configuración nueva
+
+1. Leerla solo en `remote/src/core/config.js` (con su valor por defecto) y pasarla a quien la use por sus dependencias.
+   Si la usan los scripts de bash, su valor por defecto también en `jsc_load_config` (`scripts/lib.sh`).
+2. Documentarla, comentada y con su valor por defecto, en `config/screen.env.example` y en
+   [arquitectura.md](arquitectura.md#configuración).
+3. Prueba en `test/unit/config.test.js` (y en `test/runtime.test.js` si cambia lo que se ve desde fuera).
 
 ## Pruebas
 
 ```
-cd remote && npm ci && cd ..
-node --test test/*.test.js test/unit/*.test.js
+npm ci && (cd remote && npm ci)    # la primera vez: herramientas de la raíz y dependencias del servidor
+npm run verify                     # lint (eslint) + tipos (tsc) + pruebas, todo desde la raíz
+npm test                           # solo las pruebas: node --test test/*.test.js test/unit/*.test.js
 ```
 
-Contrato y unitarias, en unos 15 s, sin Chrome ni X. Detalle en [test/README.md](../test/README.md).
+Contrato y unitarias, en unos 20 s, sin Chrome, sin X y sin salir a internet. Detalle en [test/README.md](../test/README.md).
 
-**Capturas** (`e2e/`, Playwright; la primera vez `cd e2e && npm install`, que instala Chromium; el mando necesita
-además `remote/node_modules`):
+**Capturas** (`e2e/`, Playwright; la primera vez `cd e2e && npm ci`, que instala Chromium; el mando necesita
+además `remote/node_modules`). Detalle en [e2e/README.md](../e2e/README.md):
 
 ```
 node e2e/reposo-capturas.js [carpeta]                # reposo a 1920×1080, sin servidor (por defecto e2e/capturas)
@@ -149,33 +166,123 @@ python3 e2e/mando-compara.py ANTES DESPUES [--diff CARPETA]   # píxel a píxel 
 ```
 
 Para un refactor del mando: capturas en `main` a una carpeta, capturas con el cambio a otra, y comparar. También
-`npm run reposo`, `npm run mando` y `npm run mando:compara -- ANTES DESPUES` desde `e2e/`. `CHROME=/ruta` usa otro
-navegador; `NODE_PATH` si Playwright está en otro sitio.
+`npm run e2e:reposo` y `npm run e2e:mando` desde la raíz, o `npm run mando:compara -- ANTES DESPUES` desde `e2e/`.
+`CHROME=/ruta` usa otro navegador; `NODE_PATH` si Playwright está en otro sitio.
 
-**Lint**: `eslint.config.js` en la raíz (ESLint 9 con `globals`), `npx eslint .`. Hoy carga `globals` desde una ruta
-absoluta de la máquina donde se escribió y no declara los módulos ES del mando (`remote/public/mando/`) ni los globales
-del navegador del reposo y la isla, así que da errores que no son del código; hay que ponerlo al día antes de fiarse de él.
+**Lint y tipos**: `npm run lint` (`eslint.config.js` en la raíz, ESLint 9 con `globals`, versiones fijadas en el
+`package.json` de la raíz) y `npm run check` (`tsc` sobre `remote/` y sobre los módulos del mando con
+`remote/tsconfig.mando.json`). Las funciones que se mandan a evaluar al navegador (por CDP o con Playwright) viven en
+ficheros de Node; esos ficheros van en `PAGE_FUNCTION_FILES` de `eslint.config.js`, que les da los globales del navegador.
+Si un fichero nuevo hace lo mismo, añadirlo a esa lista (corta a propósito).
 
 ## Despliegue
 
 - Una rama por cambio; varias sesiones a la vez, cada una en su worktree (`.claude/worktrees/`, ignorado).
-- **En el Mac**: pruebas en verde → merge a `main` → `git push`.
-- **En green-house** (`ssh sito@192.168.1.19`, clon en `~/tv`, servicio de usuario `tv-remote` con
-  `WorkingDirectory=%h/tv/remote`):
+- **En el equipo de desarrollo**: `npm run verify` en verde → merge a `main` → `git push`.
+- **En la pantalla** (por ssh, con el usuario de la pantalla, en la carpeta del clon):
 
   ```
-  cd ~/tv && git fetch && git merge --ff-only origin/main
-  (cd remote && npm ci)                                 # solo si cambió package-lock.json
-  systemctl --user restart tv-remote
+  scripts/update.sh                 # fetch + merge --ff-only, npm ci si cambió el lock, reinicia jota-screen y doctor.sh
   ```
 
-  Si cambian las unidades de `systemd/user/`, `scripts/install.sh`. Si cambia el MCP, `cd mcp && npm ci`.
-- **Salud** tras reiniciar:
+  Si avisa de que cambiaron las plantillas (`systemd/`, `config/`, nginx), `scripts/install.sh`; si cambió el kiosco,
+  `sudo systemctl restart jota-screen-kiosk`. Si cambió el MCP, `(cd mcp && npm ci)`. Una variable nueva en
+  `config/screen.env.example` no se copia sola a `screen.env`: añadirla a mano si se quiere otro valor.
+- **Salud** tras reiniciar: `scripts/doctor.sh` (no cambia nada; sale con 1 si algo falla). Comprueba los servicios
+  (`jota-screen`, `jota-screen-mdns`, `jota-screen-spotify` si está habilitado, `jota-screen-kiosk`), «CDP conectado»
+  en el registro, `/api/state` con el token de `TV_STATE_DIR` (200 y `cdp:true`) y sin él (401), que el token no salga
+  en el registro reciente (`--since MINUTOS`, 15 por defecto), los permisos del estado, que CDP solo escuche en
+  127.0.0.1 y el alias mDNS. Registro: `journalctl --user -u jota-screen -f` y `journalctl -u jota-screen-kiosk -f`.
+- **Depurar la pantalla** a mano: `node scripts/cdp.js tabs`, `nav <url>`, `eval <js>`, `click <texto>`.
 
-  ```
-  systemctl --user is-active tv-remote                                          # active
-  journalctl --user -u tv-remote -n 50 | grep 'CDP conectado'                   # Chrome enganchado
-  curl -s -H "Authorization: Bearer $(cat ~/tv/remote/token)" http://127.0.0.1:8787/api/state   # JSON con "cdp":true
-  curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8787/api/state      # 401 sin token
-  journalctl --user -u tv-remote | grep -cFf ~/tv/remote/token                  # 0: el token no está en el registro
-  ```
+## Instalar en otra pantalla
+
+1. En el equipo nuevo (Linux con systemd y X), con el usuario que será dueño de la pantalla, clonar en cualquier carpeta:
+   `git clone https://github.com/Jota-project/jota-screen.git && cd jota-screen`.
+2. `scripts/install.sh --dry-run`: dice qué falta (con la línea de `sudo apt install …`) y qué haría. Instalar lo que
+   falte (Node 22+, Chrome o Chromium, xinit/Xorg, x11-xserver-utils, python3; y lo opcional: avahi, PipeWire,
+   spotifyd, nginx).
+3. `scripts/install.sh`: crea `~/.config/jota-screen/screen.env` desde la plantilla, la carpeta de estado, las
+   dependencias del servidor y los servicios de usuario.
+4. Editar `~/.config/jota-screen/screen.env` si hace falta (`TV_NAME`, salida de vídeo con
+   `DISPLAY=:0 xrandr --query`, `TV_MDNS_NAME` distinto si ya hay otra pantalla con `mando.local` en la red, ubicación
+   del tiempo…) y `systemctl --user restart jota-screen`.
+5. Ejecutar los comandos `sudo` que enseña el instalador para el kiosco (instalar `jota-screen-kiosk.service` en
+   `/etc/systemd/system/`, `daemon-reload`, `enable --now`), o `scripts/install.sh --system` si hay sudo sin contraseña.
+   Si hay nginx, también los del proxy.
+6. `scripts/doctor.sh` hasta que todo salga con ✓, y `node remote/admin-link.js` para el primer móvil admin.
+7. Spotify (opcional): `clientId` de una app de Spotify en `$TV_STATE_DIR/spotify.json`, `TV_PUBLIC_URL` con la URL a la
+   que vuelve Spotify (`…/spotify/callback`), y conectar la cuenta desde el mando.
+
+## Migrar una instalación antigua (tv-remote/tv-kiosk, estado en remote/)
+
+Las instalaciones de antes del producto replicable tienen las unidades `tv-remote`, `tv-mdns` y `spotifyd` (usuario) y
+`tv-kiosk` (sistema), el estado junto al código (`remote/token`, `remote/devices.json`, `remote/access.json`,
+`remote/spotify.json`, `remote/idle.json`), el escenario en `~/tv/stage` y el perfil de Chrome en `~/tv/chrome-profile`.
+Se migra **en la misma carpeta del repo** (el servidor busca el estado antiguo en el `remote/` del código que arranca).
+En los ejemplos, el clon está en `~/tv`.
+
+1. **Copia de seguridad** del estado y de las unidades antiguas (el token y `spotify.json` son secretos: la copia,
+   con 0600):
+
+   ```
+   cd ~/tv
+   mkdir -p ~/jota-screen-backup && chmod 700 ~/jota-screen-backup
+   tar czf ~/jota-screen-backup/estado.tgz -C ~/tv remote/token remote/devices.json remote/access.json \
+       remote/spotify.json remote/idle.json stage chrome-profile 2>/dev/null; chmod 600 ~/jota-screen-backup/estado.tgz
+   cp ~/.config/systemd/user/{tv-remote,tv-mdns,spotifyd}.service ~/jota-screen-backup/ 2>/dev/null
+   systemctl cat tv-kiosk > ~/jota-screen-backup/tv-kiosk.service
+   git rev-parse HEAD > ~/jota-screen-backup/commit          # para volver atrás
+   ```
+
+   (Ajustar la lista a lo que exista: `ls remote ~/tv`.)
+2. **Actualizar el código**: `git fetch && git merge --ff-only origin/main` (la versión antigua aún no trae
+   `scripts/update.sh`; si hay cambios locales, guardarlos antes).
+3. **Crear `screen.env`** con los valores de la instalación antigua, para que todo se vea y se llame igual:
+
+   ```
+   mkdir -p ~/.config/jota-screen && chmod 700 ~/.config/jota-screen
+   install -m 600 config/screen.env.example ~/.config/jota-screen/screen.env
+   ```
+
+   y descomentar en él:
+   - `TV_NAME`: el nombre que tenía la pantalla (también el del altavoz de Spotify, para no perder el dispositivo en
+     la app; o `TV_SPOTIFY_DEVICE` si eran distintos).
+   - `TV_DISPLAY_OUTPUT` (y `TV_DISPLAY_MODE` / `TV_DISPLAY_RATE`): la salida, el modo y la frecuencia de la línea
+     `xrandr` del `kiosk-session.sh` antiguo (`git show $(cat ~/jota-screen-backup/commit):kiosk-session.sh`).
+   - `TV_NET_IFACE`: la interfaz que usaba `mdns-alias.sh`, si la detección automática no sirve.
+   - `TV_PUBLIC_URL` (y el resto de `Environment=`) si la unidad `tv-remote` lo tenía (`~/jota-screen-backup/tv-remote.service`).
+   - `TV_SPOTIFYD` con la ruta de spotifyd si la unidad `spotifyd` lo arrancaba desde una ruta fuera del PATH. Si había
+     `~/.config/spotifyd/spotifyd.conf`, se sigue usando.
+   - Ubicación del tiempo (`TV_CITY`, `TV_LAT`, `TV_LON`): solo si `idle.json` no la tenía; la de `idle.json` manda.
+4. `scripts/install.sh --dry-run` para repasar y después `scripts/install.sh`: detiene y deshabilita `tv-remote`,
+   `tv-mdns` y `spotifyd`, arranca `jota-screen`, `jota-screen-mdns` y `jota-screen-spotify`, y el servidor, al arrancar,
+   **mueve** el estado a `~/.local/state/jota-screen` (o `TV_STATE_DIR`). Comprobarlo:
+   `journalctl --user -u jota-screen -b | grep 'estado:'` (rutas «movido …», nunca el contenido).
+5. `scripts/doctor.sh`: el kiosco aún sale con ✗ (sigue `tv-kiosk`).
+6. **Kiosco**: ejecutar los comandos `sudo` que enseñó el instalador (instalan `jota-screen-kiosk.service`, hacen
+   `systemctl disable --now tv-kiosk.service` y arrancan el nuevo). La pantalla se reinicia y `kiosk-session.sh` mueve
+   `~/tv/chrome-profile` a `$TV_STATE_DIR/chrome-profile` (las sesiones de Netflix, YouTube… se conservan).
+7. `scripts/doctor.sh` otra vez: todo con ✓. Los móviles emparejados siguen funcionando (mismos `devices.json` y token).
+   Si el MCP de OpenClaw o de Claude tenía `TV_TOKEN_FILE=~/tv/remote/token`, quitarlo (por defecto ya lee
+   `~/.local/state/jota-screen/token`) y `(cd mcp && npm ci)`. Si había un sitio de nginx propio para `mando.local`,
+   cambiarlo por el que genera el instalador o dejarlo si apunta al mismo puerto.
+8. **Limpieza**, cuando todo lleve unos días bien: borrar `~/.config/systemd/user/{tv-remote,tv-mdns,spotifyd}.service`
+   y `systemctl --user daemon-reload`; `sudo rm /etc/systemd/system/tv-kiosk.service && sudo systemctl daemon-reload`;
+   lo antiguo que el servidor no movió porque ya existía el nuevo (lo dice el registro: «no se mueve, ya existe»); y la
+   copia de seguridad.
+
+**Vuelta atrás** (antes de la limpieza):
+
+```
+sudo systemctl disable --now jota-screen-kiosk
+systemctl --user disable --now jota-screen jota-screen-mdns jota-screen-spotify
+cd ~/tv && git checkout "$(cat ~/jota-screen-backup/commit)"     # el código antiguo (rama separada)
+S=~/.local/state/jota-screen
+mv $S/token $S/devices.json $S/access.json $S/spotify.json $S/idle.json remote/ 2>/dev/null
+mv $S/stage ~/tv/stage; mv $S/chrome-profile ~/tv/chrome-profile
+systemctl --user enable --now tv-remote tv-mdns spotifyd
+sudo systemctl enable --now tv-kiosk
+```
+
+(o restaurar `~/jota-screen-backup/estado.tgz` con `tar xzf … -C ~/tv` si se prefiere el estado de antes de migrar).
