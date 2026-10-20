@@ -32,11 +32,11 @@ const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m;
  * @typedef {{
  *   ROOT: string, PUB: string, SELF: string,
  *   cdp: { call: Function, session: string | null }, nav: (url: string) => Promise<any>, state: { url: string },
- *   stageKind: () => string | null, onWatch?: () => void, log?: (...a: any[]) => void,
+ *   stageKind: () => string | null, onWatch?: () => void, onAmbient?: () => void, log?: (...a: any[]) => void,
  * }} IdleDeps
  */
 /** @param {IdleDeps} o */
-module.exports = function createIdle(o) {
+function createIdle(o) {
   const { ROOT, PUB, SELF, cdp, nav, state, stageKind, log = () => {} } = o;
   const URL_IDLE = SELF + '/idle.html';
   const CFG_FILE = path.join(ROOT, 'idle.json');
@@ -203,6 +203,7 @@ module.exports = function createIdle(o) {
   }
   let pTimer = null;
   function push() {
+    ambientChanged();
     if (pTimer) return;
     pTimer = setTimeout(() => {
       pTimer = null;
@@ -221,11 +222,21 @@ module.exports = function createIdle(o) {
   }
   let navT = [];
   function onNav(url) {
+    ambKey = JSON.stringify(ambientOf({ idle: isIdle(url), profile, music })); // el estado de la página ya se difunde
     for (const t of navT) clearTimeout(t);
     navT = [];
     if (!acts.size || isIdle(url)) { if (isIdle(url)) overlayOn = false; return; }
     overlayOn = true;
     navT = [700, 2500, 6000].map(ms => setTimeout(overlay, ms)); // la página nueva puede tardar en estar lista
+  }
+
+  // ───────── ambiente para los mandos: con el reposo en pantalla, su perfil y los dos primeros colores de la carátula
+  // ([h, s, l]; el mando los ajusta a su contraste). Se avisa (onAmbient) solo cuando cambia.
+  const ambient = () => ambientOf({ idle: isIdle(state.url), profile, music });
+  let ambKey = '';
+  function ambientChanged() {
+    const k = JSON.stringify(ambient());
+    if (k !== ambKey) { ambKey = k; o.onAmbient && o.onAmbient(); }
   }
 
   // ───────── paso automático al reposo
@@ -310,8 +321,23 @@ module.exports = function createIdle(o) {
   tick(true);
 
   return {
-    URL_IDLE, isIdle, touch, onNav, run, activity, art, setMusic, watching: () => clients.size > 0 && cfg.music,
+    URL_IDLE, isIdle, touch, onNav, run, activity, art, setMusic, ambient, watching: () => clients.size > 0 && cfg.music,
     upgrade: (req, socket, head) => wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws)),
     info: () => ({ profile, idle: isIdle(state.url), acts: acts.size }),
   };
-};
+}
+
+/**
+ * Ambiente del reposo para el mando: null si la tele no está en reposo; si no, el perfil y, si suena algo, título,
+ * artista y los dos primeros colores de la carátula.
+ * @param {{ idle: boolean, profile: string, music: any }} a
+ */
+function ambientOf({ idle, profile, music }) {
+  if (!idle) return null;
+  const m = music && music.title ? { title: music.title, artist: music.artist || '',
+    colors: Array.isArray(music.colors) && music.colors.length > 1 ? music.colors.slice(0, 2) : null } : null;
+  return { profile, music: m };
+}
+
+module.exports = createIdle;
+module.exports.ambientOf = ambientOf;

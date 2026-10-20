@@ -7,6 +7,7 @@ import { ROLE_N, left } from '../core/perms.js';
 import { buzz } from '../ui/haptics.js';
 import { openSheet, isOpen } from '../ui/sheets.js';
 import { applyTheme } from '../ui/theme.js';
+import { paintAmbient } from './ambient.js';
 import { refreshDevs } from './admin.js';
 import { idleLoad } from './idle.js';
 
@@ -27,7 +28,7 @@ export const settings = {
     $('#rScroll').addEventListener('input', e => { cfg.scroll = +e.target.value; $('#vScroll').textContent = cfg.scroll.toFixed(1) + '×'; saveCfg(); });
     $('#swNat').addEventListener('click', () => { cfg.natural = !cfg.natural; saveCfg(); refreshSet(); });
     $('#swHap').addEventListener('click', () => { cfg.haptic = !cfg.haptic; saveCfg(); refreshSet(); buzz(12); });
-    $('#swDark').addEventListener('click', () => { cfg.theme = cfg.theme === 'claro' ? 'oscuro' : 'claro'; saveCfg(); applyTheme(); refreshSet(); buzz(8); });
+    $('#swDark').addEventListener('click', () => { cfg.theme = cfg.theme === 'claro' ? 'oscuro' : 'claro'; saveCfg(); applyTheme(); paintAmbient(); refreshSet(); buzz(8); });
     if (!document.documentElement.requestFullscreen) $('#fsRow').hidden = true;
     $('#swFs').addEventListener('click', () => {
       if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {});

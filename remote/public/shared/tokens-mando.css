@@ -1,0 +1,38 @@
+/* Jota Dusk para el mando (TVC Diseño - Mando v3 y crítica de la tele): el mismo lenguaje que el reposo de la tele
+   (tokens-tv.css: tinta #211b2a, Fraunces con opsz 144, malva y cielo, ease-salon). Contraste medido en el peor punto,
+   con las dos luces superpuestas encima del fondo y el relleno del trackpad: texto 8,3 / 8,7:1, soft 5,4 / 4,9:1 y
+   accent-text 5,8 / 4,6:1 (oscuro / claro). Las luces de color de carátula se recortan en mando/features/ambient.js. */
+:root,:root[data-theme=oscuro]{
+  --bg:#211b2a;--orb:.24;--pad:rgba(246,243,240,.045);--halo:rgba(210,201,238,.16);
+  --text:#f6f3f0;--text-soft:#d6d0de;--text-faint:#a39bb0;
+  --accent:#7c6aae;--accent-press:#6c5b9d;--accent-text:#d2c9ee;--accent-tint:#3e3554;--on-accent:#fff;
+  --status:#8fa8d8;--warn:#e8b26a;--bad:#ef8a7c;
+  --surface:#2d2637;--surface-2:#272030;--surface-3:#3a3247;--edge:transparent;--line:#3d3449;--switch-off:#7f7590;
+  --sheet:#272030;--shade:rgba(20,16,26,.6);--hl:rgba(246,243,240,.06);--grab:rgba(246,243,240,.24);--shadow:rgba(10,8,14,.5);
+  --pill-bg:rgba(45,38,55,.94);--rail:rgba(246,243,240,.1);--rail-thumb:rgba(246,243,240,.34);
+  --play-shadow:0 14px 34px rgba(60,40,110,.38);
+  /* voz: velo sobre el mando y luces más intensas; ahora suena: fondo más hondo y luces de la carátula al 40 % */
+  --veil:linear-gradient(180deg,rgba(26,21,34,.86),rgba(26,21,34,.72) 60%,rgba(26,21,34,.6));--vz-a:.32;--vz-b:.28;
+  --sp-bg:#1a1420;--sp-orb:.4;--sp-track:rgba(246,243,240,.18);
+  /* escribir en la tele: la miniatura es una tele (siempre tinta) y la barra va pegada al teclado del móvil */
+  --tv:#16121c;--tv-text:#f6f3f0;--tv-ink:#d2c9ee;--tv-field:rgba(246,243,240,.12);--kbd:#17131e;--kbd-text:#8f879c;
+  color-scheme:dark}
+:root[data-theme=claro]{
+  --bg:#f6f3f0;--orb:.16;--pad:rgba(42,36,51,.04);--halo:rgba(79,65,137,.12);
+  --text:#2a2433;--text-soft:#4d4659;--text-faint:#6a6377;
+  --accent:#7c6aae;--accent-press:#6c5b9d;--accent-text:#4f4189;--accent-tint:#e9e3f2;--on-accent:#fff;
+  --status:#6e8cc4;--warn:#b07a2a;--bad:#c2483a;
+  --surface:#fff;--surface-2:#efe9e4;--surface-3:#e4dcd5;--edge:#e6dfd8;--line:#ded6cf;--switch-off:#8f8698;
+  --sheet:#f6f3f0;--shade:rgba(42,36,51,.38);--hl:rgba(42,36,51,.05);--grab:rgba(42,36,51,.2);--shadow:rgba(42,36,51,.18);
+  --pill-bg:rgba(255,255,255,.94);--rail:rgba(42,36,51,.08);--rail-thumb:rgba(42,36,51,.3);
+  --play-shadow:0 12px 28px rgba(79,65,137,.28);
+  /* variante clara de voz, ahora suena y teclado: derivada de los tokens (sin artboard propio; pendiente de revisar) */
+  --veil:linear-gradient(180deg,rgba(246,243,240,.9),rgba(246,243,240,.8) 60%,rgba(246,243,240,.7));--vz-a:.18;--vz-b:.16;
+  --sp-bg:#f6f3f0;--sp-orb:.2;--sp-track:rgba(42,36,51,.14);
+  --tv:#16121c;--tv-text:#f6f3f0;--tv-ink:#d2c9ee;--tv-field:rgba(246,243,240,.12);--kbd:#e9e4df;--kbd-text:#6a6377;
+  color-scheme:light}
+:root{
+  --serif:"Fraunces",Georgia,serif;--sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --ease:cubic-bezier(.32,.72,0,1);  /* ease-salon, como --tv-ease */
+  --malva:#7c6aae;--cielo:#6e8cc4;    /* las luces del reposo */
+}

@@ -45,7 +45,8 @@ const ws = createWs();
 const sessions = createSessions({ clients: ws.clients, acc: () => acc });
 const { devOf, meOf } = sessions;
 let cdp = null;
-const tv = createTvState({ cdpUp: () => !!(cdp && cdp.ready && cdp.session), clients: ws.clients });
+// el ambiente lo pone el reposo, que se crea más abajo (solo se pide al difundir, cuando ya existe)
+const tv = createTvState({ cdpUp: () => !!(cdp && cdp.ready && cdp.session), clients: ws.clients, ambient: () => idle.ambient() });
 const { state, publicState, broadcast } = tv;
 
 // ───────────────────────── Chrome (CDP): lo que pasa en la pestaña activa se reparte entre las capacidades
@@ -86,7 +87,7 @@ const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio,
 const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: () => idle });
 const idle = createIdle({
   ROOT, PUB, SELF, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
-  stageKind: () => stage.stage.kind, log: log.info,
+  stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info,
 });
 const agent = createAgent({ cfg: CFG, toast: m => stage.toast(m) });
 

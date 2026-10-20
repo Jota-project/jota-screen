@@ -3,12 +3,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
-<meta name="theme-color" content="#2a2433">
+<meta name="theme-color" content="#211b2a">
 <meta name="color-scheme" content="dark">
 <script src="/mando/theme.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/shared/tokens-mando.css">
 <link rel="stylesheet" href="/mando/styles/mando.css">
 <!-- módulos de mando/app.js: se piden a la vez en lugar de en cascada -->
 <link rel="modulepreload" href="/mando/core/dom.js">
@@ -22,6 +23,7 @@
 <link rel="modulepreload" href="/mando/ui/sheets.js">
 <link rel="modulepreload" href="/mando/ui/actions.js">
 <link rel="modulepreload" href="/mando/ui/gestures.js">
+<link rel="modulepreload" href="/mando/features/ambient.js">
 <link rel="modulepreload" href="/mando/features/controls.js">
 <link rel="modulepreload" href="/mando/features/trackpad.js">
 <link rel="modulepreload" href="/mando/features/keyboard.js">
@@ -74,11 +76,14 @@
 <symbol id="i-set" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
 </defs></svg>
 
+<!-- ambiente: dos luces en órbita con el color de lo que hay en la tele (features/ambient.js) -->
+<div class="amb" id="amb" aria-hidden="true"><i class="orb oa"></i><i class="orb ob"></i></div>
+
 <main class="app2">
   <header class="top2">
     <div class="ttl2">
       <div class="nm2"><b>Salón</b><i class="dot" id="dot" role="img" aria-label="Conectando"></i></div>
-      <div class="sub2" id="sub2"><span id="t1">Conectando…</span><span id="t2"></span></div>
+      <div class="sub2" id="sub2" aria-live="polite"><i class="thumb2" aria-hidden="true"></i><span id="t1">Conectando…</span><span id="t2"></span></div>
       <button class="re2" id="re2" type="button" hidden>Sin conexión · <u>Reintentar</u></button>
     </div>
     <button class="b2 set2" data-a="more" data-click aria-label="Ajustes">
@@ -90,18 +95,16 @@
     <section class="pad2" id="pad" aria-label="Trackpad: desliza para mover el cursor de la tele, toca para elegir, desliza con dos dedos para hacer scroll">
       <i class="halo2" id="halo"></i>
       <span class="rail2" id="rail" aria-hidden="true" hidden><i id="railT"></i></span>
-      <span class="hint2" id="hint">Desliza para mover el cursor.<br>Toca para elegir.<br>Con dos dedos, sube y baja.</span>
+      <span class="hint2" id="hint">Desliza para mover el cursor.<br>Toca para elegir. Con dos dedos, sube y baja.</span>
     </section>
     <div class="vcol2">
-      <div class="rock2">
-        <button class="b2" data-a="vu" data-rep aria-label="Subir volumen">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg>
-        </button>
-        <div class="vol2" id="vol2" role="img" aria-label="Volumen">–</div>
-        <button class="b2" data-a="vd" data-rep aria-label="Bajar volumen">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg>
-        </button>
-      </div>
+      <button class="b2 vb2" data-a="vu" data-rep aria-label="Subir volumen">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12M12 6v12"/></svg>
+      </button>
+      <div class="vol2" id="vol2" role="img" aria-label="Volumen"><span class="vn">–</span></div>
+      <button class="b2 vb2" data-a="vd" data-rep aria-label="Bajar volumen">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 12h12"/></svg>
+      </button>
       <button class="b2 mute2" id="mute2" data-a="vm" aria-label="Silenciar" aria-pressed="false">
         <svg class="m-on" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M15.5 9a4 4 0 0 1 0 6"/><path d="M18.5 6.5a8 8 0 0 1 0 11"/></svg>
         <svg class="m-off" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9.5h3l4-3.5v12l-4-3.5H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>
@@ -130,14 +133,14 @@
 
     <div class="play2">
       <button class="b2 sk2" data-a="s10b" aria-label="Retroceder 10 segundos">
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5"/><path d="M4 4.5V8h3.5"/><text x="12" y="15.2" text-anchor="middle" font-size="7.5" font-weight="700" font-family="Inter,sans-serif" fill="currentColor" stroke="none">10</text></svg>
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 12a7.5 7.5 0 1 0 2.4-5.5"/><path d="M4 4.5V8h3.5"/><text x="12" y="15.2" text-anchor="middle" font-size="7.5" font-weight="600" font-family="Inter,sans-serif" fill="currentColor" stroke="none">10</text></svg>
       </button>
       <button class="b2 pp2" id="pp" data-a="pp" data-m="-1" aria-label="Reproducir o pausar">
-        <svg class="i-play" width="34" height="34" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a.8.8 0 0 0 1.2.7l10.4-6.5a.8.8 0 0 0 0-1.4L9.2 4.8A.8.8 0 0 0 8 5.5z"/></svg>
-        <svg class="i-pause" width="34" height="34" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4.2" height="14" rx="1.4"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.4"/></svg>
+        <svg class="i-play" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5.5v13a.8.8 0 0 0 1.2.7l10.4-6.5a.8.8 0 0 0 0-1.4L9.2 4.8A.8.8 0 0 0 8 5.5z"/></svg>
+        <svg class="i-pause" width="32" height="32" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="5" width="4.2" height="14" rx="1.4"/><rect x="13.8" y="5" width="4.2" height="14" rx="1.4"/></svg>
       </button>
       <button class="b2 sk2" data-a="s10f" aria-label="Adelantar 10 segundos">
-        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.4-5.5"/><path d="M20 4.5V8h-3.5"/><text x="12" y="15.2" text-anchor="middle" font-size="7.5" font-weight="700" font-family="Inter,sans-serif" fill="currentColor" stroke="none">10</text></svg>
+        <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 12a7.5 7.5 0 1 1-2.4-5.5"/><path d="M20 4.5V8h-3.5"/><text x="12" y="15.2" text-anchor="middle" font-size="7.5" font-weight="600" font-family="Inter,sans-serif" fill="currentColor" stroke="none">10</text></svg>
       </button>
     </div>
 
@@ -162,12 +165,13 @@
       <h1>Escribir en la tele</h1>
     </div>
     <div class="tvM none" id="tvM" role="img" aria-label="En la tele: ningún campo">
-      <div class="tvS"><div class="tvF">
+      <i class="tvL tvLa" aria-hidden="true"></i><i class="tvL tvLb" aria-hidden="true"></i>
+      <div class="tvF">
         <svg class="i-sr" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
         <svg class="i-lk" viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>
         <span class="tvT ph" id="tvT">Ningún campo seleccionado</span><span class="tvC"></span>
-      </div></div>
-      <div class="tvLeg"></div>
+      </div>
+      <span class="tvOn" aria-hidden="true"><i></i>En la tele</span>
     </div>
     <div class="kbE" id="kbE">
       <label id="kbL" for="kbTa">Escribe, borra y corrige aquí</label>
@@ -234,35 +238,52 @@
   <div class="rqb"><button class="bt" data-r="no">Rechazar</button><button class="bt" data-r="member">Miembro</button><button class="bt big" data-r="guest">Invitado</button></div>
 </div>
 
-<!-- spotify -->
-<div class="sheet" id="spS" role="dialog" aria-label="Spotify">
+<!-- spotify: ahora suena, con luces de los colores de la carátula -->
+<div class="sheet spV" id="spS" role="dialog" aria-label="Spotify">
+  <i class="spL spLa" aria-hidden="true"></i><i class="spL spLb" aria-hidden="true"></i>
+  <div class="spIn">
   <div class="grab"></div>
-  <div class="spHead">
-    <div class="spArt" id="spArt"></div>
-    <div class="spMeta"><div class="spCtx" id="spCtx"></div><div class="n1" id="spT">—</div><div class="n2" id="spA"></div></div>
-    <button class="spIc" id="spLike" aria-label="Me gusta" hidden><svg><use href="#i-heart"/></svg></button>
+  <div class="spTop">
+    <button class="b2 spX" id="spX" type="button" aria-label="Cerrar Spotify"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
+    <button class="b2 spQ" id="spQ" type="button" aria-label="Buscar en Spotify" aria-expanded="false"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
   </div>
-  <div class="spBar"><span id="spP">0:00</span><div class="spTrk" id="spTrk"><i id="spFill"></i></div><span id="spD">0:00</span></div>
+  <input class="in" id="spin" placeholder="Busca y reproduce: artista, canción…" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+  <div class="spArt" id="spArt"></div>
+  <div class="spMeta">
+    <div class="spCtx spTx"><span class="eq" id="spEq" aria-hidden="true"><i></i><i></i><i></i></span><span id="spCtx"></span></div>
+    <div class="spRow">
+      <div class="spNm"><div class="n1 spTx" id="spT">—</div><div class="n2 spTx" id="spA"></div></div>
+      <button class="spIc" id="spLike" aria-label="Me gusta" hidden><svg><use href="#i-heart"/></svg></button>
+    </div>
+  </div>
+  <div class="spBar"><div class="spTrk" id="spTrk"><i id="spFill"></i></div><div class="spTm"><span id="spP">0:00</span><span id="spD">0:00</span></div></div>
   <div class="spCtl">
     <button class="spIc" id="spShuf" aria-label="Aleatorio"><svg><use href="#i-shuf"/></svg></button>
-    <button class="bt" data-sp="prev" aria-label="Anterior"><svg><use href="#i-prev"/></svg></button>
+    <button class="spIc spBig" data-sp="prev" aria-label="Anterior"><svg><use href="#i-prev"/></svg></button>
     <button class="bt big" data-sp="playpause" aria-label="Reproducir o pausar"><svg class="i-play"><use href="#i-play"/></svg></button>
-    <button class="bt" data-sp="next" aria-label="Siguiente"><svg><use href="#i-next"/></svg></button>
+    <button class="spIc spBig" data-sp="next" aria-label="Siguiente"><svg><use href="#i-next"/></svg></button>
     <button class="spIc" id="spRep" aria-label="Repetir"><svg><use href="#i-rep"/></svg><b>1</b></button>
   </div>
-  <div class="fld"><span>Volumen de Spotify</span><span id="spV">—</span><input type="range" id="rSp" min="0" max="100" step="1"></div>
-  <input class="in" id="spin" placeholder="Busca y reproduce: artista, canción…" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
-  <div class="seg" id="spTabs"><button data-tab="queue" aria-pressed="true">A continuación</button><button data-tab="playlists" aria-pressed="false">Playlists</button><button data-tab="recent" aria-pressed="false">Recientes</button></div>
+  <div class="seg spTabs" id="spTabs"><button data-tab="queue" aria-pressed="true">A continuación</button><button data-tab="playlists" aria-pressed="false">Playlists</button><button data-tab="recent" aria-pressed="false">Recientes</button></div>
   <div class="spList" id="spList"></div>
   <div class="spLogin" id="spLogin" hidden><span>Para ver tus playlists, lo último que has escuchado y marcar «Me gusta», vuelve a conectar Spotify una vez.</span><a id="spLoginA" target="_blank" rel="noopener">Conectar Spotify</a></div>
+  <div class="fld spVol"><span>Volumen de Spotify</span><span id="spV">—</span><input type="range" id="rSp" min="0" max="100" step="1"></div>
   <button class="bt" id="spTv" type="button">Ver Spotify en la tele</button>
+  </div>
 </div>
 
-<!-- agente -->
-<div class="sheet" id="agS" role="dialog" aria-label="Pedir algo al agente">
-  <div class="grab"></div>
-  <input class="in" id="agin" placeholder="Pídele algo al agente…" autocomplete="off" autocorrect="on" spellcheck="true" enterkeyhint="send">
-  <div class="rep" id="rep"><small>Para dictar, usa el micrófono del teclado.</small></div>
+<!-- hablar con Jota: un velo con luces sobre el mando; se escribe o se dicta con el micrófono del teclado -->
+<div class="sheet vzV" id="agS" role="dialog" aria-label="Hablar con Jota">
+  <div class="vzTop"><button class="b2 vzX" id="agX" type="button" aria-label="Cerrar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button><span>Salón</span></div>
+  <div class="vzSt" id="agSt" aria-live="polite">Te escucho</div>
+  <p class="vzQ" id="agQ"></p>
+  <div class="rep" id="rep"></div>
+  <input class="in vzIn" id="agin" placeholder="Pídele algo a Jota…" autocomplete="off" autocorrect="on" spellcheck="true" enterkeyhint="send">
+  <div class="vzO">
+    <button class="vzOrb" id="agOrb" type="button" aria-label="Escribir o dictar a Jota"></button>
+    <span class="vzH" id="agH">Para dictar, usa el micrófono del teclado</span>
+  </div>
+  <div class="vzC" id="agC"><button class="b2" type="button" data-ask="Pausa">Pausa</button><button class="b2" type="button" data-ask="Pon Spotify">Pon Spotify</button><button class="b2" type="button" data-ask="Más bajo">Más bajo</button></div>
 </div>
 
 <!-- ajustes -->

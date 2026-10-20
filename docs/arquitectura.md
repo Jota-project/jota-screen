@@ -47,7 +47,7 @@ remote/
     config.js             único lector de process.env: puertos, URLs, rutas de los ficheros de estado (FILES)
     log.js                registro con redacción (token maestro, ?t=, ?token=, Bearer)
     json-store.js         readJson / writeJson (atómico, 0600) / createJsonStore
-    tv-state.js           estado público de la tele, broadcast agrupado (30 ms) y la orden `state`
+    tv-state.js           estado público de la tele (con `amb`, el ambiente del reposo), broadcast agrupado (30 ms) y la orden `state`
   src/auth/
     permissions.js        roles, permisos por defecto, políticas con nombre y check()
     access.js             token maestro, dispositivos (solo hash), ajustes de acceso, emparejar, enlaces de admin
@@ -82,10 +82,11 @@ remote/
     mando/app.js          registra los descriptores de features y llama a los init()
     mando/core/           dom, store (estado, ajustes, avisos), api (WebSocket, rpc, handle, onWs, setGate), perms
     mando/ui/             haptics, pill, theme, status, sheets, actions, gestures
-    mando/features/       controls, trackpad, keyboard, go, agent, spotify, spotify-lists, spotify-state, pair, admin, settings, idle
-    mando/styles/mando.css  estilos y tokens del mando (oscuro y claro)
+    mando/features/       ambient, controls, trackpad, keyboard, go, agent, spotify, spotify-lists, spotify-state, pair, admin, settings, idle
+    mando/styles/mando.css  estilos del mando (v3: glifos flotantes, luces en órbita, voz, ahora suena y teclado)
     idle.html, idle.css, idle-app.js   pantalla en reposo (sin nada en línea)
     shared/tokens-tv.css  tokens Jota Dusk de la tele (reposo e isla)
+    shared/tokens-mando.css  tokens Jota Dusk del mando (oscuro y claro), alineados con los de la tele
     tv-island.js          isla de Live Activities (reposo y, por CDP, cualquier web)
     tv-stage.js           runtime de las páginas del escenario: tv.onData, tv.emit, tv.close
     stage.css, tpl-tasks.html, tpl-reminder.html, tpl-slides.html   plantillas del escenario
@@ -136,7 +137,7 @@ export const go = {
 `msgs` (manejador por tipo de mensaje del servidor), `sheets`, `clicks` (botones `data-click`) y `acts` (botones de
 orden directa `data-a`) se registran en `app.js` con `register([...])`; un nombre repetido es un error. Capas en un solo
 sentido y sin ciclos: `core ← ui ← features ← app` (y entre features: settings → admin → pair, settings → idle,
-spotify → spotify-lists → spotify-state). Ningún módulo hace nada al cargarse salvo `app.js`. Lo comprueba
+settings, controls y spotify → ambient, spotify → spotify-lists → spotify-state). Ningún módulo hace nada al cargarse salvo `app.js`. Lo comprueba
 `test/unit/mando.test.js`.
 
 ## Roles y permisos
@@ -208,8 +209,13 @@ El MCP usa `TV_URL`, `TV_TOKEN` o `TV_TOKEN_FILE`.
 - La **isla** no puede cargar CSS dentro de webs ajenas (su CSP, su red): el servidor le antepone los tokens de
   `shared/tokens-tv.css` como texto (`__TV_TOKENS`), y por eso ese fichero debe tener un solo bloque `:root{…}` de
   declaraciones simples. La isla se relee en cada inyección; el reposo, no (va por estáticos).
-- El mando tiene sus propios tokens en `mando/styles/mando.css` y las plantillas del escenario los suyos en
-  `stage.css`; `tokens-tv.css` es solo de la tele (reposo e isla).
+- El mando tiene sus propios tokens en `shared/tokens-mando.css` (mismos valores de base que la tele: tinta, malva,
+  cielo, Fraunces y ease-salon) y las plantillas del escenario los suyos en `stage.css`; `tokens-tv.css` es solo de la
+  tele (reposo e isla).
+- **Ambiente del mando**: con el reposo en pantalla, el mensaje `state` lleva `amb` (perfil y dos colores `[h, s, l]` de
+  la carátula, de `idle.js`, que avisa con `onAmbient` solo si cambian). `mando/features/ambient.js` decide el color de
+  las luces (reposo, carátula o app por su dominio) y lo recorta en luminancia para que el texto secundario no baje de
+  4,5:1 con las dos luces superpuestas.
 - Una sola pregunta al agente a la vez (`askBusy`).
 - Spotify castiga el exceso de peticiones (429): `nowplaying.js` solo consulta si alguien mira y la espera sobrevive a
   un reinicio.

@@ -1,4 +1,6 @@
-// Spotify: panel completo del dispositivo «Salón», con datos en vivo empujados por el servidor.
+// Spotify («Ahora suena», v3): panel completo del dispositivo «Salón», con datos en vivo empujados por el servidor. Las
+// luces del panel toman los colores de la carátula (recortados para que el texto se lea) y, al cambiar de canción, el
+// texto sale en 200 ms, la carátula entra en 800 ms y el texto nuevo llega escalonado.
 import { $, hide } from '../core/dom.js';
 import { state, on } from '../core/store.js';
 import { cmd, rpc } from '../core/api.js';
@@ -6,31 +8,56 @@ import { buzz } from '../ui/haptics.js';
 import { pill } from '../ui/pill.js';
 import { openSheet, closeSheet, isOpen } from '../ui/sheets.js';
 import { sp, mmss } from './spotify-state.js';
+import { tone, themeOf, LIMITS } from './ambient.js';
 import { spLoadTab, spList } from './spotify-lists.js';
 
 const spOpen = () => isOpen('spS');
+/* la búsqueda va plegada tras la lupa */
+function spQuery(on) { $('#spS').classList.toggle('q', on); $('#spQ').setAttribute('aria-expanded', String(on)); if (on) $('#spin').focus(); }
 function spButton() {
   openSheet('spS');
   rpc({ t: 'spwatch', on: true }).then(r => { if (r && 'now' in r) spPaint(r.now); });
   spLoadTab();
 }
 function spPos() { return !sp.now || sp.now.empty ? 0 : Math.min(sp.now.duration, sp.now.progress + (sp.now.playing ? Date.now() - sp.recv : 0)); }
+/* luces del panel: los dos primeros colores de la carátula ([h, s, l] del servidor, o su fondo y acento) */
+function spLights(n) {
+  const c = n && !n.empty && n.colors, lim = LIMITS.sp[themeOf()], S = $('#spS');
+  const a = c ? (Array.isArray(c.hsl) && c.hsl[0]) || c.accent : '#7c6aae';
+  const b = c ? (Array.isArray(c.hsl) && c.hsl[1]) || c.bg : '#6e8cc4';
+  S.style.setProperty('--sa', a ? tone(a, lim) : 'transparent'); S.style.setProperty('--sb', b ? tone(b, lim) : 'transparent');
+}
+/* título, artista, contexto y carátula; al cambiar de canción, con el relevo (sin él con movimiento reducido) */
+let spKey = '', swapT = 0;
+function spText(n) {
+  const none = !n || n.empty || !n.track;
+  const key = none ? '' : n.track.name + '\n' + n.artist;
+  const set = () => {
+    const S = $('#spS');
+    if (none) { $('#spT').textContent = 'Nada sonando'; $('#spA').textContent = 'Busca algo o elige una playlist'; $('#spCtx').textContent = ''; $('#spArt').style.backgroundImage = ''; }
+    else {
+      $('#spT').textContent = n.track.name;
+      $('#spA').textContent = n.artist;
+      const c = n.context;
+      $('#spCtx').textContent = c && c.name && c.type !== 'album' ? 'Desde ' + c.name : [n.album.name, n.album.year].filter(Boolean).join(' · ');
+      const im = n.album.image && (n.album.image.m || n.album.image.l);
+      $('#spArt').style.backgroundImage = im ? `url("${im}")` : '';
+    }
+    S.classList.remove('swap');
+  };
+  if (key === spKey && $('#spT').textContent !== '—') return set();
+  const had = spKey; spKey = key; clearTimeout(swapT);
+  if (!had || !key || matchMedia('(prefers-reduced-motion: reduce)').matches) return set();
+  $('#spS').classList.add('swap'); swapT = setTimeout(set, 220);
+}
 function spPaint(n) {
   sp.now = n; sp.recv = Date.now();
   const S = $('#spS');
   $('#spLogin').hidden = !(n && n.needsLogin);
   $('#spLoginA').href = '/spotify/login?t=' + encodeURIComponent(state.token);
-  if (!n || n.empty || !n.track) {
-    $('#spT').textContent = 'Nada sonando'; $('#spA').textContent = 'Busca algo o elige una playlist'; $('#spCtx').textContent = '';
-    $('#spArt').style.backgroundImage = ''; $('#spLike').hidden = true; S.classList.remove('tint'); spTick(); spList(); return;
-  }
-  $('#spT').textContent = n.track.name;
-  $('#spA').textContent = n.artist;
-  const c = n.context;
-  $('#spCtx').textContent = c && c.name && c.type !== 'album' ? 'Desde ' + c.name : [n.album.name, n.album.year].filter(Boolean).join(' · ');
-  const im = n.album.image && (n.album.image.m || n.album.image.l);
-  $('#spArt').style.backgroundImage = im ? `url("${im}")` : '';
-  if (n.colors) { S.style.setProperty('--spBg', n.colors.bg); S.style.setProperty('--spAc', n.colors.accent); S.classList.add('tint'); } else S.classList.remove('tint');
+  spLights(n); spText(n);
+  S.classList.toggle('playing', !!(n && !n.empty && n.playing));
+  if (!n || n.empty || !n.track) { $('#spLike').hidden = true; spTick(); spList(); return; }
   $('#spLike').hidden = n.liked === null || n.liked === undefined; $('#spLike').classList.toggle('on', !!n.liked);
   $('#spShuf').classList.toggle('on', !!n.shuffle);
   $('#spRep').classList.toggle('on', n.repeat !== 'off'); $('#spRep').classList.toggle('one', n.repeat === 'track');
@@ -49,7 +76,7 @@ function spTick() {
 export const spotify = {
   name: 'spotify',
   msgs: { sp: j => { if (spOpen()) spPaint(j.now); } },
-  sheets: { spS: { open() { $('#spin').value = ''; }, close: () => cmd({ t: 'spwatch', on: false }) } },
+  sheets: { spS: { open() { $('#spin').value = ''; spQuery(false); }, close: () => cmd({ t: 'spwatch', on: false }) } },
   clicks: { sp: spButton },
   init() {
     setInterval(() => { if (spOpen()) spTick(); }, 500);
@@ -75,6 +102,8 @@ export const spotify = {
     $('#spShuf').addEventListener('click', () => { buzz(8); $('#spShuf').classList.toggle('on'); rpc({ t: 'spotify', a: 'shuffle' }); });
     $('#spRep').addEventListener('click', () => { buzz(8); rpc({ t: 'spotify', a: 'repeat' }); });
     $('#spLike').addEventListener('click', () => { buzz(12); $('#spLike').classList.toggle('on'); rpc({ t: 'spotify', a: 'like' }).then(r => { if (r && r.error) { pill(r.error); $('#spLike').classList.toggle('on'); } }); });
+    $('#spX').addEventListener('click', () => { buzz(7); closeSheet(); });
+    $('#spQ').addEventListener('click', () => { buzz(7); spQuery(!$('#spS').classList.contains('q')); });
     $('#spTv').addEventListener('click', () => { buzz(8); cmd({ t: 'nav', url: 'https://open.spotify.com/' }); cmd({ t: 'spotify', a: 'activate' }); closeSheet(); pill('Abriendo Spotify en la tele'); });
     $('#rSp').addEventListener('input', e => {
       $('#spV').textContent = e.target.value + ' %';
@@ -93,7 +122,7 @@ export const spotify = {
       hide('#spTabs [data-tab=playlists],#spTabs [data-tab=recent]', !P.library);
       if (!P.library && sp.tab !== 'queue') { sp.tab = 'queue'; if (spOpen()) spLoadTab(); }
       hide('#spLike', !P.library);
-      hide('#spin', P.music === 'off');
+      hide('#spin,#spQ', P.music === 'off');
       $('#spin').placeholder = P.music === 'queue' ? 'Pide una canción (va a la cola)…' : 'Busca y reproduce: artista, canción…';
     });
   },

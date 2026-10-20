@@ -67,6 +67,22 @@ test('estado de la tele: varios cambios seguidos, un solo mensaje', async () => 
   assert.deepEqual([tv.state.url, tv.state.media, tv.state.scroll], ['', -1, null]);
 });
 
+test('estado de la tele: lleva el ambiente del reposo (amb) para que el mando tome su color', async () => {
+  const { ambientOf } = require(path.join(__dirname, '..', '..', 'remote', 'idle'));
+  const music = { title: 'Midnight City', artist: 'M83', colors: [[10, 0.5, 0.6], [260, 0.4, 0.3], [40, 0.6, 0.5]] };
+  assert.equal(ambientOf({ idle: false, profile: 'day', music }), null, 'fuera del reposo, sin ambiente');
+  assert.deepEqual(ambientOf({ idle: true, profile: 'evening', music: null }), { profile: 'evening', music: null });
+  assert.deepEqual(ambientOf({ idle: true, profile: 'day', music }),
+    { profile: 'day', music: { title: 'Midnight City', artist: 'M83', colors: [[10, 0.5, 0.6], [260, 0.4, 0.3]] } }, 'dos colores');
+  assert.equal(ambientOf({ idle: true, profile: 'day', music: { ...music, colors: null } }).music.colors, null);
+  let amb = null;
+  const tv = createTvState({ cdpUp: () => true, clients: () => [], ambient: () => amb });
+  assert.equal(tv.publicState().amb, null);
+  amb = ambientOf({ idle: true, profile: 'day', music });
+  assert.deepEqual(tv.publicState().amb.music.colors, [[10, 0.5, 0.6], [260, 0.4, 0.3]]);
+  assert.equal(createTvState({ cdpUp: () => true, clients: () => [] }).publicState().amb, null, 'sin reposo conectado');
+});
+
 test('sondeo de la página: solo con mandos conectados, y avisa si cambia', async () => {
   let calls = 0, watched = false, bc = 0;
   const cdp = { ready: true, session: 'S', call: async () => { calls++; return { result: { value: [1, 0, 2000, 1000] } }; } };
