@@ -118,12 +118,12 @@ fi
 
 # ─── permisos del estado
 if [ -d "$TV_STATE_DIR" ]; then
-  m=$(stat -c %a "$TV_STATE_DIR")
+  m=$(jsc_mode "$TV_STATE_DIR")
   if [ "$m" = 700 ]; then ok "$TV_STATE_DIR es 0700"; else bad "$TV_STATE_DIR es 0$m (debe ser 0700: chmod 700 $TV_STATE_DIR)"; fi
   perm_bad=()
   for f in "$TV_STATE_DIR"/*; do
     [ -f "$f" ] || continue
-    [ "$(stat -c %a "$f")" = 600 ] || perm_bad+=("$(basename "$f") ($(stat -c %a "$f"))")
+    [ "$(jsc_mode "$f")" = 600 ] || perm_bad+=("$(basename "$f") ($(jsc_mode "$f"))")
   done
   if [ ${#perm_bad[@]} -eq 0 ]; then ok "ficheros del estado en 0600"
   else bad "ficheros del estado sin 0600: ${perm_bad[*]} (chmod 600 …)"; fi

@@ -61,7 +61,7 @@ main() {
     if ! git diff --quiet "$old" "$new" -- remote/package-lock.json; then
       echo "· remote/package-lock.json ha cambiado: npm ci --omit=dev"
       (cd remote && npm ci --omit=dev --no-audit --no-fund)
-      lock_sum=$(sha256sum remote/package-lock.json | cut -d' ' -f1)
+      lock_sum=$(jsc_sha256 remote/package-lock.json)
       printf '%s omit=dev\n' "$lock_sum" >remote/node_modules/.jota-screen-install
     fi
     if ! git diff --quiet "$old" "$new" -- systemd/ config/ remote/nginx-mando.conf; then

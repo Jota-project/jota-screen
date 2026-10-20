@@ -117,6 +117,19 @@ jsc_urlencode() {
   printf '%s\n' "$out"
 }
 
+# Permisos en octal («700») de $1, con stat de GNU o de BSD.
+jsc_mode() {
+  stat -c %a -- "$1" 2>/dev/null || stat -f %Lp -- "$1"
+}
+
+# SHA-256 en hexadecimal del fichero $1 (sha256sum o, si no está, shasum).
+jsc_sha256() {
+  local out
+  if command -v sha256sum >/dev/null 2>&1; then out=$(sha256sum -- "$1") || return 1
+  else out=$(shasum -a 256 -- "$1") || return 1; fi
+  printf '%s\n' "${out%% *}"
+}
+
 # Crea la carpeta de estado con 0700 si no existe (y la deja en 0700 si ya existe).
 jsc_ensure_state_dir() {
   mkdir -p "$TV_STATE_DIR"

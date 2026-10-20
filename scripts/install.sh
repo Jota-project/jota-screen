@@ -155,7 +155,7 @@ fi
 step "Carpeta de estado"
 if [ -d "$TV_STATE_DIR" ]; then
   ok "$TV_STATE_DIR"
-  [ "$(stat -c %a "$TV_STATE_DIR")" = 700 ] || run chmod 700 "$TV_STATE_DIR"
+  [ "$(jsc_mode "$TV_STATE_DIR")" = 700 ] || run chmod 700 "$TV_STATE_DIR"
 else
   run mkdir -p "$TV_STATE_DIR"
   run chmod 700 "$TV_STATE_DIR"
@@ -165,7 +165,7 @@ fi
 # ─────────────────────────────────────────────── npm
 step "Dependencias del servidor (remote/)"
 NPM_CHANGED=0
-lock_sum=$(sha256sum "$APP/remote/package-lock.json" | cut -d' ' -f1)
+lock_sum=$(jsc_sha256 "$APP/remote/package-lock.json")
 stamp=$APP/remote/node_modules/.jota-screen-install
 if [ -f "$stamp" ] && [ "$(cat "$stamp")" = "$lock_sum omit=dev" ]; then
   ok "al día (package-lock.json sin cambios)"
@@ -183,10 +183,11 @@ fi
 
 # ─────────────────────────────────────────────── unidades de usuario
 step "Unidades de usuario ($UNIT_DIR)"
-declare -A CHANGED=()
+# unidades que han cambiado, separadas por espacios (sin arrays asociativos: bash 3.2 no los tiene)
+CHANGED=" "
 for u in jota-screen jota-screen-mdns jota-screen-spotify; do
   if jsc_render "$APP/systemd/user/$u.service" | put_file "$UNIT_DIR/$u.service" 644; then
-    CHANGED[$u]=1
+    CHANGED+="$u "
     [ $DRY = 1 ] || ok "$u.service escrita"
   else
     ok "$u.service al día"
@@ -195,7 +196,7 @@ done
 if [ -n "$SPOTIFYD" ] && [ ! -f "$HOME/.config/spotifyd/spotifyd.conf" ]; then
   if jsc_render "$APP/systemd/spotifyd.conf.example" | put_file "$CFG_DIR/spotifyd.conf" 600; then
     [ $DRY = 1 ] || ok "creada $CFG_DIR/spotifyd.conf"
-    CHANGED[jota-screen-spotify]=1
+    CHANGED+="jota-screen-spotify "
   fi
 fi
 
@@ -221,15 +222,14 @@ else
   run systemctl --user daemon-reload
   old_unit() { [ -f "$UNIT_DIR/$1.service" ] || systemctl --user cat "$1.service" >/dev/null 2>&1; }
   # antiguas: se paran justo antes de arrancar las nuevas (el puerto es el mismo)
-  declare -A OLD_FOR=([jota-screen]=tv-remote [jota-screen-mdns]=tv-mdns [jota-screen-spotify]=spotifyd)
   for u in "${WANT[@]}"; do
-    old=${OLD_FOR[$u]}
+    case $u in jota-screen) old=tv-remote ;; jota-screen-mdns) old=tv-mdns ;; jota-screen-spotify) old=spotifyd ;; esac
     if old_unit "$old"; then
       run systemctl --user disable --now "$old.service" || true
       warn "unidad antigua $old.service detenida y deshabilitada (su fichero queda; bórralo cuando todo vaya bien)"
     fi
     run systemctl --user enable "$u.service"
-    if [ -n "${CHANGED[$u]:-}" ] || { [ "$u" = jota-screen ] && [ $NPM_CHANGED = 1 ]; } \
+    if [[ $CHANGED == *" $u "* ]] || { [ "$u" = jota-screen ] && [ $NPM_CHANGED = 1 ]; } \
        || ! systemctl --user is-active --quiet "$u.service"; then
       run systemctl --user restart "$u.service"
       [ $DRY = 1 ] || ok "$u (re)arrancado"
