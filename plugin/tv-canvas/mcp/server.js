@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 'use strict';
-// MCP "tv-canvas": controla el navegador de la tele del salón (Chrome en modo kiosco) a través de la API del mando.
-//   TV_URL    base de la API (por defecto http://127.0.0.1:8787; desde fuera, la URL HTTPS de Tailscale)
-//   TV_TOKEN  token del mando (si no se indica, se lee de TV_TOKEN_FILE o ~/tv/remote/token)
+// MCP "tv-canvas": controla el navegador de la pantalla (Chrome en modo kiosco) a través de la API del mando.
+//   TV_URL        base de la API (por defecto http://127.0.0.1:8787; desde otra máquina, la URL pública del mando)
+//   TV_TOKEN      token del mando (si no se indica, se lee de TV_TOKEN_FILE o TV_STATE_DIR/token)
+//   TV_STATE_DIR  carpeta de estado del servidor (por defecto ~/.local/state/jota-screen), como en el servidor
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -13,7 +14,8 @@ const { z } = require('zod');
 const BASE = (process.env.TV_URL || 'http://127.0.0.1:8787').replace(/\/+$/, '');
 function token() {
   if (process.env.TV_TOKEN) return process.env.TV_TOKEN.trim();
-  const f = process.env.TV_TOKEN_FILE || path.join(os.homedir(), 'tv', 'remote', 'token');
+  const dir = process.env.TV_STATE_DIR || path.join(os.homedir(), '.local', 'state', 'jota-screen');
+  const f = process.env.TV_TOKEN_FILE || path.join(dir, 'token');
   try { return fs.readFileSync(f, 'utf8').trim(); } catch { return ''; }
 }
 
@@ -43,7 +45,7 @@ const out = (j, ok) => ({
 const server = new McpServer({ name: 'tv-canvas', version: '0.1.0' });
 const tool = (name, description, shape, fn) => server.registerTool(name, { description, inputSchema: shape }, fn);
 
-tool('tv_state', 'Current state of the living-room TV browser: page title, URL, volume, whether a video is playing (media: 1 playing, 0 paused, -1 no video) and what is on the stage.', {},
+tool('tv_state', 'Current state of the TV browser: page title, URL, volume, whether a video is playing (media: 1 playing, 0 paused, -1 no video) and what is on the stage.', {},
   async () => out(await api('GET', '/api/state')));
 
 tool('tv_open', 'Open a URL on the TV. Bare text is turned into a Google search. Only http/https. For YouTube/Netflix searches prefer tv_open_app.',
@@ -78,7 +80,7 @@ tool('tv_volume', 'TV volume: up/down (5% per step, optional repeat), mute toggl
   });
 
 tool('tv_spotify',
-  'Control Spotify on the living-room TV (Spotify Connect device "Salón", Premium account). Actions: status (short: what is playing, connected?), ' +
+  'Control Spotify on the TV (the server is a Spotify Connect device, Premium account). Actions: status (short: what is playing, connected?), ' +
   'now (full now-playing: track, album+year, artist photo, playing context (playlist/album), queue, shuffle/repeat, liked, volume, album-art colours), ' +
   'play, pause, playpause, next, prev, volume (level 0-100), seek (ms, or pos 0-1), shuffle (state true/false, omit to toggle), repeat (state off|context|track, omit to cycle), ' +
   'like (save/unsave the current track to "Tus me gusta"; state true/false, omit to toggle), queue (next up), queue_add (uri of a track), playlists (the user\'s playlists), recent (recently played), ' +
@@ -166,10 +168,10 @@ tool('tv_activity',
   async (a) => out(await cmd({ t: 'activity', ...a })));
 
 tool('tv_idle',
-  'The TV idle screen (animated background by time of day or by the colours of the song playing, big clock, weather for Elche, now playing). ' +
+  'The TV idle screen (animated background by time of day or by the colours of the song playing, big clock, local weather if a location is set, now playing). ' +
   'op=show opens it now; op=get returns its settings and current profile; op=set changes settings: mode (auto|day|evening|night|cinema), ' +
   'bed/wake ("HH:MM", fixed sleep schedule), perDay + week {mon:{bed,wake},…} for a per-weekday schedule, idleMin (minutes without use before it opens itself, 0 = never), ' +
-  'dimMin (at night, minutes until only a faint clock remains), music (show Spotify), city/lat/lon, ' +
+  'dimMin (at night, minutes until only a faint clock remains), music (show Spotify), city/lat/lon/tz (weather location; lat/lon null = no weather), ' +
   'layout (rotar|margen|zonas|apilada: how clock, weather and music are arranged; rotar cycles them), rearrangeMin (minutes between rearrangements, 0 = never), calm (reduced motion).',
   { op: z.enum(['show', 'get', 'set']), cfg: z.record(z.any()).optional() },
   async ({ op, cfg }) => out(await cmd({ t: 'idle', op, cfg })));
@@ -177,7 +179,7 @@ tool('tv_idle',
 tool('tv_admin_link',
   'Create a one-time admin link for the TV remote (expires in 10 minutes). Opening it on a phone (or typing the code in the remote: ' +
   '"Tengo un código de administrador") makes that device an admin with its own revocable token, without ever exposing the master token. ' +
-  'Only give it to the owner (Sito), never to guests.', {},
+  'Only give it to the owner, never to guests.', {},
   async () => { const j = await cmd({ t: 'adminlink' }); return out(j, j.error ? '' : `Link (one use, expires in ${j.minutes} min): ${j.url}\nCode: ${j.code}`); });
 
 tool('tv_events', 'Read events sent from the stage page (ticked tasks, slide changes, custom tv.emit). Pass the last value as `since` to get only new ones.',

@@ -1,6 +1,6 @@
 {
   "name": "tv-canvas",
   "version": "0.1.0",
-  "description": "Controla la tele del salón desde Claude: YouTube, Netflix, volumen, y presentaciones, tareas y avisos animados en pantalla.",
+  "description": "Controla la pantalla de jota-screen desde Claude: YouTube, Netflix, volumen, y presentaciones, tareas y avisos animados en pantalla.",
   "author": { "name": "Alfonso" }
 }
