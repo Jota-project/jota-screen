@@ -7,7 +7,8 @@
 //   features/                                                          ← ui/ y core/, y entre sí solo en un sentido:
 //     settings → admin → pair, settings → idle, settings → ambient, controls → ambient, spotify → ambient,
 //     spotify → spotify-lists → spotify-state, agent → voice
-import { initSession } from './core/store.js';
+import { initSession, state } from './core/store.js';
+import { toSecure } from './core/secure.js';
 import { connect, handle, start } from './core/api.js';
 import { applyMe } from './core/perms.js';
 import { status } from './ui/status.js';
@@ -45,4 +46,5 @@ controls.init();
 start();
 for (const p of [status, trackpad, gestures, actions, sheets, keyboard, go, agent, spotify, pair, admin, settings, idle]) p.init();
 
-settle().finally(connect);
+// tras canjear enlaces (el maestro nunca viaja): por http y con una URL https que responde, se salta a ella (voz)
+settle().finally(() => { connect(); toSecure(state.token); });

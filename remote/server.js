@@ -111,7 +111,8 @@ async function run(m, sock, ctx = {}) {
 const voice = createVoice({ cfg: CFG, limiter, auth: acc, run }); // hablar con el agente: audio -> texto -> agente -> voz
 
 // ───────────────────────── transporte: HTTP (rutas + estáticos) y WebSocket
-const statics = createStatic({ dir: PUB, vars: { TV_NAME: CFG.NAME } }); // {{TV_NAME}} en el HTML y el manifiesto
+// {{TV_NAME}} en el HTML y el manifiesto; secure: el mando abierto por http salta a la URL https (micrófono para la voz)
+const statics = createStatic({ dir: PUB, vars: { TV_NAME: CFG.NAME }, secure: CFG.PUBLIC_URL });
 const handler = createHttp({
   routes: [
     ...voice.routes,                                    // antes que la API: su prefijo /api/ se comería /api/voice

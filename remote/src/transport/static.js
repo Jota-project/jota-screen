@@ -26,7 +26,12 @@ const LONG_CACHE = new Set(['.png', '.svg', '.woff2', '.jpg', '.webp', '.ico']);
 // sin build no hay huellas en los nombres: lo que cambia con cada versión (html, js, css, tokens) se revalida siempre por ETag
 const cacheFor = p => (LONG_CACHE.has(path.extname(p)) && !p.startsWith('/shared/') ? 'public, max-age=86400' : 'no-cache');
 // CSP de cada página; los .js, .css e imágenes no la llevan
-const pageCsp = p => (p === '/index.html' ? CSP : p === '/idle.html' ? IDLE_CSP : /^\/tpl-[\w-]+\.html$/.test(p) ? STAGE_CSP : null);
+/** @param {string} mando la CSP del mando (con el origen https al que puede saltar) */
+const pageCsp = (p, mando) => (p === '/index.html' ? mando : p === '/idle.html' ? IDLE_CSP : /^\/tpl-[\w-]+\.html$/.test(p) ? STAGE_CSP : null);
+/** El origen https de la instalación (TV_PUBLIC_URL), o '' si no lo es: el mando por http comprueba que responde y salta. */
+function secureOrigin(/** @type {string | undefined} */ url) {
+  try { const u = new URL(String(url || '')); return u.protocol === 'https:' ? u.origin : ''; } catch { return ''; }
+}
 
 const escHtml = (/** @type {string} */ v) => v.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 const escJson = (/** @type {string} */ v) => JSON.stringify(v).slice(1, -1);
@@ -46,10 +51,14 @@ function fill(buf, ext, vars) {
  * Carga public/ en memoria al arrancar, con subcarpetas (hasta 2 niveles). Solo se sirve lo cargado aquí: una ruta con
  * «..» o %2F nunca llega al disco (la URL ya viene normalizada y se busca la clave exacta). Se saltan los ficheros
  * ocultos y los enlaces simbólicos (que podrían apuntar fuera de public/). En el HTML y el manifiesto, {{CLAVE}} se cambia
- * por vars.CLAVE (p. ej. el nombre de la pantalla).
- * @param {{ dir: string, maxDepth?: number, vars?: Record<string, string> }} o
+ * por vars.CLAVE (p. ej. el nombre de la pantalla). Con `secure` (una URL https), el mando la recibe en {{TV_SECURE_URL}}
+ * y su CSP le deja comprobarla (connect-src) para saltar a ella desde http.
+ * @param {{ dir: string, maxDepth?: number, vars?: Record<string, string>, secure?: string }} o
  */
-function createStatic({ dir, maxDepth = 2, vars = {} }) {
+function createStatic({ dir, maxDepth = 2, vars = {}, secure = '' }) {
+  const sec = secureOrigin(secure);
+  vars = { ...vars, TV_SECURE_URL: sec };
+  const mandoCsp = sec ? CSP.replace("connect-src 'self' ws: wss:", `connect-src 'self' ws: wss: ${sec}`) : CSP;
   const assets = new Map();
   function walk(abs, rel, depth) {
     for (const f of fs.readdirSync(abs)) {
@@ -76,7 +85,7 @@ function createStatic({ dir, maxDepth = 2, vars = {} }) {
     const a = assets.get(p);
     if (!a) return send(res, 404, 'no encontrado');
     const h = { 'Content-Type': a.type, ETag: a.etag, 'Cache-Control': cacheFor(p) };
-    const csp = pageCsp(p);
+    const csp = pageCsp(p, mandoCsp);
     if (csp) h['Content-Security-Policy'] = csp;
     if (req.headers['if-none-match'] === a.etag) return send(res, 304, '', h);
     if (a.gz && /\bgzip\b/.test(req.headers['accept-encoding'] || '')) { h['Content-Encoding'] = 'gzip'; h.Vary = 'Accept-Encoding'; return send(res, 200, req.method === 'HEAD' ? '' : a.gz, h); }

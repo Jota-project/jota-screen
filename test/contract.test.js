@@ -198,3 +198,16 @@ test('voz: /api/voice llega a su ruta (no la tapa el prefijo /api/) y pide token
     assert.equal((await v.api('/api/voice', 'mal', audio)).status, 401);
   } finally { await v.stop(); }
 });
+
+test('salto a https: con TV_PUBLIC_URL https el mando la recibe y su CSP le deja comprobarla; sin ella, nada', async () => {
+  const S = 'https://tele.example.ts.net:8443';
+  const v = await start({ env: { TV_PUBLIC_URL: S + '/' } });
+  try {
+    const r = await v.get('/');
+    assert.match(await r.text(), new RegExp(`<meta name="tv-secure" content="${S}">`));
+    assert.match(r.headers.get('content-security-policy'), new RegExp(`connect-src 'self' ws: wss: ${S};`));
+  } finally { await v.stop(); }
+  const r = await s.get('/');
+  assert.match(await r.text(), /<meta name="tv-secure" content="">/);
+  assert.match(r.headers.get('content-security-policy'), /connect-src 'self' ws: wss:;/);
+});

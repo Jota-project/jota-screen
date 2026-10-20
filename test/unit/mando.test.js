@@ -125,3 +125,21 @@ test('mando: cada hoja tiene un solo dueño (registerSheet lanza con una hoja re
     assert.ok(owner.has('agS') && owner.has('spS'), 'encuentra las hojas');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+test('mando: salto a https para la voz (core/secure.js): solo desde http fuera del bucle local, con el token en el fragmento', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mando-secure-'));
+  fs.cpSync(path.join(PUB, 'mando'), path.join(tmp, 'mando'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'package.json'), '{"type":"module"}');
+  try {
+    const { secureTarget } = await import(pathToFileURL(path.join(tmp, 'mando', 'core', 'secure.js')).href);
+    const at = u => { const x = new URL(u); return { protocol: x.protocol, hostname: x.hostname, origin: x.origin, pathname: x.pathname, search: x.search, hash: x.hash }; };
+    const S = 'https://tele.example.ts.net:8443';
+    assert.equal(secureTarget(at('http://mando.local/'), S, 'abc123abc123abc123'), S + '/#t=abc123abc123abc123');
+    assert.equal(secureTarget(at('http://192.168.1.19:8787/?x=1#admin=ABCDEF'), S, ''), S + '/?x=1#admin=ABCDEF', 'conserva ruta, consulta y el código de admin');
+    assert.equal(secureTarget(at('http://mando.local/#admin=ABCDEF'), S, 'tok0tok0tok0tok0'), S + '/#admin=ABCDEF&t=tok0tok0tok0tok0');
+    for (const u of ['http://127.0.0.1:8787/', 'http://localhost:8787/', 'http://[::1]:8787/', S + '/', 'https://otro.example/'])
+      assert.equal(secureTarget(at(u), S, 'tok0tok0tok0tok0'), '', u);
+    for (const s of ['', 'http://inseguro.example', 'no es una url'])
+      assert.equal(secureTarget(at('http://mando.local/'), s, 'tok0tok0tok0tok0'), '', `sin destino https: ${s}`);
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});

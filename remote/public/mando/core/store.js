@@ -19,12 +19,13 @@ export const saveCfg = () => persist.set('cfg', cfg);
  */
 export const state = { token: '', adminCode: '', viaCookie: false, pairNote: '', me: null, acc: null, lastState: null };
 
-/** Al arrancar: token de ?t= (o el guardado), código de #admin= y se limpian de la barra de direcciones; ajustes. */
+/** Al arrancar: token de ?t= o #t= (o el guardado), código de #admin= y se limpian de la barra de direcciones; ajustes. */
 export function initSession() {
   const qs = new URLSearchParams(location.search);
-  state.token = qs.get('t') || persist.get('token', '');
+  const hashTok = (/[#&]t=([0-9A-Za-z_-]{16,128})/.exec(location.hash) || [])[1] || '';   // del salto a https (core/secure.js)
+  state.token = qs.get('t') || hashTok || persist.get('token', '');
   state.adminCode = (/[#&]admin=([0-9A-Za-z-]{6,24})/.exec(location.hash) || [])[1] || '';
-  if (qs.has('t') || state.adminCode) { qs.delete('t'); const q = qs.toString(); history.replaceState(null, '', location.pathname + (q ? '?' + q : '')); }
+  if (qs.has('t') || hashTok || state.adminCode) { qs.delete('t'); const q = qs.toString(); history.replaceState(null, '', location.pathname + (q ? '?' + q : '')); }
   Object.assign(cfg, { speed: 1.6, scroll: 1, natural: true, haptic: true, theme: 'oscuro', apps: ['spotify', 'netflix'] }, persist.get('cfg', {}));
 }
 
