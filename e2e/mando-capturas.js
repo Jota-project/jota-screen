@@ -36,7 +36,7 @@ const GUEST_TOKEN = 'e2e0guest0000000000000000000000a';
 const MEMBER_TOKEN = 'e2e0member000000000000000000000b';
 const ADMIN_TOKEN = 'e2e0admin0000000000000000000000c';
 const DEVICES = [
-  { id: 'e2e00000', name: 'Móvil de Sito', role: 'admin', h: sha(ADMIN_TOKEN), created: NOW - 90 * 24 * H, seen: NOW - 5 * 60e3, expires: null },
+  { id: 'e2e00000', name: 'Móvil de Luis', role: 'admin', h: sha(ADMIN_TOKEN), created: NOW - 90 * 24 * H, seen: NOW - 5 * 60e3, expires: null },
   { id: 'e2e00001', name: 'Tablet de la cocina', role: 'member', h: sha(MEMBER_TOKEN), created: NOW - 30 * 24 * H, seen: NOW - 26 * H, expires: null },
   { id: 'e2e00002', name: 'Móvil de Ana', role: 'guest', h: sha(GUEST_TOKEN), created: NOW - 3 * H, seen: NOW - 2 * H, expires: NOW + 20 * H },
 ];
@@ -342,7 +342,7 @@ async function walk(admin) {
 // detalle de una playlist, doble toque con arrastre, roles y quitar dispositivos, horario por día, enlace y código de admin
 // y canje del código de 4 cifras. Van al final porque cambian el estado del servidor (dispositivos y reposo).
 const SP_LISTS = [
-  { name: 'Mi lista n.º 55', by: 'Sito', count: 42, uri: 'spotify:playlist:e2e', image: 'https://i.scdn.co/image/e2e-art' },
+  { name: 'Mi lista n.º 55', by: 'Luis', count: 42, uri: 'spotify:playlist:e2e', image: 'https://i.scdn.co/image/e2e-art' },
   { name: 'Canciones que te gustan', liked: true, count: 310, uri: 'spotify:collection:e2e' },
 ];
 const SP_PL = { name: 'Mi lista n.º 55', description: 'Para estudiar sin distracciones', next: null, items: [

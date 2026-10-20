@@ -110,7 +110,7 @@ tool('tv_links', 'List clickable elements currently visible on the TV page (text
   { filter: z.string().optional().describe('Case-insensitive regex on the element text') },
   async ({ filter }) => out(await cmd({ t: 'links', text: filter || '' })));
 
-tool('tv_click_text', 'Click the first visible element whose text or aria-label matches a case-insensitive regex (e.g. "Reproducir|Play", "Perfil.*Alfonso").',
+tool('tv_click_text', 'Click the first visible element whose text or aria-label matches a case-insensitive regex (e.g. "Reproducir|Play", "Perfil.*Ana").',
   { text: z.string().max(120) }, async ({ text }) => out(await cmd({ t: 'clicktext', text })));
 
 tool('tv_click_at', 'Click at viewport coordinates (CSS pixels of the screenshot returned by tv_screenshot at width 1280).',

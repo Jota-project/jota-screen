@@ -2,5 +2,7 @@
   "name": "tv-canvas",
   "version": "0.1.0",
   "description": "Controla la pantalla de jota-screen desde Claude: YouTube, Netflix, volumen, y presentaciones, tareas y avisos animados en pantalla.",
-  "author": { "name": "Alfonso" }
+  "author": { "name": "Jota-project" },
+  "homepage": "https://github.com/Jota-project/jota-screen",
+  "repository": "https://github.com/Jota-project/jota-screen"
 }
