@@ -1,0 +1,25 @@
+# jota-screen: kiosco (Xorg en tty1 + kiosk-session.sh con Chrome a pantalla completa). Unidad de SISTEMA.
+# scripts/install.sh la genera en ~/.config/jota-screen/generated/ y enseña los comandos sudo para instalarla
+# en /etc/systemd/system/ (o lo hace él con --system si hay sudo sin contraseña). No la edites allí.
+[Unit]
+Description=jota-screen: kiosco (Xorg + Chrome)
+After=systemd-user-sessions.service getty@tty1.service
+Conflicts=getty@tty1.service
+
+[Service]
+User=@USER@
+Environment=TV_CONFIG=@CONFIG@
+PAMName=login
+TTYPath=/dev/tty1
+StandardInput=tty
+StandardOutput=journal
+StandardError=journal
+TTYReset=yes
+TTYVHangup=yes
+TTYVTDisallocate=yes
+ExecStart=/usr/bin/xinit @APP_DIR@/kiosk-session.sh -- :0 vt1 -keeptty -nolisten tcp
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical.target

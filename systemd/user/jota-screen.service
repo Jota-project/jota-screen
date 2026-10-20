@@ -1,0 +1,18 @@
+# jota-screen: servidor. Generada por scripts/install.sh desde systemd/user/jota-screen.service
+# (plantilla con marcadores) en ~/.config/systemd/user/. No la edites: se regenera al reinstalar.
+[Unit]
+Description=jota-screen: servidor del mando y de la pantalla
+After=pipewire.service wireplumber.service
+
+[Service]
+Environment=DISPLAY=:0
+Environment=TV_CONFIG=@CONFIG@
+Environment=PATH=@NODE_DIR@:@HOME@/.npm-global/bin:@HOME@/.local/bin:/usr/local/bin:/usr/bin:/bin
+EnvironmentFile=-@CONFIG@
+WorkingDirectory=@APP_DIR@/remote
+ExecStart=@NODE@ server.js
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=default.target
