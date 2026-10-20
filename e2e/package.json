@@ -1,9 +1,10 @@
 {
   "name": "jota-screen-e2e",
   "private": true,
-  "description": "Capturas automáticas de la pantalla en reposo y del mando del móvil, con datos de ejemplo",
+  "description": "Capturas automáticas de la pantalla en reposo y del mando del móvil, con datos de ejemplo, y prueba de la geometría del reposo",
   "scripts": {
     "reposo": "node reposo-capturas.js",
+    "solapes": "node reposo-solapes.js",
     "mando": "node mando-capturas.js",
     "mando:compara": "python3 mando-compara.py",
     "postinstall": "playwright install chromium"

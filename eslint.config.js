@@ -19,6 +19,7 @@ const PAGE_FUNCTION_FILES = [
   'remote/src/features/{control,keyboard,spotify,stage}.js',
   'remote/src/tv/devices.js',
   'e2e/mando-capturas.js',
+  'e2e/reposo-solapes.js',
 ];
 
 module.exports = [
