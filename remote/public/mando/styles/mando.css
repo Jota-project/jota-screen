@@ -346,11 +346,11 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .pp2{width:84px;height:84px;border-radius:999px;background:var(--accent);color:var(--on-accent);box-shadow:var(--play-shadow);transition:transform .2s var(--ease),filter .2s ease}
 .pp2::before{display:none}
 .pp2.dn,.pp2:active{transform:scale(.94)}
-.apps2{display:flex;justify-content:center;gap:12px}
-.apps2 .b2{height:52px;padding:0 16px 0 10px;font-size:16px;font-weight:500}
+.apps2{display:flex;justify-content:center;gap:4px}
+.apps2 .b2{height:52px;padding:0 12px 0 8px;gap:8px;font-size:16px;font-weight:500}
 .apps2 .b2::before{width:100%;height:100%}
-.ini{width:32px;height:32px;border-radius:10px;display:grid;place-items:center;color:#f6f3f0;font:500 17px/1 var(--serif)}
-.ini.sp{background:#2a4a3a}.ini.nf{background:#5a2730}
+.apps2 .logo{width:28px;height:28px;flex:none;fill:none;stroke:none}
+@media (max-width:380px){.apps2 .b2{padding:0 8px 0 4px;gap:6px;font-size:15px}.apps2 .logo{width:26px;height:26px}}
 /* un bloque sin nada visible (por el rol, o una lista de accesos vacía) no ocupa sitio */
 .nav2:not(:has(>:not([data-hide]))),.play2:not(:has(>:not([data-hide]))),.apps2:not(:has(>:not([data-hide]))){display:none}
 /* Jota, sin barra: el orbe que respira, la frase y el micro */

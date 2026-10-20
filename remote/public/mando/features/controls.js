@@ -5,12 +5,19 @@ import { cfg, state, on } from '../core/store.js';
 import { cmd, rpc } from '../core/api.js';
 import { paintAmbient } from './ambient.js';
 
-/* accesos del mando: salen de cfg.apps (M5 los hará configurables); como las apps del Inicio de la tele, un cuadrado de
-   color con la inicial */
+/* accesos del mando: salen de cfg.apps (M5 los hará configurables), con el logo de cada servicio (símbolos l-* de index.html) */
 const APPS = {
-  spotify: { n: 'Spotify', c: 'sp', at: { 'data-a': 'sp', 'data-click': '' } },
-  netflix: { n: 'Netflix', c: 'nf', at: { 'data-url': 'https://www.netflix.com' } },
+  spotify: { n: 'Spotify', at: { 'data-a': 'sp', 'data-click': '' } },
+  netflix: { n: 'Netflix', at: { 'data-url': 'https://www.netflix.com' } },
+  youtube: { n: 'YouTube', at: { 'data-url': 'https://www.youtube.com' } },
 };
+const SVG = 'http://www.w3.org/2000/svg';
+/** El logo de un acceso, como <svg><use href="#l-…"></svg>. @param {string} k */
+function logo(k) {
+  const s = document.createElementNS(SVG, 'svg'), u = document.createElementNS(SVG, 'use');
+  s.setAttribute('class', 'logo'); s.setAttribute('aria-hidden', 'true'); u.setAttribute('href', '#l-' + k);
+  s.append(u); return s;
+}
 
 function onState(s) {
   if (s.t !== 'state') return;
@@ -67,8 +74,7 @@ export const controls = {
       const a = APPS[k]; if (!a) continue;
       const b = el('button', 'b2 acc2'); b.setAttribute('aria-label', 'Abrir ' + a.n);
       for (const [n, v] of Object.entries(a.at)) b.setAttribute(n, v);
-      const i = el('span', 'ini ' + a.c, a.n[0]); i.setAttribute('aria-hidden', 'true');
-      b.append(i, el('span', '', a.n)); $('#apps2').appendChild(b);
+      b.append(logo(k), el('span', '', a.n)); $('#apps2').appendChild(b);
     }
     on('me', j => {                                     // el mando se adapta a lo que puede hacer cada uno
       const P = j.perms || {};

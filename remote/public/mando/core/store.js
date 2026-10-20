@@ -26,7 +26,9 @@ export function initSession() {
   state.token = qs.get('t') || hashTok || persist.get('token', '');
   state.adminCode = (/[#&]admin=([0-9A-Za-z-]{6,24})/.exec(location.hash) || [])[1] || '';
   if (qs.has('t') || hashTok || state.adminCode) { qs.delete('t'); const q = qs.toString(); history.replaceState(null, '', location.pathname + (q ? '?' + q : '')); }
-  Object.assign(cfg, { speed: 1.6, scroll: 1, natural: true, haptic: true, theme: 'oscuro', apps: ['spotify', 'netflix'] }, persist.get('cfg', {}));
+  Object.assign(cfg, { speed: 1.6, scroll: 1, natural: true, haptic: true, theme: 'oscuro', apps: ['spotify', 'netflix', 'youtube'] }, persist.get('cfg', {}));
+  // los accesos aún no se configuran (M5): quien guardó la lista antigua por defecto recibe también YouTube
+  if (String(cfg.apps) === 'spotify,netflix') cfg.apps = ['spotify', 'netflix', 'youtube'];
 }
 
 /* avisos entre partes (me, auth:lost) */
