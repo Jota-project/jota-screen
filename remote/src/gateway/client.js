@@ -117,6 +117,8 @@ function createGatewayClient({ url, key, agent, log, WebSocketImpl = WebSocket, 
     /** @param {Buffer} buf PCM Float32 16 kHz mono */
     audio(buf) { out(buf, true); },
     end() { out(JSON.stringify({ type: 'end' }), false); },
+    /** Corta el turno en curso; el Gateway lo cierra con su propio turn_end. */
+    cancel() { out(JSON.stringify({ type: 'cancel' }), false); },
     /** @param {string} text */
     send(text) { out(JSON.stringify({ type: 'send', text }), false); },
     /** @param {(ev: GwEvent) => void} fn */

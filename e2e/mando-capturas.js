@@ -236,7 +236,16 @@ async function adminScenes(theme, admin) {
   await run('hoja-agente', async p => {
     await tap(p, 'Hablar con Jota'); await shot(p, T('hoja-agente'));
     await inject(p, { t: 'talk', ev: 'done', reply: 'Hecho: he puesto «Lo-fi para estudiar» en YouTube a pantalla completa.' });
-    await shot(p, T('hoja-agente-respuesta'));
+    await shot(p, T('hoja-agente-respuesta'));                            // con «Quitar de la tele» (suena en la tele: hasta hidden)
+    await tap(p, 'Quitar de la tele');
+  });
+  // Jota escribe la respuesta: «Parar» a la vista; al pulsarlo, el turno se para y queda «Parado.»
+  await run('hoja-agente-parar', async p => {
+    await tap(p, 'Hablar con Jota');
+    await inject(p, { t: 'talk', ev: 'final', text: 'pon algo de jazz' });
+    await inject(p, { t: 'talk', ev: 'token', text: 'Voy a buscar algo de jazz tranquilo' });
+    await shot(p, T('hoja-agente-parar'));
+    await tap(p, 'Parar'); await shot(p, T('hoja-agente-parado'));
   });
   // voz: mantener el orbe con el micrófono falso. vstart se contesta aquí (sin Gateway el servidor diría «no disponible»);
   // la parcial y la final las manda el servidor, inyectadas. Un toque corto no manda nada y abre el teclado.

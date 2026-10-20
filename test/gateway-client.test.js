@@ -139,17 +139,17 @@ test('cierre inesperado (también 1000) → down, isReady() false, y el siguient
   } finally { c.close(); await f.stop(); }
 });
 
-test('send() y end() escriben sus mensajes; audio() con la sesión lista sale tal cual', async () => {
+test('send(), end() y cancel() escriben sus mensajes; audio() con la sesión lista sale tal cual', async () => {
   const f = await fake(ready);
   const c = mk(f);
   try {
     await c.ensure();
-    c.send('x'); c.end();
-    await until(() => f.got.length === 3);
-    assert.deepEqual(f.got.slice(1), [{ type: 'send', text: 'x' }, { type: 'end' }]);
+    c.send('x'); c.end(); c.cancel();
+    await until(() => f.got.length === 4);
+    assert.deepEqual(f.got.slice(1), [{ type: 'send', text: 'x' }, { type: 'end' }, { type: 'cancel' }]);
     c.send('sin sesión tras close'); // no debe lanzar
     c.close();
-    c.send('y'); c.end(); c.audio(Buffer.from('z'));
+    c.send('y'); c.end(); c.cancel(); c.audio(Buffer.from('z'));
     assert.equal(c.isReady(), false);
   } finally { c.close(); await f.stop(); }
 });

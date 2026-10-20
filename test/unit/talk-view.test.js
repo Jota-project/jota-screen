@@ -1,6 +1,6 @@
 'use strict';
 // Capa de la conversación en la tele (src/tv/talk-view.js): se inyecta una vez por página, agrupa las actualizaciones,
-// guarda las últimas frases en el panel y se oculta 8 s después de terminar.
+// guarda las últimas frases en el panel y se oculta 5 s después de terminar (o al momento con hide()).
 const test = require('node:test');
 const assert = require('node:assert');
 const path = require('node:path');
@@ -106,28 +106,88 @@ test('el panel guarda las 6 últimas frases; la isla manda solo la frase actual 
   assert.deepEqual(p.lines.map(l => l.who + ':' + l.text), ['you:p6', 'jota:Jota no está disponible.']);
 });
 
-test('8 s después de done (o de error) se llama a hide; un turno nuevo antes de esos 8 s cancela el hide', async t => {
+test('5 s después de done (o de error) se llama a hide; un turno nuevo antes de esos 5 s cancela el hide', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const cdp = fakeCdp();
   const v = createTalkView({ cdp, pub: PUB });
   const hides = () => cdp.exprs.filter(e => e.includes('TVTalk.hide()')).length;
   v.turn('panel'); v.you('hola', true); v.jota('buenas'); v.done();
   t.mock.timers.tick(100); await flushMicro();
-  t.mock.timers.tick(7800); await flushMicro();
+  t.mock.timers.tick(4800); await flushMicro();
   assert.equal(hides(), 0);
   t.mock.timers.tick(200); await flushMicro();
   assert.equal(hides(), 1);
   assert.ok(!injects(cdp.exprs.at(-1)), 'ocultar no reinyecta');
   // error: igual
   v.turn('panel'); v.you('otra', true); v.error('No te he entendido. Prueba otra vez.');
-  t.mock.timers.tick(8100); await flushMicro();
+  t.mock.timers.tick(5100); await flushMicro();
   assert.equal(hides(), 2);
-  // turno nuevo a los 5 s: no se oculta
+  // turno nuevo a los 3 s: no se oculta
   v.turn('island'); v.you('a', true); v.done();
-  t.mock.timers.tick(5000); await flushMicro();
+  t.mock.timers.tick(3000); await flushMicro();
   v.turn('island'); v.you('b', false);
   t.mock.timers.tick(10000); await flushMicro();
   assert.equal(hides(), 2);
+});
+
+test('hide() oculta al momento (isla de actividades a 1), cancela el temporizador y avisa a onHide', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const cdp = fakeCdp();
+  const v = createTalkView({ cdp, pub: PUB });
+  const hides = () => cdp.exprs.filter(e => e.includes('TVTalk.hide()')).length;
+  let told = 0;
+  v.onHide(() => told++);
+  v.turn('panel'); v.you('hola', true); v.jota('buenas'); v.done();
+  t.mock.timers.tick(100); await flushMicro();
+  v.hide();
+  await flushMicro();
+  assert.equal(hides(), 1);
+  assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(1)'));
+  assert.equal(told, 1);
+  t.mock.timers.tick(6000); await flushMicro();
+  assert.equal(hides(), 1, 'el temporizador ya no oculta otra vez');
+  assert.equal(told, 1);
+  // por tiempo también avisa
+  v.turn('panel'); v.you('otra', true); v.done();
+  t.mock.timers.tick(5100); await flushMicro();
+  assert.equal(told, 2);
+  // con un render pendiente: hide lo descarta
+  v.turn('island'); v.you('x', true);
+  v.hide();
+  t.mock.timers.tick(200); await flushMicro();
+  assert.ok(cdp.exprs.at(-1).includes('TVTalk.hide()'), 'no se repinta tras ocultar');
+});
+
+test('tras hide(), un done o error tardío del mismo turno no vuelve a sacar la capa', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const cdp = fakeCdp();
+  const v = createTalkView({ cdp, pub: PUB });
+  v.turn('panel'); v.you('hola', true); v.jota('buenas');
+  t.mock.timers.tick(100); await flushMicro();
+  v.hide();
+  const n = cdp.exprs.length;
+  v.done(); v.jota('más');
+  t.mock.timers.tick(6000); await flushMicro();
+  assert.equal(cdp.exprs.length, n, 'nada más en la tele');
+  // el turno siguiente pinta normal
+  v.turn('panel'); v.you('nueva', true);
+  t.mock.timers.tick(100); await flushMicro();
+  assert.equal(cdp.exprs.length, n + 1);
+});
+
+test('hideMs por defecto 5000; sin sesión de CDP hide() también avisa a onHide', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const cdp = fakeCdp(); cdp.session = null;
+  const v = createTalkView({ cdp, pub: PUB });
+  let told = 0;
+  v.onHide(() => told++);
+  v.turn('panel'); v.done();
+  t.mock.timers.tick(4999); await flushMicro();
+  assert.equal(told, 0);
+  t.mock.timers.tick(1); await flushMicro();
+  assert.equal(told, 1);
+  v.hide();
+  assert.equal(told, 2);
 });
 
 test('durante el turno se atenúa la isla de actividades (TVIsland.dim(0)) y al ocultar vuelve a 1', async t => {
@@ -138,7 +198,7 @@ test('durante el turno se atenúa la isla de actividades (TVIsland.dim(0)) y al 
   t.mock.timers.tick(100); await flushMicro();
   assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(0)'));
   v.done();
-  t.mock.timers.tick(8100); await flushMicro();
+  t.mock.timers.tick(5100); await flushMicro();
   const last = cdp.exprs.at(-1);
   assert.ok(last.includes('TVTalk.hide()') && last.includes('window.TVIsland&&window.TVIsland.dim(1)'));
 });

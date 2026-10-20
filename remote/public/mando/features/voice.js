@@ -47,6 +47,8 @@ export function ensureAudioCtx() {
   return ctx;
 }
 const out = () => (OUTS.includes(cfg.voiceOut) ? cfg.voiceOut : 'tv');
+/** Ajuste «Al pulsar el orbe mientras Jota habla»: interrumpir (por defecto) o esperar. */
+export const interruptOn = () => cfg.voiceInterrupt !== false;
 /** El selector «dónde suena la respuesta» (voz y texto escrito). */
 export const outSel = out;
 function paintOut() { const b = $('#agOut'); b.textContent = OUT_LABEL[out()]; b.dataset.out = out(); }
@@ -71,7 +73,7 @@ function go() {
   started = true;
   const me = press;
   // el servidor abre el turno al leer vstart, antes que el audio que va detrás por el mismo socket
-  rpc({ t: 'vstart', out: out() }).then(r => {
+  rpc({ t: 'vstart', out: out(), interrupt: interruptOn() }).then(r => {
     if (!r || !r.error || r.error === 'sin respuesta' || me !== press) return;
     if (started) { started = false; held = false; release(); }   // ocupado, sin permiso o Jota caído: no se sigue grabando
     ui.rep(r.error); ui.stage('idle');                  // (también si ya se soltó: no se queda en «Pensando»)
@@ -84,7 +86,7 @@ function go() {
 async function start(key = false) {
   if (held || node || stream) return;                   // ya hay una pulsación en curso (o se está pidiendo el micro)
   held = true; long = key; started = false; pending = [];
-  if (ui.press) ui.press();                             // una pulsación nueva corta la respuesta que aún suene en el móvil
+  if (ui.press) ui.press();                             // una pulsación nueva corta la respuesta que aún suene en el móvil (si interrumpe)
   const me = ++press;
   // iOS: el contexto se crea (o se reanuda) dentro del propio gesto, antes de cualquier await
   if (!ensureAudioCtx()) {

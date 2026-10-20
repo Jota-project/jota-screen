@@ -1,6 +1,7 @@
 // La respuesta del Gateway en el móvil: frames binarios 0xA1 + turn_seq (uint16 BE) + PCM16 LE 24 kHz mono. Cada trozo se
 // programa justo detrás del anterior en el AudioContext del mando (el de la voz), sin huecos. Solo vale el turno del
-// primer frame de la respuesta: los de otro `seq` se descartan hasta el siguiente `stop`.
+// primer frame de la respuesta: los de otro `seq` se descartan hasta el siguiente `stop`. `playing()` dice si algo suena o
+// está programado; `onChange` avisa cuando empieza a sonar y cuando acaba (o se corta).
 const RATE = 24000;
 const LEAD = 0.05;                                      // margen al arrancar o tras un hueco (s)
 
@@ -11,8 +12,9 @@ export function pcm16ToFloat32(buf, from = 0) {
   return out;
 }
 
-/** @param {() => AudioContext | null} getCtx el contexto del mando (lo crea si aún no hay: p. ej. un texto sin haber usado el micrófono) */
-export function createPcmPlayer(getCtx) {
+/** @param {() => AudioContext | null} getCtx el contexto del mando (lo crea si aún no hay: p. ej. un texto sin haber usado el micrófono)
+ *  @param {() => void} [onChange] empieza a sonar o deja de sonar */
+export function createPcmPlayer(getCtx, onChange = () => {}) {
   /** @type {number | null} */ let seq = null;
   let at = 0;                                           // cuándo acaba lo ya programado
   /** @type {Set<AudioBufferSourceNode>} */ const live = new Set();
@@ -29,12 +31,17 @@ export function createPcmPlayer(getCtx) {
       const n = ctx.createBufferSource(); n.buffer = b; n.connect(ctx.destination);
       at = Math.max(at, ctx.currentTime + LEAD);
       n.start(at); at += b.duration;
-      live.add(n); n.onended = () => live.delete(n);
+      live.add(n); n.onended = () => { live.delete(n); if (!live.size) onChange(); };
+      if (live.size === 1) onChange();
     },
+    /** Hay audio sonando o programado. */
+    playing: () => live.size > 0,
     /** Corta lo que suena y olvida el turno (una pulsación nueva, un `ask` nuevo, un error). */
     stop() {
       for (const n of live) { n.onended = null; try { n.stop(); } catch {} try { n.disconnect(); } catch {} }
+      const was = live.size > 0;
       live.clear(); seq = null; at = 0;
+      if (was) onChange();
     },
   };
 }

@@ -82,3 +82,45 @@ test('el aviso de fallo se repite una vez en la siguiente reproducción', () => 
   s.start(); s.start(); s.write(Buffer.from([1]));
   assert.equal(warns.length, 2, 'una vez por reproducción, no una por llamada');
 });
+
+test('onIdle: una vez cuando la reproducción vacía y sale, o al pararla; no por un start() que la sustituye', () => {
+  const f = fake();
+  const s = createSpeaker({ spawnImpl: f.spawnImpl });
+  let n = 0;
+  s.onIdle(() => n++);
+  s.start(); s.write(Buffer.from([1])); s.end();
+  assert.equal(n, 0, 'aún vaciando');
+  f.procs[0].emit('exit');
+  assert.equal(n, 1, 'tras vaciar');
+  f.procs[0].emit('exit');
+  assert.equal(n, 1, 'una sola vez');
+  s.start(); s.stop();
+  assert.equal(n, 2, 'tras stop');
+  s.stop();
+  assert.equal(n, 2, 'stop sin reproducción no avisa');
+  s.start(); s.end(); s.start();
+  assert.equal(n, 2, 'el start que sustituye no avisa');
+  f.procs[2].emit('exit');
+  assert.equal(n, 2, 'el exit tardío de la sustituida tampoco');
+  s.end(); f.procs[3].emit('exit');
+  assert.equal(n, 3, 'la nueva manda');
+});
+
+test('onIdle también si la reproducción no llega a sonar (no arranca, o muere antes de end): se avisa en end', () => {
+  let n = 0;
+  const s = createSpeaker({ spawnImpl: () => { throw new Error('ENOENT'); } });
+  s.onIdle(() => n++);
+  s.start(); s.end();
+  assert.equal(n, 1, 'sin proceso, end avisa al momento');
+  const f = fake();
+  const s2 = createSpeaker({ spawnImpl: f.spawnImpl });
+  s2.onIdle(() => n++);
+  s2.start(); f.procs[0].emit('error', new Error('spawn pw-cat ENOENT'));
+  assert.equal(n, 1, 'muere antes de end: se avisa al llamar a end');
+  s2.end();
+  assert.equal(n, 2, 'end sin nada que vaciar');
+  s2.stop();
+  assert.equal(n, 2, 'y ya no vuelve a avisar');
+  s2.start(); s2.end(); f.procs[1].emit('error', new Error('x'));
+  assert.equal(n, 3, 'un fallo mientras vacía también cuenta como fin');
+});

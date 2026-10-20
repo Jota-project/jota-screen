@@ -73,13 +73,17 @@ remote/
     stage.js              present, show, stage, close, toast; ruta /stage/p*.html; canal /stage-ws
     spotify.js            spotify (todas las acciones), spwatch; rutas /spotify/login y /spotify/callback
     idle.js               envoltorio de remote/idle.js: activity, idle; ruta /idle/art
-    talk.js               ask, vstart, vend, vcancel: hablar con Jota por el J Gateway, un turno a la vez; la voz sube en directo
-                          y la respuesta vuelve por el mismo WS del mando (`talk`); suena en la tele, en el móvil o en ninguno
+    talk.js               ask, vstart, vend, vcancel, stop, hide: hablar con Jota por el J Gateway, un turno a la vez; la voz sube
+                          en directo y la respuesta vuelve por el mismo WS del mando (`talk`); suena en la tele, en el móvil o en
+                          ninguno. La tele quita la conversación 5 s después del audio (o del texto, si no sonó). `stop` cancela el
+                          turno en el Gateway (`cancel`) y corta el audio; `hide` solo la quita; `vstart`/`ask` con `interrupt`
+                          paran lo que haya y siguen (sin él, BUSY mientras hay turno o Jota habla). Interrumpe este servidor:
+                          el barge-in del Gateway sigue desactivado
   src/gateway/
-    client.js             cliente WS del J Gateway: ensure, send, audio, end y eventos (partial, final, token, audio, turn_end, down)
+    client.js             cliente WS del J Gateway: ensure, send, audio, end, cancel y eventos (partial, final, token, audio, turn_end, down)
   src/tv/ (voz)
-    speaker.js            altavoz de la tele: PCM sin cabecera a `TV_SPEAKER_CMD`
-    talk-view.js          lo que se dice y la respuesta, pintado en la tele (isla o panel)
+    speaker.js            altavoz de la tele: PCM sin cabecera a `TV_SPEAKER_CMD`; onIdle cuando acaba de sonar
+    talk-view.js          lo que se dice y la respuesta, pintado en la tele (isla o panel); hide() y onHide
   src/transport/
     commands.js           registro de órdenes y dispatch() (patrón Command)
     http.js               tabla de rutas; si ninguna encaja, estáticos

@@ -10,15 +10,23 @@ const { WebSocket } = require(path.join(__dirname, '..', 'remote', 'node_modules
 
 const PERMS = { full: { agent: 'full', admin: true }, guest: { agent: 'guest' }, off: { agent: 'off' } };
 
-function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalMs, maxVoiceMs, audioTailMs = 20 } = {}) {
-  const subs = new Set(), sent = [], views = [], audio = [], ends = [], bins = [], spk = [];
+function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalMs, maxVoiceMs, audioTailMs = 20, playMarginMs } = {}) {
+  const subs = new Set(), sent = [], views = [], audio = [], ends = [], bins = [], spk = [], cancels = [];
   const gw = {
     ensure: async () => { if (slowEnsure) await new Promise(r => setTimeout(r, 20)); return ensure; }, send: t => sent.push(t), audio: b => audio.push(b), end: () => ends.push(1), on: fn => { subs.add(fn); return () => subs.delete(fn); },
-    emit: ev => subs.forEach(f => f(ev)),
+    cancel: () => cancels.push(1), emit: ev => subs.forEach(f => f(ev)),
   };
+  // la vista falsa avisa de que se oculta como la real: al momento con hide(), y por tiempo cuando la prueba llama a hidden()
+  let onHide = () => {};
   const view = Object.fromEntries(['turn', 'you', 'jota', 'done', 'error'].map(k => [k, (...a) => views.push([k, ...a])]));
+  view.hide = () => { views.push(['hide']); onHide(); };
+  view.onHide = fn => { onHide = fn; };
+  // el altavoz falso avisa de su fin como el real: al momento con stop(); tras end(), cuando la prueba llama a idle()
+  let onIdle = () => {};
   const speaker = Object.fromEntries(['start', 'write', 'end', 'stop'].map(k => [k, (...a) => spk.push([k, ...a])]));
-  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, speaker, turnIdleMs, finalMs, maxVoiceMs, audioTailMs });
+  speaker.stop = () => { spk.push(['stop']); onIdle(); };
+  speaker.onIdle = fn => { onIdle = fn; };
+  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, speaker, turnIdleMs, finalMs, maxVoiceMs, audioTailMs, playMarginMs });
   const msgs = [];
   const ws = { readyState: WebSocket.OPEN, send: s => (Buffer.isBuffer(s) ? bins.push(s) : msgs.push(JSON.parse(s))) };
   const perm = { current: 'full' };
@@ -27,7 +35,7 @@ function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalM
   const ask = (text, dev = { role: 'admin', name: 'Admin' }, out) => cmds.dispatch({ t: 'ask', text, out }, { dev, ws });
   const vcmd = (m, dev = { role: 'admin', name: 'Admin' }, sock = ws) => cmds.dispatch(m, { dev, ws: sock });
   const tick = () => new Promise(r => setImmediate(r));
-  return { gw, talk, sent, views, msgs, ws, perm, ask, tick, audio, ends, vcmd, bins, spk, make: null };
+  return { gw, talk, sent, views, msgs, ws, perm, ask, tick, audio, ends, vcmd, bins, spk, cancels, idle: () => onIdle(), hidden: () => onHide(), make: null };
 }
 
 test('ask full: send lleva askPrefix + texto; los tokens llegan acumulados y ask resuelve {ok:1, reply}', async () => {
@@ -481,4 +489,219 @@ test('un ask nuevo durante la cola corta el altavoz y los frames del seq viejo s
   t.gw.emit({ type: 'turn_start', turnId: 'b', seq: 4 }); t.gw.emit({ type: 'token', turnId: 'b', text: 'x' }); t.gw.emit({ type: 'turn_end', turnId: 'b' });
   await q;
   assert.ok(!kinds(t).includes('end'), 'la cola vieja no llama a end');
+});
+
+// ── el panel espera al audio; Parar, Quitar de la tele e interrumpir con el orbe
+const BUSY_R = { error: 'Sigo con la petición anterior. Espera un momento.' };
+const vk = t => t.views.map(v => v[0]);
+/** Frame con `bytes` bytes de PCM (bytes / 2 muestras a 24 kHz). */
+const audN = (seq, bytes) => { const pcm = Buffer.alloc(bytes, 1); return { type: 'audio', seq, pcm, frame: Buffer.concat([Buffer.from([0xA1, seq >> 8, seq & 255]), pcm]) }; };
+
+test('tv: view.done llega cuando el altavoz termina de vaciar (onIdle tras end), no en turn_end', async () => {
+  const t = make({ audioTailMs: 20 });
+  const p = t.ask('hola', undefined, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 5 });
+  t.gw.emit(aud(5, 1, 2));
+  assert.equal(t.talk.speaking(), true, 'habla desde el primer frame');
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  assert.deepEqual(await p, { ok: 1, reply: 'ok' });
+  assert.deepEqual(t.msgs.at(-1), { t: 'talk', ev: 'done', reply: 'ok' }, 'el móvil recibe done con el texto');
+  assert.equal(t.talk.busy(), false);
+  assert.ok(!vk(t).includes('done'), 'la tele aún no');
+  await wait(40);
+  assert.ok(kinds(t).includes('end'));
+  assert.ok(!vk(t).includes('done'), 'end no basta: falta que vacíe');
+  assert.equal(t.talk.speaking(), true);
+  t.idle();
+  assert.equal(vk(t).at(-1), 'done');
+  assert.equal(t.talk.speaking(), false);
+  t.idle();
+  assert.equal(vk(t).filter(k => k === 'done').length, 1, 'una sola vez');
+});
+
+test('phone: view.done tras la duración estimada del audio (muestras / 24000 s + margen)', async () => {
+  const t = make({ audioTailMs: 20, playMarginMs: 20 });
+  const p = t.ask('hola', undefined, 'phone'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 5 });
+  t.gw.emit(audN(5, 4800)); t.gw.emit(audN(5, 4800));    // 2 × 2400 muestras = 200 ms
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await p;
+  assert.equal(t.bins.length, 2);
+  assert.ok(!vk(t).includes('done'));
+  await wait(120);
+  assert.ok(!vk(t).includes('done'), 'aún suena en el móvil');
+  assert.equal(t.talk.speaking(), true);
+  await wait(160);
+  assert.equal(vk(t).at(-1), 'done');
+  assert.equal(t.talk.speaking(), false);
+});
+
+test('none (o sin audio): view.done en turn_end y nunca habla', async () => {
+  const t = make();
+  const p = t.ask('hola', undefined, 'none'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit(aud(1, 1, 2));
+  assert.equal(t.talk.speaking(), false);
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await p;
+  assert.equal(vk(t).at(-1), 'done');
+  const u = make();
+  const q = u.ask('hola', undefined, 'tv'); await u.tick();
+  u.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); u.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); u.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await q;
+  assert.equal(vk(u).at(-1), 'done', 'tv sin audio: en turn_end');
+  assert.equal(u.talk.speaking(), false);
+});
+
+test('stop con turno en vuelo: gw.cancel, ev:stopped, ask {error:"Parado."}, altavoz cortado y vista oculta; el turn_end posterior no hace nada', async () => {
+  const t = make();
+  const p = t.ask('hola', undefined, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  t.gw.emit(aud(1, 1)); t.gw.emit({ type: 'token', turnId: 'a', text: 'Ho' });
+  const n = t.spk.length;
+  assert.deepEqual(await t.vcmd({ t: 'stop' }), { ok: 1 });
+  assert.equal(t.cancels.length, 1);
+  assert.deepEqual(await p, { error: 'Parado.' });
+  assert.equal(t.talk.busy(), false);
+  assert.equal(t.talk.speaking(), false);
+  assert.ok(t.spk.slice(n).some(c => c[0] === 'stop'));
+  assert.equal(vk(t).at(-1), 'hide');
+  assert.deepEqual(t.msgs.slice(-2), [{ t: 'talk', ev: 'stopped' }, { t: 'talk', ev: 'hidden' }]);
+  const views = t.views.length, msgs = t.msgs.length, writes = t.spk.filter(c => c[0] === 'write').length;
+  t.gw.emit(aud(1, 2)); t.gw.emit({ type: 'token', turnId: 'a', text: 'la' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  assert.equal(t.views.length, views, 'ni done ni nada en la tele');
+  assert.equal(t.msgs.length, msgs, 'ni mensajes al móvil');
+  assert.equal(t.spk.filter(c => c[0] === 'write').length, writes, 'ni más audio');
+});
+
+test('stop mientras Jota aún habla (turno acabado): corta el audio y oculta, sin gw.cancel; sin nada, solo oculta', async () => {
+  const t = make({ audioTailMs: 500 });
+  const p = t.ask('hola', undefined, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit(aud(1, 1));
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await p;
+  assert.equal(t.talk.speaking(), true);
+  assert.deepEqual(await t.vcmd({ t: 'stop' }), { ok: 1 });
+  assert.equal(t.cancels.length, 0);
+  assert.equal(t.talk.speaking(), false);
+  assert.equal(kinds(t).at(-1), 'stop');
+  assert.equal(vk(t).at(-1), 'hide');
+  assert.ok(t.msgs.some(m => m.ev === 'stopped'), 'el móvil que preguntó para su audio');
+  t.gw.emit(aud(1, 2));
+  assert.equal(t.spk.filter(c => c[0] === 'write').length, 1, 'la cola ya no suena');
+  const u = make();
+  assert.deepEqual(await u.vcmd({ t: 'stop' }), { ok: 1 });
+  assert.deepEqual(vk(u), ['hide']);
+  assert.equal(u.cancels.length, 0);
+});
+
+test('hide: oculta al momento y el móvil que preguntó recibe ev:hidden (también cuando se oculta por tiempo)', async () => {
+  const t = make();
+  const p = t.ask('hola'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await p;
+  t.hidden();                                              // la vista se oculta por tiempo
+  assert.deepEqual(t.msgs.at(-1), { t: 'talk', ev: 'hidden' });
+  const n = t.msgs.length;
+  assert.deepEqual(await t.vcmd({ t: 'hide' }, undefined, other()), { ok: 1 });
+  assert.equal(vk(t).at(-1), 'hide');
+  assert.deepEqual(t.msgs.slice(n), [{ t: 'talk', ev: 'hidden' }], 'al móvil que preguntó, aunque lo quite otro');
+});
+
+test('vstart con interrupt durante un turno: lo para (sin ocultar) y empieza la grabación nueva', async () => {
+  const t = make();
+  const p = t.ask('uno', undefined, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit({ type: 'token', turnId: 'a', text: 'x' });
+  assert.deepEqual(await t.vcmd({ t: 'vstart', out: 'tv', interrupt: true }), { ok: 1 });
+  assert.equal(t.cancels.length, 1);
+  assert.deepEqual(await p, { error: 'Parado.' });
+  assert.ok(t.msgs.some(m => m.ev === 'stopped'));
+  assert.ok(!vk(t).includes('hide'), 'el turno nuevo pinta encima');
+  assert.equal(vk(t).at(-1), 'turn');
+  assert.equal(t.talk.busy(), true, 'busy es del turno nuevo');
+  t.talk.onBinary(frame(4), t.ws);
+  assert.equal(t.audio.length, 1, 'el audio nuevo va al Gateway');
+  t.gw.emit({ type: 'turn_end', turnId: 'a' });           // el cierre del cancelado
+  await t.vcmd({ t: 'vend' });
+  t.gw.emit({ type: 'final', text: 'dos' });
+  assert.ok(t.sent.at(-1).endsWith('dos'));
+});
+
+test('vstart con interrupt mientras Jota habla corta el audio; sin interrupt: BUSY y el audio sigue', async () => {
+  const t = make({ audioTailMs: 500 });
+  const p = t.ask('uno', undefined, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit(aud(1, 1));
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await p;
+  const n = t.spk.length;
+  assert.deepEqual(await t.vcmd({ t: 'vstart', out: 'tv' }), BUSY_R);
+  assert.deepEqual(await t.vcmd({ t: 'ask', text: 'otra', out: 'tv' }), BUSY_R, 'el escrito, igual');
+  assert.equal(t.spk.length, n, 'el altavoz no se toca');
+  t.gw.emit(aud(1, 2));
+  assert.equal(t.spk.filter(c => c[0] === 'write').length, 2, 'el audio sigue');
+  assert.equal(t.talk.speaking(), true);
+  assert.deepEqual(await t.vcmd({ t: 'vstart', out: 'tv', interrupt: true }), { ok: 1 });
+  assert.equal(t.talk.speaking(), false);
+  assert.ok(t.spk.slice(n).some(c => c[0] === 'stop'));
+  assert.equal(t.cancels.length, 0, 'sin turno en vuelo no hay nada que cancelar');
+  assert.equal(t.talk.busy(), true);
+  t.talk.onBinary(frame(4), t.ws);
+  assert.equal(t.audio.length, 1);
+  t.gw.emit(aud(1, 3));
+  assert.equal(t.spk.filter(c => c[0] === 'write').length, 2, 'la cola vieja ya no suena');
+});
+
+test('sin interrupt durante un turno: BUSY y el turno sigue con su audio', async () => {
+  const t = make();
+  const p = t.ask('uno', undefined, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  assert.deepEqual(await t.vcmd({ t: 'vstart', out: 'tv', interrupt: false }), BUSY_R);
+  assert.equal(t.cancels.length, 0);
+  t.gw.emit(aud(1, 1));
+  assert.equal(t.spk.filter(c => c[0] === 'write').length, 1);
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  assert.deepEqual(await p, { ok: 1, reply: 'ok' });
+});
+
+test('un invitado no para ni interrumpe el turno de otro dispositivo; el suyo sí', async () => {
+  const t = make();
+  const p = t.ask('uno', undefined, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  t.perm.current = 'guest';
+  const ana = { role: 'guest', name: 'Ana' }, sock = other();
+  assert.deepEqual(await t.vcmd({ t: 'stop' }, ana, sock), BUSY_R);
+  assert.deepEqual(await t.vcmd({ t: 'vstart', out: 'tv', interrupt: true }, ana, sock), BUSY_R);
+  assert.deepEqual(await t.vcmd({ t: 'ask', text: 'dos', interrupt: true }, ana, sock), BUSY_R);
+  assert.equal(t.cancels.length, 0);
+  assert.equal(t.talk.busy(), true);
+  assert.ok(!vk(t).includes('hide'));
+  // el móvil que preguntó sí, aunque sea invitado
+  assert.deepEqual(await t.vcmd({ t: 'stop' }, ana), { ok: 1 });
+  assert.deepEqual(await p, { error: 'Parado.' });
+  // y un dispositivo con el agente completo, el de cualquiera
+  t.perm.current = 'full';
+  const q = t.ask('tres', undefined, 'tv'); await t.tick();
+  assert.deepEqual(await t.vcmd({ t: 'stop' }, undefined, other()), { ok: 1 });
+  assert.deepEqual(await q, { error: 'Parado.' });
+});
+
+test('ask con interrupt tras un turno aún sin turn_start: el turn_start y turn_end tardíos del cancelado no se quedan el turno nuevo', async () => {
+  const t = make();
+  const p = t.ask('uno'); await t.tick();
+  const q = t.vcmd({ t: 'ask', text: 'dos', interrupt: true }); await t.tick();
+  assert.deepEqual(await p, { error: 'Parado.' });
+  assert.equal(t.cancels.length, 1);
+  assert.equal(t.sent.length, 2);
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit({ type: 'turn_end', turnId: 'a' });   // el cancelado
+  assert.equal(t.talk.busy(), true);
+  t.gw.emit({ type: 'turn_start', turnId: 'b', seq: 2 }); t.gw.emit({ type: 'token', turnId: 'b', text: 'dos' }); t.gw.emit({ type: 'turn_end', turnId: 'b' });
+  assert.deepEqual(await q, { ok: 1, reply: 'dos' });
+  // con el id ya conocido: su turn_end se ignora por id
+  const u = make();
+  const r = u.ask('uno'); await u.tick();
+  u.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); u.gw.emit({ type: 'token', turnId: 'a', text: 'x' });
+  const s2 = u.vcmd({ t: 'ask', text: 'dos', interrupt: true }); await u.tick();
+  await r;
+  u.gw.emit({ type: 'turn_end', turnId: 'a' });
+  u.gw.emit({ type: 'turn_start', turnId: 'b', seq: 2 }); u.gw.emit({ type: 'token', turnId: 'b', text: 'bien' }); u.gw.emit({ type: 'turn_end', turnId: 'b' });
+  assert.deepEqual(await s2, { ok: 1, reply: 'bien' });
 });

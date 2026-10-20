@@ -6,7 +6,8 @@
 // primera llamada lleva la fuente (con los tokens delante, src/tv/tokens.js) y las siguientes solo `TVTalk.render(…)`.
 // Si la página cambia, la llamada corta devuelve false (no hay TVTalk) y se repite al momento con la fuente; server.js
 // también avisa con reset() al navegar o al cambiar de pestaña. Ese reintento es uno por página (hasta reset o un render
-// bueno): una web donde TVTalk no llega a existir no recibe la fuente entera cada 100 ms. Se oculta `hideMs` después de done o error.
+// bueno): una web donde TVTalk no llega a existir no recibe la fuente entera cada 100 ms. Se oculta `hideMs` después de done o error,
+// o al momento con hide() (y entonces nada de ese turno la vuelve a sacar hasta el turn() siguiente); onHide avisa de cada ocultación.
 const { talkSource } = require('./tokens');
 
 const DIM_ON = 'window.TVIsland&&window.TVIsland.dim(0)';
@@ -17,7 +18,7 @@ const HIDE = 'try{window.TVTalk&&window.TVTalk.hide()}finally{window.TVIsland&&w
  * @param {{ cdp: { session?: any, call: (method: string, params: object) => Promise<any> }, pub: string,
  *           batchMs?: number, hideMs?: number, keep?: number, log?: (msg: string) => void }} deps
  */
-function createTalkView({ cdp, pub, batchMs = 100, hideMs = 8000, keep = 6, log = () => {} }) {
+function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log = () => {} }) {
   /** @type {{ you: string, jota: string }[]} */
   let history = [];
   let cur = { you: '', jota: '' };
@@ -28,6 +29,8 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 8000, keep = 6, log 
   let shown = false;     // la capa está (o va a estar) en pantalla
   let injected = false;  // la página actual ya tiene window.TVTalk (según lo último que sabemos)
   let retried = false;   // ya se reenvió la fuente tras un render sin TVTalk (una vez por página: hasta reset o un render bueno)
+  let muted = false;     // quitada con hide(): lo que quede de ese turno no se pinta (hasta el turn() siguiente)
+  /** @type {() => void} */ let hidden = () => {};
   let batchT = null, hideT = null;
 
   const src = () => { try { return talkSource(pub); } catch (e) { log('conversación: ' + e.message); return ''; } };
@@ -40,6 +43,7 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 8000, keep = 6, log 
   }
 
   function schedule() {
+    if (muted) return;
     shown = true;
     if (!batchT) batchT = setTimeout(flush, batchMs);
   }
@@ -64,6 +68,7 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 8000, keep = 6, log 
     hideT = null;
     clearTimeout(batchT); batchT = null;
     shown = false;
+    try { hidden(); } catch (e) { log('conversación: ' + e.message); }
     if (!cdp.session) return;
     cdp.call('Runtime.evaluate', { expression: HIDE }).catch(() => {});
   }
@@ -77,6 +82,7 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 8000, keep = 6, log 
   }
   function end() {
     live = false; open = false;
+    if (muted) return;
     schedule();
     clearTimeout(hideT);
     hideT = setTimeout(hide, hideMs);
@@ -84,7 +90,7 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 8000, keep = 6, log 
 
   return {
     /** @param {'island' | 'panel'} m */
-    turn(m) { begin(m); schedule(); },
+    turn(m) { muted = false; begin(m); schedule(); },
     /** @param {string} text frase acumulada (sustituye a la anterior) @param {boolean} final */
     you(text, final) { if (!open) begin(mode); cur.you = String(text || ''); schedule(); },
     /** @param {string} text respuesta acumulada */
@@ -92,6 +98,10 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 8000, keep = 6, log 
     done() { end(); },
     /** @param {string} text va en el hueco de la respuesta (sin turn() abierto, en un intercambio nuevo con el último formato) */
     error(text) { if (!open) begin(mode); cur.jota = String(text || ''); end(); },
+    /** Quita la capa ya (Parar, Quitar de la tele): sin esperar a hideMs. */
+    hide() { clearTimeout(hideT); live = false; muted = true; hide(); },
+    /** @param {() => void} fn se llama cada vez que la capa se oculta (por tiempo o con hide) */
+    onHide(fn) { hidden = fn; },
     /** La pestaña cambió (navegación, otra pestaña, CDP reconectado): la próxima llamada lleva la fuente. */
     reset() {
       injected = false; retried = false;
