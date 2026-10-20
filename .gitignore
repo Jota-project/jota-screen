@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 __pycache__/
 # secretos y estado local (nunca al repo)
 remote/token
