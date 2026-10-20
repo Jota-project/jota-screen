@@ -69,8 +69,17 @@ function schedule() {
 }
 
 // ── reloj con dígitos que caen al cambiar
-const fmtDate = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' });
-const fmtHM = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Madrid' });
+// zona horaria: la del reposo (TV_TZ o idle.json); si no llega o no vale, la del navegador (la del sistema)
+let fmtTz, fmtDate, fmtHM;
+function setTz(tz) {
+  if (fmtDate && tz === fmtTz) return;
+  fmtTz = tz;
+  try {
+    fmtDate = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz || undefined });
+    fmtHM = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz || undefined });
+  } catch { fmtTz = null; fmtDate = fmtHM = null; setTz(undefined); }
+}
+setTz(undefined);
 const slots = [...document.querySelectorAll('.dg')];
 function setDigit(s, ch) {
   const cur = s.querySelector('span:not(.old)');
@@ -229,6 +238,7 @@ function onData(m) {
   const prev = key(D), prevCfg = JSON.stringify(D.cfg);
   off = Date.now() - m.now;
   D = { ...m, cfg: { ...D.cfg, ...(m.cfg || {}) } };
+  setTz(D.cfg.tz);
   if (key(D) !== prev) lastEvent = Date.now();
   profile(); weather(); music(); acts();
   if (JSON.stringify(D.cfg) !== prevCfg) { setLayout(D.cfg.layout); schedule(); }

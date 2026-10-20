@@ -88,7 +88,7 @@ const stage = createStage({ cdp, state, cfg: CFG, nav: u => control.nav(u) });
 const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave() });
 const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: () => idle });
 const idle = createIdle({
-  PUB, SELF, file: CFG.FILES.idle, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
+  PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
   stageKind: () => stage.stage.kind, log: log.info,
 });
 const agent = createAgent({ cfg: CFG, toast: m => stage.toast(m) });
