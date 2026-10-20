@@ -210,7 +210,7 @@ test('partial → ev:partial al móvil y view.you(text,false); vend → gw.end()
   assert.deepEqual(t.sent, [createTalk.prompts('Salón', 'Alfonso').askPrefix + 'pon jazz']);
   assert.equal(t.talk.busy(), true);
   t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit({ type: 'token', turnId: 'a', text: 'Hecho.' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
-  assert.deepEqual(t.msgs.at(-1), { t: 'talk', ev: 'done', reply: 'Hecho.' });
+  assert.deepEqual(t.msgs.slice(-2), [{ t: 'talk', ev: 'done', reply: 'Hecho.' }, { t: 'talk', ev: 'silent' }], 'sin audio: silent al momento');
   assert.equal(t.views.at(-1)[0], 'done');
   assert.equal(t.talk.busy(), false);
 });
@@ -614,7 +614,7 @@ test('vstart con interrupt durante un turno: lo para (sin ocultar) y empieza la 
   assert.deepEqual(await t.vcmd({ t: 'vstart', out: 'tv', interrupt: true }), { ok: 1 });
   assert.equal(t.cancels.length, 1);
   assert.deepEqual(await p, { error: 'Parado.' });
-  assert.ok(t.msgs.some(m => m.ev === 'stopped'));
+  assert.ok(!t.msgs.some(m => m.ev === 'stopped'), 'el mismo móvil que interrumpe no recibe stopped');
   assert.ok(!vk(t).includes('hide'), 'el turno nuevo pinta encima');
   assert.equal(vk(t).at(-1), 'turn');
   assert.equal(t.talk.busy(), true, 'busy es del turno nuevo');
@@ -704,4 +704,70 @@ test('ask con interrupt tras un turno aún sin turn_start: el turn_start y turn_
   u.gw.emit({ type: 'turn_end', turnId: 'a' });
   u.gw.emit({ type: 'turn_start', turnId: 'b', seq: 2 }); u.gw.emit({ type: 'token', turnId: 'b', text: 'bien' }); u.gw.emit({ type: 'turn_end', turnId: 'b' });
   assert.deepEqual(await s2, { ok: 1, reply: 'bien' });
+});
+
+// ── ronda de arreglos: interrumpir escribiendo, «silent» y el móvil anterior de la tele
+test('interrumpir desde el mismo móvil no le manda ev:stopped (al dueño de otro móvil sí)', async () => {
+  const t = make();
+  const p = t.ask('uno', undefined, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit({ type: 'token', turnId: 'a', text: 'x' });
+  const q = t.vcmd({ t: 'ask', text: 'dos', out: 'tv', interrupt: true }); await t.tick();
+  assert.deepEqual(await p, { error: 'Parado.' });
+  assert.ok(!t.msgs.some(m => m.ev === 'stopped'), 'el que interrumpe no recibe stopped');
+  await t.vcmd({ t: 'vstart', out: 'tv', interrupt: true });
+  assert.ok(!t.msgs.some(m => m.ev === 'stopped'), 'tampoco por voz');
+  t.gw.emit({ type: 'turn_end', turnId: 'b' });
+  void q;
+  // otro móvil (agente completo) interrumpe el turno de t.ws: t.ws sí recibe stopped
+  const u = make();
+  const r = u.ask('uno', undefined, 'tv'); await u.tick();
+  u.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  const omsgs = [], sock = { readyState: WebSocket.OPEN, send: s => omsgs.push(JSON.parse(s)) };
+  await u.vcmd({ t: 'vstart', out: 'tv', interrupt: true }, undefined, sock);
+  await r;
+  assert.ok(u.msgs.some(m => m.ev === 'stopped'));
+  assert.ok(!omsgs.some(m => m.ev === 'stopped'));
+});
+
+test('ev:silent al móvil cuando Jota deja de hablar: tras onIdle (tv), tras la estimación (phone), en turn_end sin audio; none no', async () => {
+  const t = make({ audioTailMs: 20 });
+  const p = t.ask('hola', undefined, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit(aud(1, 1, 2));
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await p; await wait(40);
+  assert.ok(!t.msgs.some(m => m.ev === 'silent'), 'aún vaciando');
+  t.idle();
+  assert.deepEqual(t.msgs.at(-1), { t: 'talk', ev: 'silent' });
+  const u = make({ audioTailMs: 20, playMarginMs: 20 });
+  const q = u.ask('hola', undefined, 'phone'); await u.tick();
+  u.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); u.gw.emit(audN(1, 4800));
+  u.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); u.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await q;
+  assert.ok(!u.msgs.some(m => m.ev === 'silent'));
+  await wait(200);
+  assert.deepEqual(u.msgs.at(-1), { t: 'talk', ev: 'silent' });
+  const w = make();
+  const r = w.ask('hola', undefined, 'tv'); await w.tick();
+  w.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); w.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); w.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await r;
+  assert.deepEqual(w.msgs.slice(-2), [{ t: 'talk', ev: 'done', reply: 'ok' }, { t: 'talk', ev: 'silent' }], 'tv sin audio: al momento');
+  const n = make();
+  const s2 = n.ask('hola', undefined, 'none'); await n.tick();
+  n.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); n.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); n.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await s2;
+  assert.ok(!n.msgs.some(m => m.ev === 'silent'));
+});
+
+test('cuando otro móvil abre un intercambio en la tele, el anterior recibe ev:hidden', async () => {
+  const t = make();
+  const p = t.ask('uno'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await p;
+  const omsgs = [], sock = { readyState: WebSocket.OPEN, send: s => omsgs.push(JSON.parse(s)) };
+  t.vcmd({ t: 'ask', text: 'dos' }, undefined, sock); await t.tick();
+  assert.deepEqual(t.msgs.at(-1), { t: 'talk', ev: 'hidden' });
+  const n = t.msgs.length;
+  t.vcmd({ t: 'stop' }, undefined, sock); await t.tick();
+  t.vcmd({ t: 'ask', text: 'tres' }, undefined, sock); await t.tick();
+  assert.equal(t.msgs.length, n, 'el mismo móvil otra vez: nada al anterior');
 });

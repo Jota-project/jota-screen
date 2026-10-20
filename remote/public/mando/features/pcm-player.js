@@ -1,6 +1,6 @@
 // La respuesta del Gateway en el móvil: frames binarios 0xA1 + turn_seq (uint16 BE) + PCM16 LE 24 kHz mono. Cada trozo se
 // programa justo detrás del anterior en el AudioContext del mando (el de la voz), sin huecos. Solo vale el turno del
-// primer frame de la respuesta: los de otro `seq` se descartan hasta el siguiente `stop`. `playing()` dice si algo suena o
+// primer frame de la respuesta: los de otro `seq` se descartan hasta el siguiente `stop` o hasta que acaba de sonar. `playing()` dice si algo suena o
 // está programado; `onChange` avisa cuando empieza a sonar y cuando acaba (o se corta).
 const RATE = 24000;
 const LEAD = 0.05;                                      // margen al arrancar o tras un hueco (s)
@@ -31,7 +31,7 @@ export function createPcmPlayer(getCtx, onChange = () => {}) {
       const n = ctx.createBufferSource(); n.buffer = b; n.connect(ctx.destination);
       at = Math.max(at, ctx.currentTime + LEAD);
       n.start(at); at += b.duration;
-      live.add(n); n.onended = () => { live.delete(n); if (!live.size) onChange(); };
+      live.add(n); n.onended = () => { live.delete(n); if (!live.size) { seq = null; onChange(); } };   // acabó: el siguiente frame puede ser de otra respuesta
       if (live.size === 1) onChange();
     },
     /** Hay audio sonando o programado. */

@@ -72,8 +72,10 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   let tail = null;
   /** «Jota habla»: desde el primer frame que suena hasta el fin de la reproducción. @type {null | Play} */
   let play = null;
-  /** El móvil del intercambio que la tele enseña ahora (recibe `hidden` cuando se quita). */
+  /** El móvil del intercambio que la tele enseña ahora (recibe `hidden` cuando se quita, o cuando otro móvil la ocupa). */
   let viewWs = null;
+  /** @param {any} ws */
+  function own(ws) { if (viewWs && viewWs !== ws) tell(viewWs, { ev: 'hidden' }); viewWs = ws; }
   /** Turno parado con su id ya conocido (lo que llegue de él se ignora) o sin él (el siguiente turn_start puede ser suyo). */
   let ghostId = '';
   let ghostPending = false;
@@ -94,6 +96,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   function playEnded() {
     const p = play; if (!p) return;
     play = null; clearTimeout(p.timer);
+    tell(p.ws, { ev: 'silent' });                         // el móvil quita «Parar»
     if (p.view) v('done');
   }
   /** Fin estimado de lo que ya se mandó: muestras / 24 kHz desde el primer frame, nunca antes del último, más el margen. @param {Play} p */
@@ -168,8 +171,9 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   }
 
   /** Para lo que haya (Parar o interrumpir): el turno en vuelo se cancela en el Gateway y se cierra sin error para el
-   *  usuario (`stopped` al móvil, «Parado.» a quien espera), y el audio se corta. No toca la vista. */
-  function halt() {
+   *  usuario (`stopped` al móvil, «Parado.» a quien espera), y el audio se corta. No toca la vista.
+   *  @param {any} [skip] el móvil que interrumpe: ya pinta su pregunta nueva, no recibe `stopped` */
+  function halt(skip) {
     const t = turn, p = play;
     if (t) {
       turn = null; clearTimers(t);
@@ -182,8 +186,8 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
       }
     }
     silence();
-    if (t) tell(t.ws, { ev: 'stopped' });
-    if (p && (!t || p.ws !== t.ws)) tell(p.ws, { ev: 'stopped' });
+    if (t && t.ws !== skip) tell(t.ws, { ev: 'stopped' });
+    if (p && p.ws !== skip && (!t || p.ws !== t.ws)) tell(p.ws, { ev: 'stopped' });
     if (t) t.finish({ error: STOPPED });
   }
 
@@ -198,7 +202,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   function gate(ws, mode, interrupt) {
     if (!turn && !play) return null;
     if (interrupt !== true || !may(ws, mode)) return { error: BUSY };
-    halt();
+    halt(ws);
     return null;
   }
 
@@ -217,7 +221,8 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     if (!t.reply) { silence(); tell(t.ws, { ev: 'error', error: NO_REPLY }); v('error', NO_REPLY); return t.finish({ error: NO_REPLY }); }
     if (t.seq !== undefined && (t.out === 'tv' || t.out === 'phone')) { tail = { seq: t.seq, out: t.out, ws: t.ws, timer: null, heard: t.heard }; armTail(); }   // el audio sigue un poco
     tell(t.ws, { ev: 'done', reply: t.reply });
-    if (play) play.view = true; else v('done');            // con audio, la tele espera a que acabe de sonar
+    if (play) play.view = true;                            // con audio, la tele espera a que acabe de sonar
+    else { v('done'); if (t.out === 'tv' || t.out === 'phone') tell(t.ws, { ev: 'silent' }); }
     t.finish({ ok: 1, reply: t.reply });
   }
 
@@ -313,7 +318,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     const mine = turn = { ws, turnId: null, sent: /** @type {boolean} */ (false), reply: '', timer: null, finish, out: OUTS.includes(out) ? out : 'none' };
     silence();                                             // una respuesta anterior que aún suene se corta
     // la tele abre el intercambio ya, como vstart: un error al conectar va en él y no en la conversación anterior
-    viewWs = ws; v('turn', media() === 1 ? 'island' : 'panel'); v('you', text, true);
+    own(ws); v('turn', media() === 1 ? 'island' : 'panel'); v('you', text, true);
     let ok = false;
     try { ok = await gw.ensure(); } catch (e) { log.warn('talk: ensure con error', e); }
     if (turn !== mine) return /** @type {any} */ (result);   // el turno se cerró mientras se conectaba (down, stop)
@@ -338,7 +343,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     clearTimeout(dropTimer); dropTimer = null;             // la ventana de un turno cancelado no se come la final de este
     mine.cap = setTimeout(() => { if (turn === mine) { log.warn('talk: grabación sin fin'); cancel(); } }, maxVoiceMs);
     if (mine.cap.unref) mine.cap.unref();
-    viewWs = ws; v('turn', media() === 1 ? 'island' : 'panel');
+    own(ws); v('turn', media() === 1 ? 'island' : 'panel');
     let ok = false;
     try { ok = await gw.ensure(); } catch (e) { log.warn('talk: ensure con error', e); }
     if (turn !== mine) return { ok: 1 };                   // cancelado o caído mientras se conectaba

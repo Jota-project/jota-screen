@@ -1,8 +1,8 @@
 // Hablar con Jota (v3): un velo con luces sobre el mando. Lo que se escribe (o se dicta con el micrófono del teclado) va
 // al J Gateway; la frase entra palabra a palabra, las luces crecen mientras piensa y la respuesta se escribe en directo
 // por el WebSocket (`talk`: partial y final de la voz, token con lo acumulado, done, error, stopped, hidden).
-// «Parar» mientras piensa, escribe o la respuesta suena en este móvil; «Quitar de la tele» tras la respuesta, mientras la
-// tele aún la enseña (hasta `hidden`; si no sonó en la tele, como mucho QUIT_MS).
+// «Parar» mientras piensa, escribe o la respuesta suena (en la tele o aquí: hasta `silent`); «Quitar de la tele» tras la
+// respuesta, ya en silencio, mientras la tele aún la enseña (hasta `hidden`; si no sonó en la tele, como mucho QUIT_MS).
 import { $, el } from '../core/dom.js';
 import { cmd, rpc, onWs } from '../core/api.js';
 import { buzz } from '../ui/haptics.js';
@@ -13,18 +13,20 @@ import { createPcmPlayer } from './pcm-player.js';
 const QUIT_MS = 5000;                                   // lo que tarda la tele en quitar la respuesta cuando no sonó allí
 const STOPPED = 'Parado.';
 /** La voz de la respuesta cuando es «en el móvil»: va sobre el AudioContext de voice.js. */
-const player = createPcmPlayer(() => audioCtx() || ensureAudioCtx(), () => { if (quit && !player.playing()) armQuit(); acts(); });
+const player = createPcmPlayer(() => audioCtx() || ensureAudioCtx(), () => acts());
 let mic = false;                                        // true: el orbe graba (hay micrófono y HTTPS)
 let out = 'tv';                                         // dónde suena la respuesta en curso
 let quit = false, quitT = 0;                            // «Quitar de la tele» disponible (la tele aún enseña la respuesta)
+let talking = false;                                    // Jota responde con voz (del primer token a `silent`, `stopped` o `error`)
+let asked = 0;                                          // número de la pregunta: el resultado de una ya sustituida no se pinta
 
 /** Los botones de la respuesta: Parar y Quitar de la tele. */
 function acts() {
   const st = $('#agS').dataset.st, playing = player.playing();
-  $('#agStop').hidden = !(st === 'wait' || playing);
-  $('#agHide').hidden = !(quit && st === 'done' && !playing);
+  $('#agStop').hidden = !(st === 'wait' || talking || playing);
+  $('#agHide').hidden = !(quit && st === 'done' && !talking && !playing);
 }
-/** Sin sonar en la tele no llega a tiempo `hidden` de la tele para todo: el botón se va solo a los QUIT_MS. */
+/** Si no sonó en la tele, el botón se va solo a los QUIT_MS (lo que tarda la tele en quitarla tras el audio). */
 function armQuit() {
   clearTimeout(quitT);
   if (out !== 'tv') quitT = setTimeout(() => { quit = false; acts(); }, QUIT_MS);
@@ -57,23 +59,28 @@ function ask(text) {
   const rep = $('#rep'); rep.className = 'rep wait'; rep.textContent = 'Pensando';
   stage('wait');
   // el permiso, un texto vacío o BUSY se contestan por aquí (no hay turno, así que no habrá evento talk)
-  rpc({ t: 'ask', text, out, interrupt: interruptOn() }).then(r => { if (r && r.error && r.error !== 'sin respuesta' && $('#agS').dataset.st === 'wait') { rep.className = 'rep'; rep.textContent = r.error; stage('idle'); } });
+  const me = ++asked;
+  rpc({ t: 'ask', text, out, interrupt: interruptOn() }).then(r => {
+    if (me !== asked) return;                           // la sustituyó otra (p. ej. al interrumpir): su «Parado.» no va encima
+    if (r && r.error && r.error !== 'sin respuesta' && $('#agS').dataset.st === 'wait') { rep.className = 'rep'; rep.textContent = r.error; stage('idle'); }
+  });
 }
 function onTalk(j) {
   const rep = $('#rep');
   // la parcial es la frase acumulada mientras se habla: sustituye sin animar (las palabras animadas, para la final)
   if (j.ev === 'partial') { const q = $('#agQ'); q.classList.remove('said'); q.textContent = j.text || ''; return; }
   if (j.ev === 'final') { player.stop(); said(j.text || ''); return; }   // los frames de la respuesta anterior ya no valen
-  if (j.ev === 'token') { rep.className = 'rep'; rep.textContent = j.text || ''; stage('wait'); return; }   // la respuesta acumulada, en directo
+  if (j.ev === 'token') { talking = out !== 'none'; rep.className = 'rep'; rep.textContent = j.text || ''; stage('wait'); return; }   // la respuesta acumulada, en directo
   if (j.ev === 'done') {
     rep.className = 'rep'; rep.textContent = j.reply || 'No he recibido respuesta.'; buzz(12);
-    quit = true; stage('done'); if (!player.playing()) armQuit(); acts();
+    quit = true; stage('done'); if (!talking) armQuit(); acts();
     return;
   }
-  if (j.ev === 'error') { player.stop(); voice.abort(); rep.className = 'rep'; rep.textContent = j.error || 'Jota no está disponible.'; stage('idle'); return; }
+  if (j.ev === 'silent') { talking = false; if (quit) armQuit(); acts(); return; }   // Jota dejó de hablar
+  if (j.ev === 'error') { talking = false; player.stop(); voice.abort(); rep.className = 'rep'; rep.textContent = j.error || 'Jota no está disponible.'; stage('idle'); return; }
   // el turno se paró (aquí o desde otro móvil): el audio se corta; si estaba pensando, «Parado.» (grabando otra frase, nada más)
   if (j.ev === 'stopped') {
-    player.stop(); noQuit();
+    talking = false; player.stop(); noQuit();
     if ($('#agS').dataset.st === 'wait') { rep.className = 'rep'; rep.textContent = STOPPED; stage('idle'); }
     acts();
     return;
@@ -82,7 +89,7 @@ function onTalk(j) {
 }
 /** Parar: el turno y el audio (aquí y en la tele) y la tele se limpia. */
 function stop() {
-  buzz(8); player.stop(); noQuit();
+  buzz(8); player.stop(); noQuit(); talking = false; asked++;
   const st = $('#agS').dataset.st;
   if (st === 'wait') { const rep = $('#rep'); rep.className = 'rep'; rep.textContent = STOPPED; stage('idle'); }
   acts();
@@ -111,7 +118,7 @@ export const agent = {
     });
     const rep = (t, cls = '') => { const r = $('#rep'); r.className = 'rep' + (cls ? ' ' + cls : ''); r.textContent = t; };
     onWs('bin', b => player.play(b));
-    mic = voice.init({ stage, said, rep, press: () => { cut(); out = outSel(); }, focus: () => { buzz(8); agin.focus(); } });
+    mic = voice.init({ stage, said, rep, press: () => { cut(); out = outSel(); asked++; }, focus: () => { buzz(8); agin.focus(); } });
     $('#agStop').addEventListener('click', stop);
     $('#agHide').addEventListener('click', () => { buzz(7); noQuit(); acts(); cmd({ t: 'hide' }); });
     // sin micrófono propio (http): el orbe enfoca el campo y el teclado del móvil trae el suyo

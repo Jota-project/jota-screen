@@ -123,7 +123,7 @@ async function run(m, sock, ctx = {}) {
 const statics = createStatic({ dir: PUB, vars: { TV_NAME: CFG.NAME }, secure: CFG.PUBLIC_URL });
 const handler = createHttp({
   routes: [
-    ...createApiRoutes({ limiter, auth: acc, run, publicState, stage, agentBusy: () => talk.busy() }),
+    ...createApiRoutes({ limiter, auth: acc, run, publicState, stage, agentBusy: () => talk.busy() || talk.speaking() }),
     ...createPairRoutes({ acc, limiter, adminOnline: () => sessions.adminSockets().length > 0, tvReady: tvPair.ready }),
     ...spotify.httpRoutes({ ...limiter, okToken: acc.okToken }),
     manifestRoute(statics, acc.tokenDev),
