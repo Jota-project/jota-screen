@@ -5,7 +5,7 @@
   "description": "Mando web para la tele del salón",
   "main": "server.js",
   "scripts": {
-    "check": "tsc -p ."
+    "check": "tsc -p . && tsc -p tsconfig.mando.json"
   },
   "dependencies": {
     "jpeg-js": "^0.4.4",

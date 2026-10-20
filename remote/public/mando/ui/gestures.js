@@ -3,7 +3,7 @@
 export const gestures = {
   name: 'gestures',
   init() {
-    document.addEventListener('touchmove', e => { if (!e.target.closest('.sheet,.pairV')) e.preventDefault(); }, { passive: false });
+    document.addEventListener('touchmove', e => { if (!/** @type {Element} */ (e.target).closest('.sheet,.pairV')) e.preventDefault(); }, { passive: false });
     document.addEventListener('gesturestart', e => e.preventDefault());
     document.addEventListener('contextmenu', e => e.preventDefault());
   },

@@ -25,14 +25,14 @@ export const actions = {
   name: 'actions',
   init() {
     document.addEventListener('pointerdown', e => {
-      const b = e.target.closest('.bt,.b2'); if (!b || b.hasAttribute('data-click') || !(b.dataset.a || b.dataset.url)) return;
+      const b = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest('.bt,.b2')); if (!b || b.hasAttribute('data-click') || !(b.dataset.a || b.dataset.url)) return;
       e.preventDefault();                                   // no robar el foco al campo de texto
       stopRep(); cur = b; b.classList.add('dn'); buzz(7); fire(b);
       if (b.hasAttribute('data-rep')) repT = setTimeout(() => { repI = setInterval(() => fire(b), 85); }, 380);
     });
     ['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, stopRep));
     document.addEventListener('click', e => {
-      const b = e.target.closest('[data-click]'); if (!b) return;
+      const b = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest('[data-click]')); if (!b) return;
       buzz(7);
       clicks.get(b.dataset.a)();
     });

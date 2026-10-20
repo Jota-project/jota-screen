@@ -67,7 +67,7 @@ export const spotify = {
     });
     trk.addEventListener('pointercancel', () => { sp.drag = null; trk.classList.remove('drag'); spTick(); });
     document.addEventListener('click', e => {
-      const b = e.target.closest('[data-sp]'); if (!b) return;
+      const b = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest('[data-sp]')); if (!b) return;
       buzz(8);
       if (b.dataset.sp === 'playpause' && sp.now && !sp.now.empty) { sp.now.progress = spPos(); sp.recv = Date.now(); sp.now.playing = !sp.now.playing; $('#spS .big use').setAttribute('href', sp.now.playing ? '#i-pause' : '#i-play'); }
       rpc({ t: 'spotify', a: b.dataset.sp }).then(r => { if (r && r.error) pill(r.error); });

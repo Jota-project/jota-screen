@@ -18,7 +18,7 @@ export function closeSheet() {
   if (!sheet) return;
   const h = hooks.get(sheet.id); if (h && h.close) h.close();
   sheet.classList.remove('on'); $('#shade').classList.remove('on');
-  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  if (document.activeElement && /** @type {HTMLElement} */ (document.activeElement).blur) /** @type {HTMLElement} */ (document.activeElement).blur();
   sheet = null;
 }
 export function closeSheetSafe() { try { if (sheet) closeSheet(); } catch {} }

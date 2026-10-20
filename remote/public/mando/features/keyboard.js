@@ -7,7 +7,7 @@ import { openSheet, closeSheet } from '../ui/sheets.js';
 
 let kbV, kbTa, kbPw, kbPwB, kbE;
 let tvF = { kind: 'none', placeholder: '' };            // último foco que ha avisado la tele
-let fSeq = 0, fAck = 0, fRaf = 0, fT = 0, fHold = false, fLast = '', fComp = false, fTyped = 0, fOk = null, fErr = '', fBlind = false;
+let fSeq = 0, fAck = 0, fRaf = 0, fT = 0, fHold = /** @type {{ a: number, b: number } | false} */ (false), fLast = '', fComp = false, fTyped = 0, fOk = null, fErr = '', fBlind = false;
 let fSynced = false;                                     // ¿el editor tiene lo mismo que el campo de la tele? Si no, no se manda hasta que se escriba
 const kbOn = () => kbV.classList.contains('on');
 const kbEd = () => kbPwB.hidden ? kbTa : kbPw;
@@ -97,7 +97,7 @@ export const keyboard = {
   clicks: { kb: () => openSheet('kbS') },
   init() {
     kbV = $('#kbS'); kbTa = $('#kbTa'); kbPw = $('#kbPw'); kbPwB = $('#kbPwB'); kbE = $('#kbE');
-    document.addEventListener('mousedown', e => { if (e.target.closest('.kbK,.kbA')) e.preventDefault(); });
+    document.addEventListener('mousedown', e => { if (/** @type {Element} */ (e.target).closest('.kbK,.kbA')) e.preventDefault(); });
     onWs('open', kbOnline); onWs('close', () => kbPaint());
     for (const e of [kbTa, kbPw]) {
       e.addEventListener('input', ev => { fTyped = Date.now(); fSynced = true; kbPaint(); if (!ev.isComposing && !fComp) kbSched(); });
