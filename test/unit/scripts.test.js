@@ -15,7 +15,8 @@ const LIB = path.join(REPO, 'scripts', 'lib.sh');
 const SCRIPTS = ['scripts/lib.sh', 'scripts/install.sh', 'scripts/doctor.sh', 'scripts/update.sh', 'scripts/spotifyd-run.sh', 'kiosk-session.sh', 'mdns-alias.sh'];
 
 const TMPS = [];
-const tmp = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'jsc-')); TMPS.push(d); return d; };
+// Ruta real: en macOS /tmp y /var/folders son enlaces (a /private/…) y los scripts resuelven la suya (readlink -f).
+const tmp = () => { const d = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'jsc-'))); TMPS.push(d); return d; };
 after(() => { for (const d of TMPS) fs.rmSync(d, { recursive: true, force: true }); });
 
 /** Entorno limpio: HOME temporal y sin variables de jota-screen heredadas. */
@@ -115,6 +116,15 @@ test('config: valores por defecto, fichero y alias vacío', () => {
 test('urlencode', () => {
   assert.equal(lib('jsc_urlencode "Tele del salón & más"').trim(), 'Tele%20del%20sal%C3%B3n%20%26%20m%C3%A1s');
   assert.equal(lib('jsc_urlencode "http://127.0.0.1:8787/idle.html"').trim(), 'http%3A%2F%2F127.0.0.1%3A8787%2Fidle.html');
+});
+
+test('permisos y sha256 con stat y sha256sum de GNU o de BSD', () => {
+  const home = tmp();
+  const f = path.join(home, 'f');
+  fs.writeFileSync(f, 'hola\n');
+  fs.chmodSync(f, 0o640);
+  assert.equal(lib(`jsc_mode "${f}"`, { home }).trim(), '640');
+  assert.equal(lib(`jsc_sha256 "${f}"`, { home }).trim(), require('node:crypto').createHash('sha256').update('hola\n').digest('hex'));
 });
 
 test('perfil de Chrome: se mueve a la carpeta de estado y nunca se sobrescribe', () => {
@@ -227,8 +237,10 @@ test('install.sh: se para si falta algo obligatorio y dice cómo instalarlo', ()
   const home = tmp();
   const st = stubs({ 'google-chrome': null, xinit: null, xrandr: null });
   const app = repoCopy();
-  // PATH sin navegador ni X reales: solo los falsos, node y lo básico del sistema
-  const PATH = [st.dir, path.dirname(process.execPath), '/usr/bin', '/bin'].join(':');
+  // PATH sin navegador ni X reales: solo los falsos, node y lo básico del sistema. node va enlazado en la
+  // carpeta de los falsos y no con su carpeta (en macOS, /opt/homebrew/bin, que puede tener de todo).
+  fs.symlinkSync(process.execPath, path.join(st.dir, 'node'));
+  const PATH = [st.dir, '/usr/bin', '/bin'].join(':');
   for (const b of ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser', 'xinit', 'xrandr']) {
     for (const d of ['/usr/bin', '/bin']) if (fs.existsSync(path.join(d, b))) return; // con X de verdad no se puede simular
   }
