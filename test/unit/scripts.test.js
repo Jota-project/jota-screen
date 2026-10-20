@@ -2,7 +2,7 @@
 // Scripts de sistema (scripts/lib.sh, install.sh, kiosk-session.sh, mdns-alias.sh, doctor.sh, update.sh, cdp.js).
 // Nada toca el sistema: cada prueba usa un HOME temporal, una copia del repo y órdenes falsas en el PATH
 // (systemctl, loginctl, sudo, npm, xrandr, chrome…) que solo apuntan lo que reciben.
-const { test } = require('node:test');
+const { test, after } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -14,7 +14,9 @@ const REPO = path.join(__dirname, '..', '..');
 const LIB = path.join(REPO, 'scripts', 'lib.sh');
 const SCRIPTS = ['scripts/lib.sh', 'scripts/install.sh', 'scripts/doctor.sh', 'scripts/update.sh', 'scripts/spotifyd-run.sh', 'kiosk-session.sh', 'mdns-alias.sh'];
 
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'jsc-'));
+const TMPS = [];
+const tmp = () => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'jsc-')); TMPS.push(d); return d; };
+after(() => { for (const d of TMPS) fs.rmSync(d, { recursive: true, force: true }); });
 
 /** Entorno limpio: HOME temporal y sin variables de jota-screen heredadas. */
 function cleanEnv(home, extra = {}) {
