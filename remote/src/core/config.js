@@ -64,6 +64,9 @@ function loadConfig(env = process.env, { hostname = os.hostname() } = {}) {
     STAGE_DIR: path.join(STATE_DIR, 'stage'),
     OC_BIN,                                                     // OpenClaw (agente), por su CLI
     OC_AGENT: env.TV_AGENT || 'jota',
+    GATEWAY_URL: (env.TV_GATEWAY_URL || '').trim(),             // J Gateway (voz): ws://<host>:8004/ws/stream; vacío = sin voz
+    GATEWAY_KEY: (env.TV_GATEWAY_KEY || '').trim(),             // clave del cliente en el Gateway (nunca a logs ni al repo)
+    AGENT: (env.TV_AGENT || '').trim() || 'j-assistant',        // agente del Gateway
     FFMPEG: env.TV_FFMPEG || which('ffmpeg', env.PATH) || '',  // voz: pasa a MP3 lo que graba el móvil (WebM de Safari y Chrome)
     OC_ENV: Object.freeze({ ...env, PATH: path.dirname(OC_BIN) + ':' + (env.PATH || '') }),
     ADMIN_URL: adminUrl(env, PORT, hostname),

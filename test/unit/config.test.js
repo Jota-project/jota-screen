@@ -30,6 +30,9 @@ test('config: sin entorno, valores por defecto del contrato y nada personal', ()
     for (const f of Object.values(d.FILES)) assert.equal(path.dirname(f), d.STATE_DIR, f);
     assert.equal(d.OC_BIN, path.join(home, '.npm-global', 'bin', 'openclaw'));
     assert.equal(d.OC_AGENT, 'jota');
+    assert.equal(d.AGENT, 'j-assistant');
+    assert.equal(d.GATEWAY_URL, '');
+    assert.equal(d.GATEWAY_KEY, '');
     assert.equal(d.OWNER, '');
     assert.deepEqual({ ...d.PLACE }, { city: '', lat: null, lon: null, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
     // OC_ENV copia el entorno, la zona horaria es la del sistema y las rutas del código dependen de dónde esté el repo;
@@ -151,4 +154,11 @@ test('estado: nunca sobrescribe lo que ya está en la carpeta nueva', () => {
     assert.deepEqual(r.kept.sort(), [path.join(s.root, 'token'), s.cfg.LEGACY.stage].sort());
     assert.ok(lines.some(l => /no se mueve, ya existe/.test(l) && !/viejo|nuevo\n/.test(l)));
   } finally { s.done(); }
+});
+
+test('config: el Gateway de voz se lee del entorno y TV_AGENT cambia el agente', () => {
+  const c = loadConfig({ HOME: '/h', PATH: '', TV_GATEWAY_URL: ' ws://gw:8004/ws/stream ', TV_GATEWAY_KEY: 'k1', TV_AGENT: 'otro' });
+  assert.equal(c.GATEWAY_URL, 'ws://gw:8004/ws/stream');
+  assert.equal(c.GATEWAY_KEY, 'k1');
+  assert.equal(c.AGENT, 'otro');
 });

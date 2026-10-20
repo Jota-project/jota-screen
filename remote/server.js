@@ -41,8 +41,8 @@ const { ROOT, PUB, PORT, CDP_PORT, DEBUG, NO_POINTER, SELF } = CFG;
 
 // ───────────────────────── base: registro, conexiones de los mandos y estado de la tele
 let acc = null; // el acceso se crea un poco más abajo; quien lo usa antes, lo hace al llamar
-// registro con redacción: el token maestro, los ?t= y los Bearer nunca llegan al journal
-const log = createLog({ secrets: () => (acc ? [acc.masterToken()] : []), debug: DEBUG });
+// registro con redacción: el token maestro, la clave del Gateway, los ?t= y los Bearer nunca llegan al journal
+const log = createLog({ secrets: () => [...(acc ? [acc.masterToken()] : []), ...(CFG.GATEWAY_KEY ? [CFG.GATEWAY_KEY] : [])], debug: DEBUG });
 // antes de leer nada: la carpeta de estado (0700) con lo que hubiera en las ubicaciones antiguas
 prepareStateDir(CFG, log.info);
 const ws = createWs();
