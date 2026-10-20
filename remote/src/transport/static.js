@@ -23,8 +23,9 @@ const IDLE_CSP = "default-src 'self'; style-src 'self' https://fonts.googleapis.
 const RESERVED = new Set(['api', 'pair', 'stage', 'idle', 'spotify', 'ws', 'idle-ws', 'stage-ws']);
 const ZIP = new Set(['.html', '.css', '.js', '.svg', '.webmanifest', '.json']);
 const LONG_CACHE = new Set(['.png', '.svg', '.woff2', '.jpg', '.webp', '.ico']);
-// sin build no hay huellas en los nombres: lo que cambia con cada versión (html, js, css, tokens) se revalida siempre por ETag
-const cacheFor = p => (LONG_CACHE.has(path.extname(p)) && !p.startsWith('/shared/') ? 'public, max-age=86400' : 'no-cache');
+// sin build no hay huellas en los nombres: lo que cambia con cada versión (html, js, css, tokens) no se guarda nunca.
+// Con no-cache + ETag, Safari en iOS reutilizaba los módulos ES viejos tras un despliegue; son pocos KB y en red local
+const cacheFor = p => (LONG_CACHE.has(path.extname(p)) && !p.startsWith('/shared/') ? 'public, max-age=86400' : 'no-store');
 // CSP de cada página; los .js, .css e imágenes no la llevan
 /** @param {string} mando la CSP del mando (con el origen https al que puede saltar) */
 const pageCsp = (p, mando) => (p === '/index.html' ? mando : p === '/idle.html' ? IDLE_CSP : /^\/tpl-[\w-]+\.html$/.test(p) ? STAGE_CSP : null);

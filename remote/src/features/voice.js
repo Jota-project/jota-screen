@@ -50,22 +50,30 @@ function cliEngine({ bin, env, agent, sttModel = 'elevenlabs/scribe_v2', ttsMode
 
 /**
  * @param {{
- *   cfg: { OC_BIN: string, OC_AGENT: string, OC_ENV: object, XDG_RUNTIME_DIR?: string, VOICE_LANG?: string, VOICE_STT_MODEL?: string, VOICE_TTS_MODEL?: string, VOICE_TTS_VOICE?: string },
+ *   cfg: { OC_BIN: string, OC_AGENT: string, OC_ENV: object, FFMPEG?: string, XDG_RUNTIME_DIR?: string, VOICE_LANG?: string, VOICE_STT_MODEL?: string, VOICE_TTS_MODEL?: string, VOICE_TTS_VOICE?: string },
  *   limiter: { blocked: (ip: string) => boolean, fail: (ip: string) => void },
  *   auth: { okToken: (t: any) => boolean, tokenDev: (t: any) => any },
  *   run: (m: any, ws: any, ctx: { dev: any }) => Promise<any>,
  *   engine?: { stt: (file: string, lang: string) => Promise<string>, tts: (text: string, outFile: string) => Promise<boolean> },
  *   play?: (file: string) => Promise<void>,
  *   log?: (m: string) => void,
+ *   transcode?: (inFile: string, outFile: string) => Promise<boolean>,
  * }} deps
  */
-module.exports = function createVoice({ cfg, limiter, auth, run, engine, play, log = () => {} }) {
+module.exports = function createVoice({ cfg, limiter, auth, run, engine, play, log = () => {}, transcode }) {
   const eng = engine || cliEngine({ bin: cfg.OC_BIN, env: cfg.OC_ENV, agent: cfg.OC_AGENT, sttModel: cfg.VOICE_STT_MODEL, ttsModel: cfg.VOICE_TTS_MODEL, ttsVoice: cfg.VOICE_TTS_VOICE });
   const lang = cfg.VOICE_LANG || 'es';
   // el sonido de la pantalla: PipeWire, igual que el volumen (src/tv/devices.js)
   const player = play || (file => new Promise(res => {
     const p = spawn('pw-play', [file], { env: { ...process.env, XDG_RUNTIME_DIR: cfg.XDG_RUNTIME_DIR || process.env.XDG_RUNTIME_DIR }, stdio: 'ignore' });
     p.on('error', () => res()); p.on('close', () => res());
+  }));
+  // la CLI de OpenClaw no transcribe WebM (lo que graban Safari y Chrome): se pasa a MP3 mono de 16 kHz con ffmpeg
+  // (unos 60 ms); sin ffmpeg, o si falla, se manda tal cual
+  const toMp3 = transcode || ((inFile, outFile) => new Promise(res => {
+    if (!cfg.FFMPEG) return res(false);
+    execFile(cfg.FFMPEG, ['-loglevel', 'error', '-y', '-i', inFile, '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'libmp3lame', '-b:a', '48k', outFile],
+      { timeout: 20_000 }, e => res(!e && fs.existsSync(outFile)));
   }));
   let busy = false;
   const rm = d => fs.rmSync(d, { recursive: true, force: true });
@@ -95,7 +103,8 @@ module.exports = function createVoice({ cfg, limiter, auth, run, engine, play, l
       const inFile = path.join(dir, 'in.' + (EXT[m[1].toLowerCase()] || 'webm'));
       fs.writeFileSync(inFile, buf, { mode: 0o600 });
 
-      const text = await eng.stt(inFile, lang);
+      const sttFile = path.join(dir, 'stt.mp3');
+      const text = await eng.stt(/\.mp3$/.test(inFile) || !(await toMp3(inFile, sttFile)) ? inFile : sttFile, lang);
       if (!text) { json(res, 422, { error: 'No te he entendido. Prueba otra vez.' }); return done(422, 'sin transcripción', buf.length); }
 
       // la transcripción entra como cualquier mensaje escrito: mismos permisos, misma sesión del agente

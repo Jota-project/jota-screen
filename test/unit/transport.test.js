@@ -115,7 +115,7 @@ test('estáticos: subcarpetas sí; ocultos, enlaces simbólicos y nombres de rut
   fs.mkdirSync(path.join(d, 'api'));
   assert.throws(() => createStatic({ dir: d }), /public\/api choca/);
   fs.rmSync(d, { recursive: true, force: true });
-  assert.equal(cacheFor('/shared/x.svg'), 'no-cache', 'los tokens compartidos siempre se revalidan');
+  assert.equal(cacheFor('/shared/x.svg'), 'no-store', 'los tokens compartidos no se guardan');
   assert.equal(cacheFor('/icon-180.png'), 'public, max-age=86400');
   assert.equal(pageCsp('/tpl-tasks.html') !== null && pageCsp('/tpl-x.js') === null && pageCsp('/stage.css') === null, true);
 });

@@ -64,6 +64,7 @@ function loadConfig(env = process.env, { hostname = os.hostname() } = {}) {
     STAGE_DIR: path.join(STATE_DIR, 'stage'),
     OC_BIN,                                                     // OpenClaw (agente), por su CLI
     OC_AGENT: env.TV_AGENT || 'jota',
+    FFMPEG: env.TV_FFMPEG || which('ffmpeg', env.PATH) || '',  // voz: pasa a MP3 lo que graba el móvil (WebM de Safari y Chrome)
     OC_ENV: Object.freeze({ ...env, PATH: path.dirname(OC_BIN) + ':' + (env.PATH || '') }),
     ADMIN_URL: adminUrl(env, PORT, hostname),
     SPOTIFY_BANNER: !!env.TV_SPOTIFY_BANNER,

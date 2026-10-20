@@ -15,7 +15,7 @@ test('est√°ticos: el mando, el reposo y la isla se sirven con su CSP y sin cach√
   const r = await s.get('/');
   assert.equal(r.status, 200);
   assert.match(r.headers.get('content-security-policy'), /default-src 'self'/);
-  assert.equal(r.headers.get('cache-control'), 'no-cache');
+  assert.equal(r.headers.get('cache-control'), 'no-store');
   assert.equal(r.headers.get('x-content-type-options'), 'nosniff');
   const idle = await s.get('/idle.html');
   assert.equal(idle.status, 200);
@@ -23,7 +23,7 @@ test('est√°ticos: el mando, el reposo y la isla se sirven con su CSP y sin cach√
   assert.match(await idle.text(), /id="grid"/);
   const isl = await s.get('/tv-island.js');
   assert.equal(isl.status, 200);
-  assert.equal(isl.headers.get('cache-control'), 'no-cache');
+  assert.equal(isl.headers.get('cache-control'), 'no-store');
   assert.equal((await s.get('/no-existe.js')).status, 404);
 });
 
@@ -31,7 +31,7 @@ test('est√°ticos: los tokens de la tele (shared/tokens-tv.css) se sirven como CS
   const r = await s.get('/shared/tokens-tv.css');
   assert.equal(r.status, 200);
   assert.match(r.headers.get('content-type'), /^text\/css/);
-  assert.equal(r.headers.get('cache-control'), 'no-cache');
+  assert.equal(r.headers.get('cache-control'), 'no-store');
   assert.equal(r.headers.get('content-security-policy'), null);
   assert.match(await r.text(), /--tv-accent:#c3b7e3/);
   assert.match(await (await s.get('/idle.html')).text(), /<link rel="stylesheet" href="\/shared\/tokens-tv\.css">/);

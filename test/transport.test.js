@@ -46,7 +46,7 @@ test('reposo: CSP sin \'unsafe-inline\'; su CSS y su JS van en ficheros', async 
     assert.equal(f.status, 200, p);
     assert.match(f.headers.get('content-type'), type, p);
     assert.equal(f.headers.get('content-security-policy'), null, p);
-    assert.equal(f.headers.get('cache-control'), 'no-cache', p);
+    assert.equal(f.headers.get('cache-control'), 'no-store', p);
   }
 });
 
@@ -72,7 +72,7 @@ test('mando: CSP sin \'unsafe-inline\'; su CSS y su JS van en ficheros', async (
     assert.equal(f.status, 200, p);
     assert.match(f.headers.get('content-type'), type, p);
     assert.equal(f.headers.get('content-security-policy'), null, p);
-    assert.equal(f.headers.get('cache-control'), 'no-cache', p);
+    assert.equal(f.headers.get('cache-control'), 'no-store', p);
   }
   // nada que la CSP vaya a bloquear desde el JS: ni eval ni HTML generado con style= u on*=
   const js = await (await s.get('/mando/app.js')).text();
@@ -82,7 +82,7 @@ test('mando: CSP sin \'unsafe-inline\'; su CSS y su JS van en ficheros', async (
 
 test('estáticos: caché por tipo, gzip para texto y nada fuera de public/', async () => {
   const js = await s.get('/tv-island.js', { headers: { 'Accept-Encoding': 'gzip' } });
-  assert.equal(js.headers.get('cache-control'), 'no-cache');
+  assert.equal(js.headers.get('cache-control'), 'no-store');
   assert.equal(js.headers.get('content-encoding'), 'gzip');
   assert.equal((await s.get('/icon-512.png')).headers.get('cache-control'), 'public, max-age=86400');
   const etag = (await s.get('/stage.css')).headers.get('etag');

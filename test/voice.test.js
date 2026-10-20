@@ -20,6 +20,7 @@ const make = (over = {}) => {
     auth: { okToken: t => t === 'ok', tokenDev: () => null },
     run: async (m, ws, ctx) => { calls.run.push({ m, ctx }); return over.reply || { ok: 1, reply: 'Hecho, jazz en el salón.' }; },
     engine, play: async f => { calls.play.push(f); },
+    transcode: async (inF, outF) => { calls.tx = (calls.tx || []).concat(inF); if (over.tx === false) return false; fs.writeFileSync(outF, Buffer.alloc(900, 2)); return true; },
   });
   const route = v.routes[0];
   const call = async ({ method = 'POST', token = 'ok', type = 'audio/webm;codecs=opus', body = AUDIO, q = '' } = {}) => {
@@ -42,7 +43,7 @@ test('audio válido: transcribe, pregunta al agente como un mensaje escrito y de
   assert.equal(r.j.reply, 'Hecho, jazz en el salón.');
   assert.deepEqual(calls.run[0].m, { t: 'ask', text: 'pon algo de jazz' }, 'va por la orden ask, con sus permisos');
   assert.equal(calls.stt[0].lang, 'es');
-  assert.equal(calls.stt[0].bytes, 2000);
+  assert.equal(calls.stt[0].bytes, 900, 'el WebM grabado, ya pasado a MP3');
   assert.equal(r.j.tv, true, 'por defecto suena en la tele');
   assert.equal(r.j.audio, undefined, 'y no vuelve audio al móvil');
   assert.equal(calls.play.length, 1);
@@ -120,4 +121,14 @@ test('la respuesta se recorta antes de sintetizar (créditos)', async () => {
   const m = make({ reply: { ok: 1, reply: 'a'.repeat(5000) } });
   await m.call();
   assert.equal(m.calls.tts[0].length, 600);
+});
+
+test('lo que no es MP3 (el WebM de Safari y Chrome) se pasa a MP3 antes de transcribir; si falla, va tal cual', async () => {
+  let m = make(); await m.call({ type: 'audio/webm;codecs=opus' });
+  assert.match(m.calls.tx[0], /in\.webm$/);
+  assert.match(m.calls.stt[0].file, /stt\.mp3$/); assert.equal(m.calls.stt[0].bytes, 900, 'transcribe el convertido');
+  m = make(); await m.call({ type: 'audio/mpeg' });
+  assert.equal(m.calls.tx, undefined, 'el MP3 no se toca'); assert.match(m.calls.stt[0].file, /in\.mp3$/);
+  m = make({ tx: false }); const r = await m.call({ type: 'audio/mp4' });
+  assert.match(m.calls.stt[0].file, /in\.m4a$/, 'sin ffmpeg o si falla, el original'); assert.equal(r.code, 200);
 });
