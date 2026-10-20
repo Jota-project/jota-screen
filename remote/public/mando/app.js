@@ -6,7 +6,7 @@
 //   ui/    haptics, pill, theme, status, sheets, actions, gestures     ← solo core/
 //   features/                                                          ← ui/ y core/, y entre sí solo en un sentido:
 //     settings → admin → pair, settings → idle, settings → ambient, controls → ambient, spotify → ambient,
-//     spotify → spotify-lists → spotify-state
+//     spotify → spotify-lists → spotify-state, agent → voice
 import { initSession } from './core/store.js';
 import { connect, handle, start } from './core/api.js';
 import { applyMe } from './core/perms.js';

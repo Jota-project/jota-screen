@@ -4,13 +4,16 @@ import { $, el } from '../core/dom.js';
 import { cmd } from '../core/api.js';
 import { buzz } from '../ui/haptics.js';
 import { openSheet, closeSheet } from '../ui/sheets.js';
+import { voice } from './voice.js';
 
-/** Estado de la vista: 'idle' (te escucho), 'wait' (un momento) o 'done' (respuesta). */
+let mic = false;                                        // true: el orbe graba (hay micrófono y HTTPS)
+
+/** Estado de la vista: 'idle' (te escucho), 'rec' (grabando con el orbe), 'wait' (un momento) o 'done' (respuesta). */
 function stage(st) {
   const S = $('#agS');
   S.dataset.st = st;
-  $('#shade').classList.toggle('think', st === 'wait');
-  $('#agSt').textContent = st === 'wait' ? 'Un momento' : st === 'done' ? 'Jota' : 'Te escucho';
+  $('#shade').classList.toggle('think', st === 'wait' || st === 'rec');
+  $('#agSt').textContent = st === 'wait' ? 'Un momento' : st === 'done' ? 'Jota' : st === 'rec' ? 'Te escucho… suelta para enviar' : 'Te escucho';
 }
 /* la frase entra palabra a palabra (el retraso de cada una va en --i; con movimiento reducido, todas a la vez) */
 function said(text) {
@@ -37,10 +40,10 @@ export const agent = {
   msgs: { ask: onAsk },
   sheets: { agS: {
     open() {
-      const agin = $('#agin'); agin.value = ''; agin.focus(); $('#shade').classList.add('vz');
+      const agin = $('#agin'); agin.value = ''; if (!mic) agin.focus(); $('#shade').classList.add('vz');   // con micro, sin teclado encima del orbe
       if ($('#agS').dataset.st === 'wait') stage('wait');   // se cerró mientras pensaba: las luces siguen creciendo
     },
-    close() { $('#shade').classList.remove('vz', 'think'); },
+    close() { voice.close(); $('#shade').classList.remove('vz', 'think'); },
   } },
   clicks: { ag: () => openSheet('agS') },
   init() {
@@ -52,7 +55,10 @@ export const agent = {
       if (!v) return;
       agin.value = ''; ask(v);
     });
-    $('#agOrb').addEventListener('click', () => { buzz(8); agin.focus(); });   // el teclado del móvil trae el micrófono
+    const rep = (t, cls = '') => { const r = $('#rep'); r.className = 'rep' + (cls ? ' ' + cls : ''); r.textContent = t; };
+    mic = voice.init({ stage, said, rep, focus: () => { buzz(8); agin.focus(); } });
+    // sin micrófono propio (http): el orbe enfoca el campo y el teclado del móvil trae el suyo
+    if (!mic) $('#agOrb').addEventListener('click', () => { buzz(8); agin.focus(); });
     $('#agX').addEventListener('click', () => { buzz(7); closeSheet(); });
     $('#agC').addEventListener('click', e => {
       const b = /** @type {HTMLElement | null} */ (/** @type {Element} */ (e.target).closest('[data-ask]')); if (!b) return;

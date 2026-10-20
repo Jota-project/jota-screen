@@ -105,3 +105,23 @@ test('mando: cada módulo de index.html tiene su modulepreload, y nada más', ()
   const mods = [...graph().edges.keys()].filter(p => p !== ENTRY).sort();
   assert.deepEqual(pre, mods);
 });
+
+test('mando: cada hoja tiene un solo dueño (registerSheet lanza con una hoja repetida y el mando no arrancaría)', async () => {
+  // app.js registra las capacidades en orden; si dos registran la misma hoja (como agent y voice con agS), todo cae
+  const app = fs.readFileSync(path.join(PUB, 'mando', 'app.js'), 'utf8');
+  const list = /register\(\[([^\]]+)\]\)/.exec(app)[1].split(',').map(s => s.trim());
+  const imports = new Map([...app.matchAll(/import \{ ([^}]+) \} from '\.\/(features\/[^']+)'/g)]
+    .flatMap(m => m[1].split(',').map(n => [n.trim(), m[2]])));
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mando-hojas-'));
+  fs.cpSync(path.join(PUB, 'mando'), path.join(tmp, 'mando'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'package.json'), '{"type":"module"}');
+  try {
+    const owner = new Map(), dup = [];
+    for (const name of list) {
+      const mod = await import(pathToFileURL(path.join(tmp, 'mando', imports.get(name))).href);
+      for (const id of Object.keys(mod[name].sheets || {})) { if (owner.has(id)) dup.push(`${id}: ${owner.get(id)} y ${name}`); else owner.set(id, name); }
+    }
+    assert.deepEqual(dup, []);
+    assert.ok(owner.has('agS') && owner.has('spS'), 'encuentra las hojas');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});

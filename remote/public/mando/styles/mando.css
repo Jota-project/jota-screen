@@ -260,6 +260,12 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 @keyframes listen{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
 .vzOrb:focus-visible{outline:2px solid var(--accent-text);outline-offset:3px}
 .vzH{font-size:14px;color:var(--text-soft);text-align:center}
+/* voz con micrófono propio: mantener el orbe para hablar (grabando, late más deprisa) y adónde va la respuesta */
+.vzOrb{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+#agS[data-st=rec] .vzOrb{animation:listen .8s ease-in-out infinite;box-shadow:0 0 0 22px rgba(124,106,174,.22),0 0 110px rgba(124,106,174,.7)}
+.vzOut{min-height:48px;margin-top:-10px;padding:0 16px;border:0;background:transparent;color:var(--accent-text);font:500 14px var(--sans);cursor:pointer}
+.vzOut[hidden]{display:none}
+.vzOut:focus-visible{outline:2px solid var(--accent-text);outline-offset:-6px;border-radius:999px}
 .vzC{display:flex;justify-content:center;gap:4px;margin-top:14px;flex:none}
 .vzC .b2{height:48px;padding:0 16px;font-size:15px;font-weight:500}
 .vzC .b2::before{width:100%;height:100%}

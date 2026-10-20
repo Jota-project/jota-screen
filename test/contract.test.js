@@ -186,3 +186,15 @@ test('permisos: el admin retira al invitado y su conexión se cierra', async () 
   assert.equal((await s.api('/api/state', guestTok)).status, 401);
   a.close();
 });
+
+test('voz: /api/voice llega a su ruta (no la tapa el prefijo /api/) y pide token', async () => {
+  const v = await start();                                // servidor propio: las pruebas de arriba agotan el límite de intentos
+  try {
+    const audio = { method: 'POST', headers: { 'Content-Type': 'audio/webm' }, body: Buffer.alloc(2000, 1) };
+    // con el agente falso (/bin/false) no hay transcripción: 422 de la propia ruta de voz, nunca el 404 de la API
+    const r = await v.api('/api/voice?out=none', v.token, audio);
+    assert.equal(r.status, 422);
+    assert.match((await r.json()).error, /No te he entendido/);
+    assert.equal((await v.api('/api/voice', 'mal', audio)).status, 401);
+  } finally { await v.stop(); }
+});

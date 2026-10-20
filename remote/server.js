@@ -27,6 +27,7 @@ const createKeyboard = require('./src/features/keyboard');
 const createControl = require('./src/features/control');
 const createSpotify = require('./src/features/spotify');
 const createIdle = require('./src/features/idle');
+const createVoice = require('./src/features/voice');
 const { createCommands } = require('./src/transport/commands');
 const { createSessions } = require('./src/transport/sessions');
 const { createWs } = require('./src/transport/ws');
@@ -107,10 +108,13 @@ async function run(m, sock, ctx = {}) {
   return commands.dispatch(m, { dev, ws: sock });
 }
 
+const voice = createVoice({ cfg: CFG, limiter, auth: acc, run }); // hablar con el agente: audio -> texto -> agente -> voz
+
 // ───────────────────────── transporte: HTTP (rutas + estáticos) y WebSocket
 const statics = createStatic({ dir: PUB, vars: { TV_NAME: CFG.NAME } }); // {{TV_NAME}} en el HTML y el manifiesto
 const handler = createHttp({
   routes: [
+    ...voice.routes,                                    // antes que la API: su prefijo /api/ se comería /api/voice
     ...createApiRoutes({ limiter, auth: acc, run, publicState, stage, agentBusy: () => agent.busy() }),
     ...createPairRoutes({ acc, limiter, adminOnline: () => sessions.adminSockets().length > 0, tvReady: tvPair.ready }),
     ...spotify.httpRoutes({ ...limiter, okToken: acc.okToken }),
