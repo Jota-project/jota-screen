@@ -14,6 +14,7 @@ const MAX_MS = 30000;                                   // el servidor admite ~4
 const TAP_MS = 300;                                     // soltar antes de esto es un toque: abre el teclado, no graba
 
 let rec = null, chunks = [], stream = null, stopT = 0, downAt = 0, busy = false, player = null, cancelled = false;
+let held = false;                                       // el dedo (o la tecla) sigue sobre el orbe
 /** @type {{ stage: (st: string) => void, said: (t: string) => void, rep: (t: string, cls?: string) => void, focus: () => void }} */
 let ui;
 
@@ -28,13 +29,17 @@ function pickType() {
 }
 function release() { clearTimeout(stopT); if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; }
 
-async function start() {
-  if (busy || rec) return;
+/** @param {boolean} [key] con teclado no hay toque corto: soltar siempre envía */
+async function start(key = false) {
+  if (busy || rec || held) return;                       // ya hay una pulsación en curso (o se está pidiendo el micro)
+  held = true;
   if (player) { player.pause(); player = null; }        // si aún suena la respuesta anterior, se calla
-  cancelled = false; downAt = Date.now();
+  cancelled = false; downAt = key ? 0 : Date.now();
   try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
   catch { ui.rep('No tengo permiso para usar el micrófono.'); ui.stage('idle'); return; }
   if (cancelled) { release(); return; }                  // se soltó (toque) mientras se pedía el permiso
+  // se soltó mientras se pedía el micrófono (p. ej. para tocar «Permitir»): no se graba a nadie
+  if (!held) { release(); ui.rep('Listo. Mantén el orbe otra vez para hablar.'); ui.stage('idle'); return; }
   const type = pickType();
   chunks = [];
   rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
@@ -51,6 +56,8 @@ async function start() {
 
 /** Soltar: si fue un toque corto, se descarta y se abre el teclado (lo de siempre); si no, se envía. */
 function stop() {
+  if (!held) return;
+  held = false;
   const tap = Date.now() - downAt < TAP_MS;
   if (tap) cancelled = true;
   if (rec && rec.state === 'recording') { if (!tap) buzz(6); rec.stop(); }
@@ -76,7 +83,7 @@ async function send(blob) {
 
 export const voice = {
   /** La hoja se cierra: si se estaba grabando, se descarta. */
-  close() { if (rec) { cancelled = true; rec.stop(); } },
+  close() { held = false; if (rec) { cancelled = true; rec.stop(); } },
   /** @param {typeof ui} hooks @returns {boolean} true si hay micrófono (el orbe graba) */
   init(hooks) {
     ui = hooks;
@@ -89,7 +96,7 @@ export const voice = {
     for (const ev of ['pointerup', 'pointercancel']) b.addEventListener(ev, stop);
     b.addEventListener('contextmenu', e => e.preventDefault());
     // teclado: espacio o Intro mantenidos
-    b.addEventListener('keydown', e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); downAt = 0; start(); } });
+    b.addEventListener('keydown', e => { if ((e.key === ' ' || e.key === 'Enter') && !e.repeat) { e.preventDefault(); start(true); } });
     b.addEventListener('keyup', e => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); stop(); } });
     // un solo destino, y se recuerda en este móvil
     o.addEventListener('click', () => { cfg.voiceOut = OUTS[(OUTS.indexOf(out()) + 1) % OUTS.length]; saveCfg(); paintOut(); buzz(8); });
