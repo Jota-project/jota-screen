@@ -99,6 +99,7 @@ function initScript({ token, cfg }) {
   W.prototype.send = function (d) {
     if (typeof d === 'string' && d.charCodeAt(0) === 112) return; // «p<ts>»: el eco de latencia no se manda (sin ms en pantalla)
     if (typeof d !== 'string') { window.__wsBin = (window.__wsBin || 0) + 1; return send.call(this, d); } // audio: se cuenta, no se apunta
+    if (d === '{"t":"vend"}') window.__wsBinAtVend = window.__wsBin || 0;     // el último trozo (flush) va antes de vend
     window.__wsLog.push(String(d));
     // respuesta falsa a una orden con id (p. ej. las playlists de una cuenta de Spotify que el servidor de prueba no tiene)
     try { const o = JSON.parse(d), r = o && o.id && window.__wsFake[o.t + ':' + (o.a || '')]; if (r) { setTimeout(() => this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ t: 'res', id: o.id, r }) })), 30); return; } } catch {}
@@ -251,9 +252,11 @@ async function adminScenes(theme, admin) {
     await p.locator('#agS[data-st="rec"]').waitFor({ state: 'attached', timeout: 5000 }); await p.waitForTimeout(900);   // la primera vez el micro tarda
     await inject(p, { t: 'talk', ev: 'partial', text: 'pon algo de música' });
     await shot(p, T('hoja-agente-voz-parcial'));
-    await p.mouse.up(); await p.waitForTimeout(200);
-    const bin = await p.evaluate(() => window.__wsBin || 0);
+    const b0 = await p.evaluate(() => window.__wsBin || 0);
+    await p.mouse.up(); await p.waitForTimeout(400);
+    const [bin, atVend] = await p.evaluate(() => [window.__wsBin || 0, window.__wsBinAtVend]);
     if (bin < 5) errors.push(`${T('hoja-agente-voz')}: solo ${bin} trozos de audio en ~1 s`);
+    if (!(atVend > b0) || bin !== atVend) errors.push(`${T('hoja-agente-voz')}: el último trozo no va justo antes de vend (${b0} → ${atVend}, total ${bin})`);
     await inject(p, { t: 'talk', ev: 'final', text: 'pon algo de música tranquila' });
     await shot(p, T('hoja-agente-voz-final'));
   });

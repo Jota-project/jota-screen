@@ -14,6 +14,8 @@ const OUTS = ['tv', 'phone', 'none'];
 const OUT_LABEL = { tv: 'Responde en la tele', phone: 'Responde en el móvil', none: 'Responde solo con texto' };
 const MAX_MS = 30000;                                   // tope de una grabación (el servidor corta a los 32 s)
 const TAP_MS = 300;                                     // soltar antes de esto es un toque: abre el teclado, no manda nada
+const FLUSH_MS = 200;                                   // al soltar, lo más que se espera el último trozo del worklet
+const NOT_READY = 'No he podido preparar el micrófono. Prueba otra vez.';
 
 /** @type {AudioContext | null} */
 let ctx = null;                                         // uno para toda la página: se crea en el gesto y no se cierra
@@ -29,7 +31,7 @@ let held = false;                                       // el dedo (o la tecla) 
 let long = false;                                       // la pulsación ya pasa de TAP_MS (o es de teclado)
 let started = false;                                    // vstart enviado: el audio va al servidor
 let press = 0;                                          // número de la pulsación (lo que llega tarde de otra se ignora)
-let tapT = 0, stopT = 0;
+let tapT = 0, stopT = 0, flushT = 0;
 /** @type {Float32Array[]} */
 let pending = [];                                       // los primeros trozos, en memoria hasta saber que no es un toque
 /** @type {{ stage: (st: string) => void, said: (t: string) => void, rep: (t: string, cls?: string) => void, focus: () => void }} */
@@ -44,7 +46,7 @@ function paintOut() { const b = $('#agOut'); b.textContent = OUT_LABEL[out()]; b
 
 /** Suelta el micrófono y los nodos (el contexto se queda). */
 function release() {
-  clearTimeout(tapT); clearTimeout(stopT);
+  clearTimeout(tapT); clearTimeout(stopT); clearTimeout(flushT);
   if (node) { node.port.onmessage = null; node.disconnect(); node = null; }
   if (src) { src.disconnect(); src = null; }
   if (stream) stream.getTracks().forEach(t => t.stop());
@@ -81,11 +83,12 @@ async function start(key = false) {
   catch { ui.rep('Este navegador no puede usar el micrófono.'); held = false; return; }
   if (!key) tapT = setTimeout(() => { long = true; go(); }, TAP_MS);
   if (!mod) mod = ctx.audioWorklet.addModule('/mando/features/mic-worklet.js').catch(e => { mod = null; throw e; });
-  let s;
-  try {
-    [s] = await Promise.all([navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }), mod]);
-  } catch {
-    if (me === press) { clearTimeout(tapT); held = false; ui.rep('No tengo permiso para usar el micrófono.'); ui.stage('idle'); }
+  // las dos a la vez, y si una falla el micrófono que sí se abrió se cierra (si no, se queda encendido)
+  const [g, w] = await Promise.allSettled([navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }), mod]);
+  const s = g.status === 'fulfilled' ? g.value : null;
+  if (!s || w.status === 'rejected') {
+    if (s) s.getTracks().forEach(t => t.stop());
+    if (me === press) { clearTimeout(tapT); held = false; ui.rep(s ? NOT_READY : 'No tengo permiso para usar el micrófono.'); ui.stage('idle'); }
     return;
   }
   if (me !== press || !held) {                          // se soltó (o se cerró la hoja) mientras se pedía el micrófono
@@ -94,10 +97,14 @@ async function start(key = false) {
     return;
   }
   stream = s;
-  src = ctx.createMediaStreamSource(s);
-  node = new AudioWorkletNode(ctx, 'pcm16k', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
-  node.port.onmessage = e => { if (me === press && e.data instanceof Float32Array) chunk(e.data); };
-  src.connect(node); node.connect(ctx.destination);    // la salida es silencio; sin destino Safari no lo procesa
+  try {
+    src = ctx.createMediaStreamSource(s);
+    node = new AudioWorkletNode(ctx, 'pcm16k', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+    node.port.onmessage = e => { if (me === press && e.data instanceof Float32Array) chunk(e.data); };
+    src.connect(node); node.connect(ctx.destination);  // la salida es silencio; sin destino Safari no lo procesa
+  } catch {
+    release(); held = false; ui.rep(NOT_READY); ui.stage('idle'); return;
+  }
   buzz(10); ui.rep(''); ui.stage('rec');
   stopT = setTimeout(stop, MAX_MS);
   go();                                                 // si el permiso tardó más que un toque, ya es voz
@@ -108,12 +115,29 @@ function stop() {
   if (!held) return;
   held = false;
   const tap = !long, sent = started;
-  release();
-  if (tap) { started = false; ui.stage('idle'); ui.focus(); return; }
+  if (tap || !sent || !node) { release(); started = false; }
+  if (tap) { ui.stage('idle'); ui.focus(); return; }
   if (!sent) return;                                    // aún sin micrófono: start() avisa al volver
-  started = false;
-  buzz(6); cmd({ t: 'vend' });
-  ui.rep('Pensando', 'wait'); ui.stage('wait');
+  buzz(6); ui.rep('Pensando', 'wait'); ui.stage('wait');
+  if (node) finish(); else cmd({ t: 'vend' });
+}
+
+/** Fin de la frase: el micro se apaga ya, el worklet manda lo que le queda (y lo que estuviera en camino) y luego vend. */
+function finish() {
+  const n = node, me = press;
+  clearTimeout(tapT); clearTimeout(stopT);
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  const end = () => {
+    if (me === press && started) { started = false; cmd({ t: 'vend' }); }
+    if (node === n) release();                          // si entre tanto se cerró la hoja o falló vstart, ya está suelto
+  };
+  n.port.onmessage = e => {
+    const d = e.data;
+    if (d instanceof Float32Array) { if (me === press) chunk(d); return; }
+    if (d && d.done) { if (d.pcm instanceof Float32Array && me === press) chunk(d.pcm); end(); }
+  };
+  n.port.postMessage('flush');
+  flushT = setTimeout(end, FLUSH_MS);
 }
 
 export const voice = {
