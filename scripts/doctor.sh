@@ -72,7 +72,7 @@ NODE=$(jsc_find_node || true)
 if [ -z "$NODE" ]; then
   bad "no encuentro node para probar la API"
 elif [ ! -r "$TOKEN_FILE" ]; then
-  bad "no está $TOKEN_FILE (el servidor lo crea o lo trae de remote/token al arrancar)"
+  bad "no está $TOKEN_FILE (el servidor lo crea, o lo trae de remote/token de una instalación antigua, al arrancar)"
 else
   res=$("$NODE" - "$TV_PORT" "$TOKEN_FILE" <<'EOF'
 const [port, file] = process.argv.slice(2);
