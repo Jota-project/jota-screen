@@ -158,3 +158,29 @@ test('WebSocket del mando: saludo (estado, ficha y foco) y respuesta con id', as
   assert.deepEqual(await a.rpc({ t: 'state' }), { ...st, t: 'state' });
   a.close();
 });
+
+test('WebSocket del mando: un mensaje binario llega a onBinary y el cierre a onClose', async () => {
+  const http = require('node:http');
+  const { createWs } = require(path.join(__dirname, '..', 'remote', 'src', 'transport', 'ws'));
+  const got = [], closed = [];
+  const w = createWs();
+  const onUpgrade = w.wire({
+    log: { info() {} }, limiter: { blocked: () => false, fail() {} }, auth: { okToken: () => true, tokenDev: () => null },
+    run: async () => ({}), local: {}, onStageSocket() {}, onLine() {}, greet: () => [],
+    onBinary: (buf, sock) => got.push([buf, sock]), onClose: sock => closed.push(sock),
+  });
+  const srv = http.createServer().on('upgrade', onUpgrade).listen(0, '127.0.0.1');
+  await new Promise(r => srv.once('listening', r));
+  try {
+    const c = new WS(`ws://127.0.0.1:${srv.address().port}/ws?t=x`);
+    await new Promise(r => c.on('open', r));
+    c.send(Buffer.from([1, 2, 3]), { binary: true });
+    for (let i = 0; i < 50 && !got.length; i++) await new Promise(r => setTimeout(r, 10));
+    assert.equal(got.length, 1);
+    assert.deepEqual([...got[0][0]], [1, 2, 3]);
+    c.close();
+    for (let i = 0; i < 50 && !closed.length; i++) await new Promise(r => setTimeout(r, 10));
+    assert.equal(closed.length, 1);
+    assert.equal(closed[0], got[0][1]);
+  } finally { srv.closeAllConnections(); srv.close(); }
+});

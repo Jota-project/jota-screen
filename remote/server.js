@@ -134,6 +134,8 @@ const onUpgrade = ws.wire({
   log, limiter, auth: acc, run,
   local: { '/idle-ws': (req, socket, head) => idle.upgrade(req, socket, head) }, // datos de la pantalla en reposo
   onStageSocket: stage.onSocket,
+  onBinary: talk.onBinary,
+  onClose: talk.onClose,
   onLine(s) {
     idle.touch();
     if (s.charCodeAt(0) === 119) pagePoll.soon();  // "w": scroll desde el mando, el carril se sondea más a menudo

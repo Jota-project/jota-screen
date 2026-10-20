@@ -24,6 +24,8 @@ function createWs() {
    *   onStageSocket: (ws: any) => void,
    *   onLine: (s: string, ws: any) => void,                               // líneas que no son JSON ni eco
    *   greet: (ws: any) => any[],                                           // mensajes al conectarse un mando
+   *   onBinary?: (buf: Buffer, ws: any) => void,                           // audio del mando (voz)
+   *   onClose?: (ws: any) => void,                                         // un mando se cierra
    * }} d
    */
   function wire(d) {
@@ -33,8 +35,9 @@ function createWs() {
       ws.isAlive = true;
       ws.on('pong', () => (ws.isAlive = true));
       ws.on('error', () => {});
+      ws.on('close', () => { if (d.onClose) d.onClose(ws); });
       ws.on('message', (data, isBinary) => {
-        if (isBinary) return;
+        if (isBinary) return void (d.onBinary && d.onBinary(Buffer.isBuffer(data) ? data : Buffer.concat(/** @type {Buffer[]} */ (data)), ws));
         const s = data.toString();
         const c = s.charCodeAt(0);
         if (c === 112) return ws.send(s);                                  // "p<ts>": eco para medir latencia
