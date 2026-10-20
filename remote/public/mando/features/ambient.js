@@ -5,10 +5,14 @@
 import { cfg } from '../core/store.js';
 import { setTitle } from '../ui/status.js';
 
-/** Luminancia relativa permitida a cada luz (medida en el peor punto: los dos centros encima, con el trackpad). */
+/**
+ * Luminancia relativa permitida a cada luz. Medida en el peor punto (los dos centros encima, con el relleno del
+ * trackpad) recorriendo todos los tonos con saturación de 0,3 a 0,75: el texto secundario queda a 5,07:1 o más en
+ * oscuro y a 4,54:1 o más en claro.
+ */
 export const LIMITS = {
-  mando: { oscuro: [0, 0.26], claro: [0.07, 1] },   // luces al 24 % / 16 % sobre #211b2a / #f6f3f0
-  sp: { oscuro: [0, 0.18], claro: [0.09, 1] },      // ahora suena: luces al 40 % sobre #1a1420, 20 % sobre #f6f3f0
+  mando: { oscuro: [0, 0.26], claro: [0.11, 1] },   // luces al 24 % / 16 % sobre #211b2a / #f6f3f0
+  sp: { oscuro: [0, 0.18], claro: [0.17, 1] },      // ahora suena: luces al 40 % sobre #1a1420, 20 % sobre #f6f3f0
 };
 const MALVA = '#7c6aae', CIELO = '#6e8cc4';
 

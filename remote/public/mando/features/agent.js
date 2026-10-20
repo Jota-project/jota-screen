@@ -36,7 +36,10 @@ export const agent = {
   name: 'agent',
   msgs: { ask: onAsk },
   sheets: { agS: {
-    open() { const agin = $('#agin'); agin.value = ''; agin.focus(); $('#shade').classList.add('vz'); },
+    open() {
+      const agin = $('#agin'); agin.value = ''; agin.focus(); $('#shade').classList.add('vz');
+      if ($('#agS').dataset.st === 'wait') stage('wait');   // se cerró mientras pensaba: las luces siguen creciendo
+    },
     close() { $('#shade').classList.remove('vz', 'think'); },
   } },
   clicks: { ag: () => openSheet('agS') },
