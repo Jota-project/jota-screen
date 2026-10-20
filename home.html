@@ -1,5 +1,6 @@
-<!doctype html><html lang="es"><meta charset="utf-8"><title>Salón</title>
-<!-- Arranque del kiosco: en cuanto el servidor del mando responde, pasa a la pantalla en reposo. -->
+<!doctype html><html lang="es"><meta charset="utf-8"><title>Pantalla</title>
+<!-- Arranque del kiosco: enseña la hora y, en cuanto el servidor responde, pasa a la página de inicio.
+     kiosk-session.sh la abre como home.html#port=8787&name=…[&home=URL]; sin parámetros usa el puerto 8787. -->
 <style>
   html,body{height:100%;margin:0;background:#000;color:rgba(255,255,255,.4);font-family:system-ui,sans-serif;cursor:none}
   body{display:grid;place-items:center}
@@ -7,10 +8,13 @@
 </style>
 <div id="t"></div>
 <script>
+  const q = new URLSearchParams(location.hash.slice(1) || location.search.slice(1));
+  const port = /^\d{1,5}$/.test(q.get('port') || '') ? q.get('port') : '8787';
+  const home = /^https?:\/\//i.test(q.get('home') || '') ? q.get('home') : `http://127.0.0.1:${port}/idle.html`;
+  if (q.get('name')) document.title = q.get('name');
   const f = () => document.getElementById('t').textContent = new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   f(); setInterval(f, 1000);
-  const IDLE = 'http://127.0.0.1:8787/idle.html';
-  (function tryIdle() {
-    fetch(IDLE, { mode: 'no-cors', cache: 'no-store' }).then(() => location.replace(IDLE)).catch(() => setTimeout(tryIdle, 3000));
+  (function tryHome() {
+    fetch(home, { mode: 'no-cors', cache: 'no-store' }).then(() => location.replace(home)).catch(() => setTimeout(tryHome, 3000));
   })();
 </script></html>
