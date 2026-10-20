@@ -11,22 +11,23 @@ const { WebSocket } = require(path.join(__dirname, '..', 'remote', 'node_modules
 const PERMS = { full: { agent: 'full', admin: true }, guest: { agent: 'guest' }, off: { agent: 'off' } };
 
 function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalMs, maxVoiceMs } = {}) {
-  const subs = new Set(), sent = [], views = [], audio = [], ends = [];
+  const subs = new Set(), sent = [], views = [], audio = [], ends = [], bins = [], spk = [];
   const gw = {
     ensure: async () => { if (slowEnsure) await new Promise(r => setTimeout(r, 20)); return ensure; }, send: t => sent.push(t), audio: b => audio.push(b), end: () => ends.push(1), on: fn => { subs.add(fn); return () => subs.delete(fn); },
     emit: ev => subs.forEach(f => f(ev)),
   };
   const view = Object.fromEntries(['turn', 'you', 'jota', 'done', 'error'].map(k => [k, (...a) => views.push([k, ...a])]));
-  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, turnIdleMs, finalMs, maxVoiceMs });
+  const speaker = Object.fromEntries(['start', 'write', 'end', 'stop'].map(k => [k, (...a) => spk.push([k, ...a])]));
+  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, speaker, turnIdleMs, finalMs, maxVoiceMs });
   const msgs = [];
-  const ws = { readyState: WebSocket.OPEN, send: s => msgs.push(JSON.parse(s)) };
+  const ws = { readyState: WebSocket.OPEN, send: s => (Buffer.isBuffer(s) ? bins.push(s) : msgs.push(JSON.parse(s))) };
   const perm = { current: 'full' };
   const cmds = createCommands({ permsOf: dev => PERMS[perm.current] });
   cmds.register(talk.commands);
-  const ask = (text, dev = { role: 'admin', name: 'Admin' }) => cmds.dispatch({ t: 'ask', text }, { dev, ws });
+  const ask = (text, dev = { role: 'admin', name: 'Admin' }, out) => cmds.dispatch({ t: 'ask', text, out }, { dev, ws });
   const vcmd = (m, dev = { role: 'admin', name: 'Admin' }, sock = ws) => cmds.dispatch(m, { dev, ws: sock });
   const tick = () => new Promise(r => setImmediate(r));
-  return { gw, talk, sent, views, msgs, ws, perm, ask, tick, audio, ends, vcmd, make: null };
+  return { gw, talk, sent, views, msgs, ws, perm, ask, tick, audio, ends, vcmd, bins, spk, make: null };
 }
 
 test('ask full: send lleva askPrefix + texto; los tokens llegan acumulados y ask resuelve {ok:1, reply}', async () => {
@@ -302,4 +303,110 @@ test('vend sin vstart, o de otro socket: error; permiso off: error del permiso',
   assert.ok((await t.vcmd({ t: 'vend' }, undefined, other())).error);
   t.perm.current = 'off';
   assert.match((await t.vcmd({ t: 'vstart' })).error, /agente no está disponible/);
+});
+
+// ── la respuesta suena en la tele o en el móvil (nunca en los dos)
+const pframe = (seq, ...pcm) => Buffer.from([0xA1, seq >> 8, seq & 255, ...pcm]);
+const aud = (seq, ...pcm) => ({ type: 'audio', seq, pcm: Buffer.from(pcm), frame: pframe(seq, ...pcm) });
+
+async function turnWith(t, out, via = 'ask') {
+  const p = via === 'ask' ? t.ask('hola', undefined, out) : (async () => {
+    await t.vcmd({ t: 'vstart', out }); await t.tick(); t.vcmd({ t: 'vend' });
+    t.gw.emit({ type: 'final', text: 'hola' }); await t.tick(); return null;
+  })();
+  await t.tick();
+  return p;
+}
+
+for (const via of ['ask', 'voz']) {
+  test(`out tv (${via}): speaker.start en turn_start, write recibe pcm sin cabecera, end al terminar; el móvil no recibe binario`, async () => {
+    const t = make();
+    const p = turnWith(t, 'tv', via); await t.tick(); await t.tick();
+    t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 5 });
+    t.gw.emit(aud(5, 1, 2)); t.gw.emit(aud(5, 3));
+    t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' });
+    t.gw.emit({ type: 'turn_end', turnId: 'a' });
+    await p;
+    assert.deepEqual(t.spk.map(c => c[0]), ['stop', 'start', 'write', 'write', 'end']);
+    assert.deepEqual(t.spk.filter(c => c[0] === 'write').map(c => [...c[1]]), [[1, 2], [3]]);
+    assert.equal(t.bins.length, 0, 'nunca los dos');
+  });
+
+  test(`out phone (${via}): el móvil recibe el frame entero con 0xA1; la tele no suena`, async () => {
+    const t = make();
+    const p = turnWith(t, 'phone', via); await t.tick(); await t.tick();
+    t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 300 });
+    t.gw.emit(aud(300, 7, 8));
+    t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' });
+    t.gw.emit({ type: 'turn_end', turnId: 'a' });
+    await p;
+    assert.deepEqual(t.bins.map(b => [...b]), [[0xA1, 1, 44, 7, 8]]);
+    assert.equal(t.spk.filter(c => c[0] === 'start' || c[0] === 'write').length, 0, 'nunca los dos');
+  });
+}
+
+test('out none: ni tele ni móvil', async () => {
+  const t = make();
+  const p = turnWith(t, 'none'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit(aud(1, 1, 2));
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await p;
+  assert.equal(t.bins.length, 0);
+  assert.equal(t.spk.filter(c => c[0] === 'start' || c[0] === 'write').length, 0);
+});
+
+test('ask sin out (API, MCP) no suena en ningún sitio', async () => {
+  const t = make();
+  const p = t.ask('hola'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit(aud(1, 1, 2));
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await p;
+  assert.equal(t.bins.length, 0);
+  assert.equal(t.spk.filter(c => c[0] === 'start' || c[0] === 'write').length, 0);
+});
+
+test('un frame con seq de otro turno se descarta; sin turn_start tampoco cuenta', async () => {
+  const t = make();
+  const p = turnWith(t, 'tv'); await t.tick();
+  t.gw.emit(aud(5, 9));                                  // aún sin turn_start
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 5 });
+  t.gw.emit(aud(4, 1)); t.gw.emit(aud(5, 2)); t.gw.emit(aud(6, 3));
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await p;
+  assert.deepEqual(t.spk.filter(c => c[0] === 'write').map(c => [...c[1]]), [[2]]);
+  const u = make();
+  const q = turnWith(u, 'phone'); await u.tick();
+  u.gw.emit({ type: 'turn_start', turnId: 'a', seq: 5 }); u.gw.emit(aud(4, 1)); u.gw.emit(aud(5, 2));
+  u.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); u.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await q;
+  assert.deepEqual(u.bins.map(b => [...b]), [[0xA1, 0, 5, 2]]);
+});
+
+test('el altavoz se corta si el turno falla o se cancela, y un error suyo no tumba el turno', async () => {
+  const t = make();
+  const p = turnWith(t, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  t.gw.emit({ type: 'down' });
+  await p;
+  assert.equal(t.spk[t.spk.length - 1][0], 'stop');
+  const v = make();
+  const q = turnWith(v, 'tv'); await v.tick();
+  v.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  v.gw.emit({ type: 'token', turnId: 'a', text: 'x' });
+  v.gw.emit({ type: 'turn_error', turnId: 'a' });
+  assert.deepEqual(await q, { error: 'Jota no está disponible.' });
+  assert.equal(v.spk[v.spk.length - 1][0], 'stop');
+});
+
+test('un speaker que lanza no rompe el turno', async () => {
+  const subs = new Set();
+  const gw = { ensure: async () => true, send() {}, audio() {}, end() {}, on: fn => { subs.add(fn); return () => subs.delete(fn); }, emit: ev => subs.forEach(f => f(ev)) };
+  const boom = () => { throw new Error('ENOENT'); };
+  const talk = createTalk({ gw, cfg: { NAME: 'S' }, media: () => 0, speaker: { start: boom, write: boom, end: boom, stop: boom } });
+  const ws = { readyState: WebSocket.OPEN, send() {} };
+  const p = talk.ask('hola', ws, 'full', '', 'tv');
+  await new Promise(r => setImmediate(r));
+  gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); gw.emit({ type: 'audio', seq: 1, pcm: Buffer.from([1]), frame: pframe(1, 1) });
+  gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); gw.emit({ type: 'turn_end', turnId: 'a' });
+  assert.deepEqual(await p, { ok: 1, reply: 'ok' });
 });

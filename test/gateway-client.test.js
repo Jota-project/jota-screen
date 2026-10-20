@@ -110,6 +110,8 @@ test('traduce los mensajes', async () => {
     assert.equal(evs[6].seq, 7);
     assert.equal(evs[6].pcm.length, 4);
     assert.deepEqual([...evs[6].pcm], [1, 2, 3, 4]);
+    assert.deepEqual([...evs[6].frame.subarray(0, 3)], [0xA1, 0, 7], 'el frame entero (con cabecera) para reenviarlo al móvil');
+    assert.equal(evs[6].frame.length, 7);
     assert.deepEqual(evs[7], { type: 'turn_end', turnId: 't-2' }, 'status, error ajeno y binarios ajenos se ignoran');
     assert.equal(evs.length, 8);
     off();

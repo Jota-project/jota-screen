@@ -140,6 +140,12 @@ test('estado: nunca sobrescribe lo que ya está en la carpeta nueva', () => {
   } finally { s.done(); }
 });
 
+test('config: TV_SPEAKER_CMD se parte por espacios; vacío = null (altavoz por defecto)', () => {
+  assert.deepEqual(loadConfig({ HOME: '/h', PATH: '' }).SPEAKER_CMD, null);
+  assert.deepEqual(loadConfig({ HOME: '/h', PATH: '', TV_SPEAKER_CMD: ' aplay -q  -t raw -f S16_LE -r 24000 -c 1 ' }).SPEAKER_CMD,
+    ['aplay', '-q', '-t', 'raw', '-f', 'S16_LE', '-r', '24000', '-c', '1']);
+});
+
 test('config: el Gateway de voz se lee del entorno y TV_AGENT cambia el agente', () => {
   const c = loadConfig({ HOME: '/h', PATH: '', TV_GATEWAY_URL: ' ws://gw:8004/ws/stream ', TV_GATEWAY_KEY: 'k1', TV_AGENT: 'otro' });
   assert.equal(c.GATEWAY_URL, 'ws://gw:8004/ws/stream');

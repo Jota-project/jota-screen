@@ -12,6 +12,8 @@ const systemTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().ti
 /** Número de una variable, o null si está vacía o no es un número. @param {string | undefined} v */
 const num = v => (v === undefined || String(v).trim() === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 
+/** TV_SPEAKER_CMD (palabras separadas por espacios) → lista, o null si está vacío. @param {string} [v] */
+const speakerCmd = v => { const a = String(v || '').trim().split(/\s+/).filter(Boolean); return a.length ? a : null; };
 const noSlash = (/** @type {string} */ s) => s.replace(/\/+$/, '');
 
 /**
@@ -52,6 +54,7 @@ function loadConfig(env = process.env, { hostname = os.hostname() } = {}) {
     STAGE_DIR: path.join(STATE_DIR, 'stage'),
     GATEWAY_URL: (env.TV_GATEWAY_URL || '').trim(),             // J Gateway (voz): ws://<host>:8004/ws/stream; vacío = sin voz
     GATEWAY_KEY: (env.TV_GATEWAY_KEY || '').trim(),             // clave del cliente en el Gateway (nunca a logs ni al repo)
+    SPEAKER_CMD: speakerCmd(env.TV_SPEAKER_CMD),   // altavoz de la tele (stdin = PCM16 24 kHz mono); vacío = pw-cat
     AGENT: (env.TV_AGENT || '').trim() || 'j-assistant',        // agente del Gateway
     ADMIN_URL: adminUrl(env, PORT, hostname),
     SPOTIFY_BANNER: !!env.TV_SPOTIFY_BANNER,

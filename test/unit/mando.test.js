@@ -158,3 +158,24 @@ test('mando: el orbe de la voz no deja el gesto al navegador (touch-action:none;
   assert.match(rules, /touch-action:none/);
   assert.doesNotMatch(rules, /touch-action:(manipulation|pan|auto)/);
 });
+
+test('pcm-player: PCM16 LE se pasa a Float32 y el frame sin 0xA1 ni seq no suena', async () => {
+  const { pcm16ToFloat32, createPcmPlayer } = await import(pathToFileURL(path.join(PUB, 'mando', 'features', 'pcm-player.js')).href);
+  const b = new Uint8Array([0xA1, 0, 5, 0x00, 0x80, 0xFF, 0x7F, 0, 0]).buffer;   // -32768, 32767, 0
+  const f = pcm16ToFloat32(b, 3);
+  assert.deepEqual([...f], [-1, 32767 / 32768, 0]);
+  const srcs = [], ctx = { state: 'running', currentTime: 1, destination: {}, resume() { return Promise.resolve(); },
+    createBuffer: (_c, n, r) => ({ duration: n / r, copyToChannel() {} }),
+    createBufferSource: () => { const s = { connect() {}, disconnect() {}, start(at) { s.at = at; }, stop() { s.stopped = true; } }; srcs.push(s); return s; } };
+  const p = createPcmPlayer(() => ctx);
+  p.play(b);                                               // seq 5: abre el turno
+  p.play(new Uint8Array([0xA1, 0, 6, 1, 0]).buffer);       // seq 6: se descarta
+  p.play(new Uint8Array([0x00, 0, 5, 1, 0]).buffer);       // sin 0xA1: se descarta
+  p.play(new Uint8Array([0xA1, 0, 5, 1, 0]).buffer);       // seq 5: detrás del anterior
+  assert.equal(srcs.length, 2);
+  assert.ok(srcs[1].at > srcs[0].at, 'back-to-back');
+  p.stop();
+  assert.ok(srcs.every(s => s.stopped));
+  p.play(new Uint8Array([0xA1, 0, 6, 1, 0]).buffer);       // tras stop, otro turno vale
+  assert.equal(srcs.length, 3);
+});

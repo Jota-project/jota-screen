@@ -11,7 +11,7 @@ const AUDIO_MAGIC = 0xA1;                    // frame de audio del Gateway: 0xA1
 
 /**
  * @typedef {{type:'partial',text:string} | {type:'final',text:string} | {type:'turn_start',turnId:string,seq:number}
- *   | {type:'token',turnId:string,text:string} | {type:'turn_end',turnId:string} | {type:'audio',seq:number,pcm:Buffer}
+ *   | {type:'token',turnId:string,text:string} | {type:'turn_end',turnId:string} | {type:'audio',seq:number,pcm:Buffer,frame:Buffer}
  *   | {type:'turn_error',turnId:string,message:string} | {type:'down'}} GwEvent
  */
 
@@ -50,7 +50,7 @@ function createGatewayClient({ url, key, agent, log, WebSocketImpl = WebSocket, 
   /** @param {Buffer} buf */
   function onBinary(buf) {
     if (buf.length < 3 || buf[0] !== AUDIO_MAGIC) return;
-    emit({ type: 'audio', seq: buf.readUInt16BE(1), pcm: buf.subarray(3) });
+    emit({ type: 'audio', seq: buf.readUInt16BE(1), pcm: buf.subarray(3), frame: buf });
   }
 
   /** @param {any} m */

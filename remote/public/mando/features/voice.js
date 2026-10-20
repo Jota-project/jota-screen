@@ -34,14 +34,21 @@ let press = 0;                                          // número de la pulsaci
 let tapT = 0, stopT = 0, flushT = 0;
 /** @type {Float32Array[]} */
 let pending = [];                                       // los primeros trozos, en memoria hasta saber que no es un toque
-/** @type {{ stage: (st: string) => void, said: (t: string) => void, rep: (t: string, cls?: string) => void, focus: () => void }} */
+/** @type {{ stage: (st: string) => void, said: (t: string) => void, rep: (t: string, cls?: string) => void, focus: () => void, press?: () => void }} */
 let ui;
 
 export const canRecord = () => !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia &&
   window.AudioContext && window.AudioWorkletNode);
 /** El AudioContext del mando (null hasta la primera pulsación); la voz de vuelta en el móvil usa el mismo. */
 export const audioCtx = () => ctx;
+/** Lo mismo, pero lo crea si aún no hay (un texto escrito sin haber usado el micrófono). Llamar dentro de un gesto. */
+export function ensureAudioCtx() {
+  try { if (!ctx) ctx = new AudioContext(); if (ctx.state !== 'running') ctx.resume().catch(() => {}); } catch {}
+  return ctx;
+}
 const out = () => (OUTS.includes(cfg.voiceOut) ? cfg.voiceOut : 'tv');
+/** El selector «dónde suena la respuesta» (voz y texto escrito). */
+export const outSel = out;
 function paintOut() { const b = $('#agOut'); b.textContent = OUT_LABEL[out()]; b.dataset.out = out(); }
 
 /** Suelta el micrófono y los nodos (el contexto se queda). */
@@ -77,10 +84,12 @@ function go() {
 async function start(key = false) {
   if (held || node || stream) return;                   // ya hay una pulsación en curso (o se está pidiendo el micro)
   held = true; long = key; started = false; pending = [];
+  if (ui.press) ui.press();                             // una pulsación nueva corta la respuesta que aún suene en el móvil
   const me = ++press;
   // iOS: el contexto se crea (o se reanuda) dentro del propio gesto, antes de cualquier await
-  try { if (!ctx) ctx = new AudioContext(); if (ctx.state !== 'running') ctx.resume().catch(() => {}); }
-  catch { ui.rep('Este navegador no puede usar el micrófono.'); held = false; return; }
+  if (!ensureAudioCtx()) {
+    ui.rep('Este navegador no puede usar el micrófono.'); held = false; return;
+  }
   if (!key) tapT = setTimeout(() => { long = true; go(); }, TAP_MS);
   if (!mod) mod = ctx.audioWorklet.addModule('/mando/features/mic-worklet.js').catch(e => { mod = null; throw e; });
   // las dos a la vez, y si una falla el micrófono que sí se abrió se cierra (si no, se queda encendido)

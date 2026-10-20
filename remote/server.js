@@ -23,6 +23,7 @@ const { createPointer, createAudio, createPairScreen } = require('./src/tv/devic
 const { createPagePoll } = require('./src/tv/page-poll');
 const { createGatewayClient } = require('./src/gateway/client');
 const createTalk = require('./src/features/talk');
+const { createSpeaker } = require('./src/tv/speaker');
 const createStage = require('./src/features/stage');
 const createKeyboard = require('./src/features/keyboard');
 const createControl = require('./src/features/control');
@@ -97,7 +98,8 @@ const idle = createIdle({
 const gw = CFG.GATEWAY_URL
   ? createGatewayClient({ url: CFG.GATEWAY_URL, key: CFG.GATEWAY_KEY, agent: CFG.AGENT, log })
   : { ensure: async () => false, send() {}, on: () => () => {}, audio() {}, end() {}, isReady: () => false, close() {} };
-const talk = createTalk({ gw, cfg: CFG, media: () => state.media, log });
+const speaker = createSpeaker({ runtimeDir: CFG.XDG_RUNTIME_DIR, cmd: CFG.SPEAKER_CMD, log });
+const talk = createTalk({ gw, cfg: CFG, media: () => state.media, speaker, log });
 
 // ───────────────────────── órdenes: cada una con su permiso al lado, en su capacidad
 const commands = createCommands({ permsOf: acc.permsOf, onUse: () => idle.touch(), log });

@@ -4,7 +4,9 @@
 // vuelve en directo, palabra a palabra, por el mismo WebSocket del mando que preguntó (`{t:'talk', ev}`). Un turno a la vez
 // en toda la pantalla. Admin: instrucciones completas; invitados: instrucciones que les impiden tocar nada personal del
 // dueño (TV_OWNER, si se da). Por voz (`vstart`, audio binario, `vend`) el audio sube en directo al Gateway, la frase
-// reconocida se muestra en el móvil y la tele, y al llegar la final se envía por el mismo camino que `ask`. La capa de la tele (`view`) pinta lo mismo en la pantalla; `speaker` llega con la voz (tarea 5).
+// reconocida se muestra en el móvil y la tele, y al llegar la final se envía por el mismo camino que `ask`. La capa de la tele (`view`) pinta lo mismo en la pantalla.
+// La respuesta suena en UN solo sitio según `out` del turno: la tele (`speaker`, PCM sin cabecera), el móvil que preguntó (el frame
+// binario entero) o ninguno. Solo suenan los frames del `seq` del turn_start del turno; un `ask` sin `out` (API, MCP) no suena.
 const { WebSocket } = require('ws');
 
 const DOWN = 'Jota no está disponible.';
@@ -30,25 +32,30 @@ function prompts(name, owner = '') {
 
 /** Vista de la tele que no pinta nada (hasta que llegue la capa de la tarea 6). */
 const NO_VIEW = { turn() {}, you() {}, jota() {}, done() {}, error() {} };
+/** Altavoz de la tele que no suena (tests y arranques sin él). */
+const NO_SPEAKER = { start() {}, write() {}, end() {}, stop() {} };
 
 /**
  * @param {{
  *   gw: { ensure: () => Promise<boolean>, send: (t: string) => void, audio: (b: Buffer) => void, end: () => void, on: (fn: (ev: any) => void) => () => void },
  *   cfg: { NAME: string, OWNER?: string }, media: () => number,
  *   view?: { turn: (mode: 'island' | 'panel') => void, you: (t: string, final: boolean) => void, jota: (t: string) => void, done: () => void, error: (t: string) => void },
- *   speaker?: any, log?: { info: Function, warn: Function }, finalMs?: number, turnIdleMs?: number, maxVoiceMs?: number,
+ *   speaker?: { start: () => void, write: (pcm: Buffer) => void, end: () => void, stop: () => void }, log?: { info: Function, warn: Function }, finalMs?: number, turnIdleMs?: number, maxVoiceMs?: number,
  * }} deps
  */
-module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { info() {}, warn() {} }, finalMs = 8000, turnIdleMs = 150000, maxVoiceMs = 32000 }) {
+module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker = NO_SPEAKER, log = { info() {}, warn() {} }, finalMs = 8000, turnIdleMs = 150000, maxVoiceMs = 32000 }) {
   const { askPrefix: ASK_PREFIX, askGuest: ASK_GUEST } = prompts(cfg.NAME, cfg.OWNER);
   /** El turno en curso: quién preguntó, el id que le da el Gateway (tras turn_start) y la respuesta acumulada.
    *  `sent`: ya se llamó a gw.send; hasta entonces ningún turn_start puede ser el nuestro (un push).
    *  `voice`: turno por voz, en `rec` (llega audio), `wait` (tras vend, esperando la final) o `sent`; `cap` y `wait` son sus plazos.
    *  @type {null | { ws: any, turnId: string | null, sent: boolean, reply: string, timer: any, finish: (r: object) => void,
-   *    voice?: 'rec' | 'wait' | 'sent', out?: string, mode?: string, who?: string, cap?: any, waitTimer?: any }} */
+   *    voice?: 'rec' | 'wait' | 'sent', out?: string, seq?: number, mode?: string, who?: string, cap?: any, waitTimer?: any }} */
   let turn = null;
   /** Tras cancelar un turno de voz, la final que aún pueda llegar se descarta (una vez, y como mucho finalMs). */
   let dropTimer = null;
+
+  /** Llama al altavoz sin que su fallo toque el turno. @param {'start' | 'write' | 'end' | 'stop'} k @param {any} [a] */
+  function spk(k, a) { try { speaker[k](a); } catch (e) { log.warn('talk: altavoz con error', e); } }
 
   /** @param {any} ws @param {object} o */
   const tell = (ws, o) => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'talk', ...o })); };
@@ -64,6 +71,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { i
     const t = turn; if (!t) return;
     turn = null; clearTimers(t);
     if (t.voice === 'rec') gw.end();                       // tras vend ya se mandó
+    spk('stop');
     clearTimeout(dropTimer);
     dropTimer = setTimeout(() => { dropTimer = null; }, finalMs);
     if (dropTimer.unref) dropTimer.unref();
@@ -74,7 +82,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { i
   /** Cierra el turno en curso con un error (el Gateway cae, rechaza el turno o no está). @param {string} text */
   function fail(text) {
     const t = turn; if (!t) return;
-    turn = null; clearTimers(t);
+    turn = null; clearTimers(t); spk('stop');
     tell(t.ws, { ev: 'error', error: text });
     try { view.error(text); } catch (e) { log.warn('talk: vista con error', e); }
     t.finish({ error: text });
@@ -83,7 +91,8 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { i
   function end() {
     const t = turn; if (!t) return;
     turn = null; clearTimers(t);
-    if (!t.reply) { tell(t.ws, { ev: 'error', error: 'sin respuesta del agente' }); try { view.error('sin respuesta del agente'); } catch (e) { log.warn('talk: vista con error', e); } return t.finish({ error: 'sin respuesta del agente' }); }
+    if (!t.reply) { spk('stop'); tell(t.ws, { ev: 'error', error: 'sin respuesta del agente' }); try { view.error('sin respuesta del agente'); } catch (e) { log.warn('talk: vista con error', e); } return t.finish({ error: 'sin respuesta del agente' }); }
+    spk('end');                                            // que acabe de decir lo que le queda
     tell(t.ws, { ev: 'done', reply: t.reply });
     try { view.done(); } catch (e) { log.warn('talk: vista con error', e); }
     t.finish({ ok: 1, reply: t.reply });
@@ -129,7 +138,14 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { i
     if (ev.type !== 'down' && ev.type !== 'turn_error' && !turn.turnId && ev.type !== 'turn_start') return;
     arm();
     switch (ev.type) {
-      case 'turn_start': if (!turn.turnId) turn.turnId = ev.turnId; return;
+      case 'turn_start':
+        if (!turn.turnId) { turn.turnId = ev.turnId; turn.seq = ev.seq; if (turn.out === 'tv') spk('start'); }
+        return;
+      case 'audio':
+        if (!turn.turnId || turn.seq !== ev.seq) return;   // de otro turno
+        if (turn.out === 'tv') spk('write', ev.pcm);
+        else if (turn.out === 'phone' && ev.frame && turn.ws && turn.ws.readyState === WebSocket.OPEN) { try { turn.ws.send(ev.frame); } catch (e) { log.warn('talk: audio al móvil', e); } }
+        return;
       case 'token':
         if (turn.turnId !== ev.turnId) return;
         turn.reply += ev.text;                             // el token es un trozo: se acumula
@@ -144,16 +160,17 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { i
   });
 
   /**
-   * @param {any} text @param {any} ws @param {string} [mode] 'full' | 'guest' @param {string} [who]
+   * @param {any} text @param {any} ws @param {string} [mode] 'full' | 'guest' @param {string} [who] @param {any} [out] 'tv' | 'phone' | 'none'; sin él (API, MCP) no suena
    * @returns {Promise<{ ok: 1, reply: string } | { error: string }>}
    */
-  async function ask(text, ws, mode = 'full', who = '') {
+  async function ask(text, ws, mode = 'full', who = '', out = 'none') {
     text = String(text || '').trim().slice(0, 1000);
     if (!text) return { error: 'mensaje vacío' };
     if (turn) return { error: BUSY };
     /** @type {(r: object) => void} */ let finish = () => {};
     const result = new Promise(res => { finish = res; });
-    const mine = turn = { ws, turnId: null, sent: /** @type {boolean} */ (false), reply: '', timer: null, finish };
+    const mine = turn = { ws, turnId: null, sent: /** @type {boolean} */ (false), reply: '', timer: null, finish, out: OUTS.includes(out) ? out : 'none' };
+    spk('stop');                                           // una respuesta anterior que aún suene se corta
     let ok = false;
     try { ok = await gw.ensure(); } catch (e) { log.warn('talk: ensure con error', e); }
     if (turn !== mine) return /** @type {any} */ (result);   // el turno se cerró mientras se conectaba (down)
@@ -175,6 +192,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { i
     const result = new Promise(res => { finish = res; });
     /** @type {NonNullable<typeof turn>} */
     const mine = turn = { ws, turnId: null, sent: false, reply: '', timer: null, finish, voice: 'rec', mode, who, out: OUTS.includes(out) ? out : 'tv' };
+    spk('stop');
     mine.cap = setTimeout(() => { if (turn === mine) { log.warn('talk: grabación sin fin'); cancel(); } }, maxVoiceMs);
     if (mine.cap.unref) mine.cap.unref();
     try { view.turn(media() === 1 ? 'island' : 'panel'); } catch (e) { log.warn('talk: vista con error', e); }
@@ -208,7 +226,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { i
       { t: 'vstart', perm: 'agent', run: (m, { ws, dev, P }) => vstart(ws, m.out, P.agent, dev && dev.role !== 'admin' ? dev.name : '') },
       { t: 'vend', perm: 'agent', run: (_m, { ws }) => vend(ws) },
       { t: 'vcancel', perm: 'agent', run: (_m, { ws }) => { if (turn && turn.ws === ws && (turn.voice === 'rec' || turn.voice === 'wait')) cancel(); return { ok: 1 }; } },
-      { t: 'ask', perm: 'agent', run: (m, { ws, dev, P }) => ask(m.text, ws, P.agent, dev && dev.role !== 'admin' ? dev.name : '') },
+      { t: 'ask', perm: 'agent', run: (m, { ws, dev, P }) => ask(m.text, ws, P.agent, dev && dev.role !== 'admin' ? dev.name : '', m.out) },
     ],
   };
 };

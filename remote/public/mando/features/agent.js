@@ -2,11 +2,14 @@
 // al J Gateway; la frase entra palabra a palabra, las luces crecen mientras piensa y la respuesta se escribe en directo
 // por el WebSocket (`talk`: partial y final de la voz, token con lo acumulado, done, error).
 import { $, el } from '../core/dom.js';
-import { rpc } from '../core/api.js';
+import { rpc, onWs } from '../core/api.js';
 import { buzz } from '../ui/haptics.js';
 import { openSheet, closeSheet } from '../ui/sheets.js';
-import { voice } from './voice.js';
+import { voice, audioCtx, ensureAudioCtx, outSel } from './voice.js';
+import { createPcmPlayer } from './pcm-player.js';
 
+/** La voz de la respuesta cuando es «en el móvil»: va sobre el AudioContext de voice.js. */
+const player = createPcmPlayer(() => audioCtx() || ensureAudioCtx());
 let mic = false;                                        // true: el orbe graba (hay micrófono y HTTPS)
 
 /** Estado de la vista: 'idle' (te escucho), 'rec' (grabando con el orbe), 'wait' (un momento) o 'done' (respuesta). */
@@ -24,11 +27,13 @@ function said(text) {
   q.classList.remove('said'); requestAnimationFrame(() => q.classList.add('said'));
 }
 function ask(text) {
+  player.stop();
+  if (outSel() === 'phone') ensureAudioCtx();           // dentro del gesto (iOS); el audio llega después
   said(text);
   const rep = $('#rep'); rep.className = 'rep wait'; rep.textContent = 'Pensando';
   stage('wait');
   // el permiso o un texto vacío se contestan por aquí (no hay turno, así que no habrá evento talk)
-  rpc({ t: 'ask', text }).then(r => { if (r && r.error && r.error !== 'sin respuesta' && $('#agS').dataset.st === 'wait') { rep.className = 'rep'; rep.textContent = r.error; stage('idle'); } });
+  rpc({ t: 'ask', text, out: outSel() }).then(r => { if (r && r.error && r.error !== 'sin respuesta' && $('#agS').dataset.st === 'wait') { rep.className = 'rep'; rep.textContent = r.error; stage('idle'); } });
 }
 function onTalk(j) {
   const rep = $('#rep');
@@ -37,7 +42,7 @@ function onTalk(j) {
   if (j.ev === 'final') { said(j.text || ''); return; }
   if (j.ev === 'token') { rep.className = 'rep'; rep.textContent = j.text || ''; stage('wait'); return; }   // la respuesta acumulada, en directo
   if (j.ev === 'done') { rep.className = 'rep'; rep.textContent = j.reply || 'No he recibido respuesta.'; buzz(12); stage('done'); return; }
-  if (j.ev === 'error') { rep.className = 'rep'; rep.textContent = j.error || 'Jota no está disponible.'; stage('idle'); }
+  if (j.ev === 'error') { player.stop(); rep.className = 'rep'; rep.textContent = j.error || 'Jota no está disponible.'; stage('idle'); }
 }
 
 export const agent = {
@@ -61,7 +66,8 @@ export const agent = {
       agin.value = ''; ask(v);
     });
     const rep = (t, cls = '') => { const r = $('#rep'); r.className = 'rep' + (cls ? ' ' + cls : ''); r.textContent = t; };
-    mic = voice.init({ stage, said, rep, focus: () => { buzz(8); agin.focus(); } });
+    onWs('bin', b => player.play(b));
+    mic = voice.init({ stage, said, rep, press: () => player.stop(), focus: () => { buzz(8); agin.focus(); } });
     // sin micrófono propio (http): el orbe enfoca el campo y el teclado del móvil trae el suyo
     if (!mic) $('#agOrb').addEventListener('click', () => { buzz(8); agin.focus(); });
     $('#agX').addEventListener('click', () => { buzz(7); closeSheet(); });
