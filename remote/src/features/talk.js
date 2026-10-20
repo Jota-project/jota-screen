@@ -12,6 +12,7 @@ const { WebSocket } = require('ws');
 const DOWN = 'Jota no está disponible.';
 const BUSY = 'Sigo con la petición anterior. Espera un momento.';
 const NOT_HEARD = 'No te he entendido. Prueba otra vez.';
+const NO_REPLY = 'No he recibido respuesta.';
 const OUTS = ['tv', 'phone', 'none'];
 
 /**
@@ -113,7 +114,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   function end() {
     const t = turn; if (!t) return;
     turn = null; clearTimers(t);
-    if (!t.reply) { spk('stop'); tell(t.ws, { ev: 'error', error: 'sin respuesta del agente' }); try { view.error('sin respuesta del agente'); } catch (e) { log.warn('talk: vista con error', e); } return t.finish({ error: 'sin respuesta del agente' }); }
+    if (!t.reply) { spk('stop'); tell(t.ws, { ev: 'error', error: NO_REPLY }); try { view.error(NO_REPLY); } catch (e) { log.warn('talk: vista con error', e); } return t.finish({ error: NO_REPLY }); }
     if (t.seq !== undefined && (t.out === 'tv' || t.out === 'phone')) { tail = { seq: t.seq, out: t.out, ws: t.ws, timer: null }; armTail(); }   // el audio sigue un poco
     tell(t.ws, { ev: 'done', reply: t.reply });
     try { view.done(); } catch (e) { log.warn('talk: vista con error', e); }
@@ -219,6 +220,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     /** @type {NonNullable<typeof turn>} */
     const mine = turn = { ws, turnId: null, sent: false, reply: '', timer: null, finish, voice: 'rec', mode, who, out: OUTS.includes(out) ? out : 'tv' };
     endTail(true); spk('stop');
+    clearTimeout(dropTimer); dropTimer = null;             // la ventana de un turno cancelado no se come la final de este
     mine.cap = setTimeout(() => { if (turn === mine) { log.warn('talk: grabación sin fin'); cancel(); } }, maxVoiceMs);
     if (mine.cap.unref) mine.cap.unref();
     try { view.turn(media() === 1 ? 'island' : 'panel'); } catch (e) { log.warn('talk: vista con error', e); }

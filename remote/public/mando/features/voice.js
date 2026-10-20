@@ -128,7 +128,13 @@ function stop() {
   if (tap) { ui.stage('idle'); ui.focus(); return; }
   if (!sent) return;                                    // aún sin micrófono: start() avisa al volver
   buzz(6); ui.rep('Pensando', 'wait'); ui.stage('wait');
-  if (node) finish(); else cmd({ t: 'vend' });
+  if (node) finish(); else sendEnd();
+}
+
+/** vend por rpc: si el servidor ya no tiene grabación (el turno murió), se vuelve a reposo sin pisar el texto que haya. */
+function sendEnd() {
+  const me = press;
+  rpc({ t: 'vend' }).then(r => { if (r && r.error && r.error !== 'sin respuesta' && me === press) ui.stage('idle'); });
 }
 
 /** Fin de la frase: el micro se apaga ya, el worklet manda lo que le queda (y lo que estuviera en camino) y luego vend. */
@@ -137,7 +143,7 @@ function finish() {
   clearTimeout(tapT); clearTimeout(stopT);
   if (stream) stream.getTracks().forEach(t => t.stop());
   const end = () => {
-    if (me === press && started) { started = false; cmd({ t: 'vend' }); }
+    if (me === press && started) { started = false; sendEnd(); }
     if (node === n) release();                          // si entre tanto se cerró la hoja o falló vstart, ya está suelto
   };
   n.port.onmessage = e => {
@@ -157,6 +163,11 @@ export const voice = {
     held = false; started = false; press++; release();
     if (sent) cmd({ t: 'vcancel' });
     ui.stage('idle');
+  },
+  /** El servidor ya cerró el turno (error): se suelta el micrófono sin avisar de vuelta (ni vcancel ni vend). */
+  abort() {
+    if (!held && !started && !node && !stream) return;
+    held = false; started = false; press++; release();
   },
   /** @param {typeof ui} hooks @returns {boolean} true si hay micrófono (el orbe graba) */
   init(hooks) {

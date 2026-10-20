@@ -97,7 +97,7 @@ test('traduce los mensajes', async () => {
     ws.send(Buffer.from([0xB2, 0x00, 0x07, 1, 2]), { binary: true });
     ws.send(Buffer.from([0xA1, 0x00]), { binary: true });
     J({ type: 'turn_end', turn_id: 't-2' });
-    await until(() => evs.length >= 7);
+    await until(() => evs.length >= 8);
     assert.deepEqual(evs.slice(0, 5), [
       { type: 'partial', text: 'ho' },
       { type: 'final', text: 'hola' },

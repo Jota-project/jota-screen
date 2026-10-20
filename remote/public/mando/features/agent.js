@@ -39,10 +39,10 @@ function onTalk(j) {
   const rep = $('#rep');
   // la parcial es la frase acumulada mientras se habla: sustituye sin animar (las palabras animadas, para la final)
   if (j.ev === 'partial') { const q = $('#agQ'); q.classList.remove('said'); q.textContent = j.text || ''; return; }
-  if (j.ev === 'final') { said(j.text || ''); return; }
+  if (j.ev === 'final') { player.stop(); said(j.text || ''); return; }   // los frames de la respuesta anterior ya no valen
   if (j.ev === 'token') { rep.className = 'rep'; rep.textContent = j.text || ''; stage('wait'); return; }   // la respuesta acumulada, en directo
   if (j.ev === 'done') { rep.className = 'rep'; rep.textContent = j.reply || 'No he recibido respuesta.'; buzz(12); stage('done'); return; }
-  if (j.ev === 'error') { player.stop(); rep.className = 'rep'; rep.textContent = j.error || 'Jota no está disponible.'; stage('idle'); }
+  if (j.ev === 'error') { player.stop(); voice.abort(); rep.className = 'rep'; rep.textContent = j.error || 'Jota no está disponible.'; stage('idle'); }
 }
 
 export const agent = {

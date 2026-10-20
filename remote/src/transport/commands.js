@@ -46,8 +46,8 @@ function createCommands({ permsOf, onUse = () => {}, log = { debug() {} } }) {
       if (c.clamp) m = c.clamp(m, P, ctx);
       if (m && m.error) return m;
     }
-    // lo escrito en un campo (puede ser una contraseña) no va nunca al registro
-    log.debug('cmd', JSON.stringify(m.t === 'field' ? { ...m, value: `(${String(m.value ?? '').length} caracteres)` } : m));
+    // lo escrito en un campo (puede ser una contraseña) y lo preguntado al agente no va nunca al registro
+    log.debug('cmd', JSON.stringify(m.t === 'field' ? { ...m, value: `(${String(m.value ?? '').length} caracteres)` } : m.t === 'ask' ? { ...m, text: `(${String(m.text ?? '').length} caracteres)` } : m));
     if (!c || !c.quiet) onUse();
     if (!c) return { error: 'orden desconocida' };
     try { return await c.run(m, ctx); } catch (e) { return { error: e.message }; }

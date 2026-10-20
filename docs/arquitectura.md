@@ -2,7 +2,7 @@
 
 jota-screen es la pantalla del ecosistema Jota: un Chrome en modo kiosco en un equipo Linux con X, en la salida de
 vídeo que diga la configuración (una tele, un monitor, un kiosco). Su nombre visible es `TV_NAME` («Pantalla» por
-defecto). Se maneja desde un mando web en el móvil (PWA), desde el agente Jota (OpenClaw) y desde Claude por el MCP
+defecto). Se maneja desde un mando web en el móvil (PWA), desde el agente Jota (J Gateway) y desde Claude por el MCP
 `tv-canvas`. Cuando nadie la usa enseña la pantalla en reposo; encima de cualquier web pueden salir Live Activities y
 avisos; el agente puede poner contenido en el escenario; la música va por Spotify (spotifyd como altavoz Connect con el
 nombre de la pantalla + Web API).
@@ -12,7 +12,7 @@ Cómo se hacen los cambios habituales: [como-se-hace.md](como-se-hace.md). Prueb
 ## Visión general
 
 ```
-  Móvil (mando PWA)                     Jota (OpenClaw) · Claude
+  Móvil (mando PWA)                     Jota · Claude
   index.html + mando/*.js               MCP tv-canvas (mcp/server.js, stdio)
      │ /ws?t=… (órdenes JSON y puntero)    │ POST /api/cmd, GET /api/state, /api/events
      │ /pair/*  · estáticos                │ (Bearer: token maestro o de un dispositivo)
@@ -20,10 +20,10 @@ Cómo se hacen los cambios habituales: [como-se-hace.md](como-se-hace.md). Prueb
      ▼                                     ▼
  ┌──────────────── servicio jota-screen · remote/server.js (Node, :8787) ────────────────┐
  │ transport/ (HTTP, WS) ──► commands.dispatch(m) ──► permiso ─► clamp ─► capacidad.run   │
- │ auth/ (tokens, roles, emparejar)   features/ (control, keyboard, stage, spotify, idle, agent)
+ │ auth/ (tokens, roles, emparejar)   features/ (control, keyboard, stage, spotify, idle, talk)
  └──┬────────────────┬──────────────┬────────────────┬────────────────────┬───────────────┘
-    │ CDP :9222      │ pointer.py   │ wpctl          │ Web API Spotify    │ CLI `openclaw agent`
-    │ (127.0.0.1)    │ (XTest)      │ (PipeWire)     │ (PKCE)             │ (pregunta del mando)
+    │ CDP :9222      │ pointer.py   │ wpctl          │ Web API Spotify    │ J Gateway (WS)
+    │ (127.0.0.1)    │ (XTest)      │ (PipeWire)     │ (PKCE)             │ (texto y voz)
     ▼                ▼              ▼                ▼                    ▼
  Chrome kiosco ◄── puntero X     volumen        spotifyd (TV_NAME) ──► suena por la tele
   ├ idle.html (reposo) ◄──────── /idle-ws  (solo desde la tele)
@@ -73,7 +73,13 @@ remote/
     stage.js              present, show, stage, close, toast; ruta /stage/p*.html; canal /stage-ws
     spotify.js            spotify (todas las acciones), spwatch; rutas /spotify/login y /spotify/callback
     idle.js               envoltorio de remote/idle.js: activity, idle; ruta /idle/art
-    agent.js              ask (OpenClaw por su CLI)
+    talk.js               ask, vstart, vend, vcancel: hablar con Jota por el J Gateway, un turno a la vez; la voz sube en directo
+                          y la respuesta vuelve por el mismo WS del mando (`talk`); suena en la tele, en el móvil o en ninguno
+  src/gateway/
+    client.js             cliente WS del J Gateway: ensure, send, audio, end y eventos (partial, final, token, audio, turn_end, down)
+  src/tv/ (voz)
+    speaker.js            altavoz de la tele: PCM sin cabecera a `TV_SPEAKER_CMD`
+    talk-view.js          lo que se dice y la respuesta, pintado en la tele (isla o panel)
   src/transport/
     commands.js           registro de órdenes y dispatch() (patrón Command)
     http.js               tabla de rutas; si ninguna encaja, estáticos
@@ -90,8 +96,9 @@ remote/
     mando/app.js          registra los descriptores de features y llama a los init()
     mando/core/           dom, store (estado, ajustes, avisos), api (WebSocket, rpc, handle, onWs, setGate), perms
     mando/ui/             haptics, pill, theme, status, sheets, actions, gestures
-    mando/features/       ambient, controls, trackpad, keyboard, go, agent, spotify, spotify-lists, spotify-state, pair, admin, settings, idle
+    mando/features/       ambient, controls, trackpad, keyboard, go, agent, voice, pcm-player, mic-worklet, spotify, spotify-lists, spotify-state, pair, admin, settings, idle
     mando/styles/mando.css  estilos del mando (v3: glifos flotantes, luces en órbita, voz, ahora suena y teclado)
+    tv-talk.js            capa de la tele con la conversación (la pinta talk-view.js)
     idle.html, idle.css, idle-app.js   pantalla en reposo (sin nada en línea)
     shared/tokens-tv.css  tokens Jota Dusk de la tele (reposo e isla)
     shared/tokens-mando.css  tokens Jota Dusk del mando (oscuro y claro), alineados con los de la tele
@@ -225,7 +232,7 @@ valores por defecto, está en [config/screen.env.example](../config/screen.env.e
   de Spotify; por defecto `http://127.0.0.1:<puerto>`), `TV_ADMIN_URL` (por defecto `http://<TV_MDNS_NAME>` o, sin
   alias, `http://<equipo>.local:<puerto>`).
 - **Kiosco**: `TV_CHROME`, `TV_CDP_PORT` (9222), `TV_HOME_URL` (el reposo).
-- **Agente**: `TV_GATEWAY_URL` y `TV_GATEWAY_KEY` (J Gateway; vacías = sin agente), `TV_AGENT` (`j-assistant`), `TV_OWNER`
+- **Agente**: `TV_GATEWAY_URL` y `TV_GATEWAY_KEY` (J Gateway; sin URL = «Jota no está disponible.»), `TV_AGENT` (`j-assistant`), `TV_SPEAKER_CMD` (altavoz de la tele), `TV_OWNER`
   (nombre del dueño en las instrucciones al agente; vacío = «el dueño»).
 - **Spotify**: `TV_SPOTIFY_DEVICE` (= `TV_NAME`), `TV_SPOTIFYD`, `TV_SPOTIFY_BANNER`.
 - **Tiempo**: `TV_CITY`, `TV_LAT`, `TV_LON`, `TV_TZ` (la del sistema): valores iniciales del reposo; lo guardado desde el

@@ -99,7 +99,7 @@ function initScript({ token, cfg }) {
   W.prototype.send = function (d) {
     if (typeof d === 'string' && d.charCodeAt(0) === 112) return; // «p<ts>»: el eco de latencia no se manda (sin ms en pantalla)
     if (typeof d !== 'string') { window.__wsBin = (window.__wsBin || 0) + 1; return send.call(this, d); } // audio: se cuenta, no se apunta
-    if (d === '{"t":"vend"}') window.__wsBinAtVend = window.__wsBin || 0;     // el último trozo (flush) va antes de vend
+    if (typeof d === 'string' && d.startsWith('{"t":"vend"')) window.__wsBinAtVend = window.__wsBin || 0;     // el último trozo (flush) va antes de vend
     window.__wsLog.push(String(d));
     // respuesta falsa a una orden con id (p. ej. las playlists de una cuenta de Spotify que el servidor de prueba no tiene)
     try { const o = JSON.parse(d), r = o && o.id && window.__wsFake[o.t + ':' + (o.a || '')]; if (r) { setTimeout(() => this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ t: 'res', id: o.id, r }) })), 30); return; } } catch {}
@@ -242,7 +242,7 @@ async function adminScenes(theme, admin) {
   // la parcial y la final las manda el servidor, inyectadas. Un toque corto no manda nada y abre el teclado.
   await run('hoja-agente-voz', async p => {
     await tap(p, 'Hablar con Jota');
-    await p.evaluate(() => { window.__wsFake['vstart:'] = { ok: 1 }; });
+    await p.evaluate(() => { window.__wsFake['vstart:'] = { ok: 1 }; window.__wsFake['vend:'] = { ok: 1 }; });
     const orb = await p.getByRole('button', { name: 'Mantén para hablar con Jota; toca para escribir', exact: true }).boundingBox();
     const [x, y] = [orb.x + orb.width / 2, orb.y + orb.height / 2];
     await p.mouse.move(x, y); await p.mouse.down(); await p.waitForTimeout(100); await p.mouse.up(); await p.waitForTimeout(500);

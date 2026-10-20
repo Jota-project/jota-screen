@@ -257,6 +257,27 @@ test('vcancel, onClose del dueño o tope de grabación: gw.end() una vez, busy l
   }
 });
 
+test('cancelar sin final y empezar otra grabación: su final dentro de la ventana no se descarta', async () => {
+  const t = make({ finalMs: 5000 });
+  await t.vcmd({ t: 'vstart' });
+  await t.vcmd({ t: 'vcancel' });                          // sin habla: el Gateway no emite final vacía
+  await t.vcmd({ t: 'vstart' });
+  t.gw.emit({ type: 'partial', text: 'ho' });
+  await t.vcmd({ t: 'vend' });
+  t.gw.emit({ type: 'final', text: 'hola' });
+  assert.equal(t.sent.length, 1);
+  assert.ok(t.sent[0].endsWith('hola'));
+});
+
+test('turno que acaba sin respuesta: «No he recibido respuesta.»', async () => {
+  const t = make();
+  const p = t.ask('hola');
+  await sleep(5);
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  assert.deepEqual(await p, { error: 'No he recibido respuesta.' });
+  assert.deepEqual(t.msgs.at(-1), { t: 'talk', ev: 'error', error: 'No he recibido respuesta.' });
+});
+
 test('vcancel tras vend no repite gw.end(); onClose de otro socket no cancela', async () => {
   const t = make();
   await t.vcmd({ t: 'vstart' });
