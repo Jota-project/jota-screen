@@ -1,6 +1,6 @@
 'use strict';
 // Unitarias de la configuración (remote/src/core/config.js) y de la carpeta de estado (remote/src/core/state-dir.js):
-// valores por defecto sin nada personal, la regla de TV_ADMIN_URL, OpenClaw en PATH y la migración del estado antiguo.
+// valores por defecto sin nada personal, la regla de TV_ADMIN_URL y la migración del estado antiguo.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -28,17 +28,14 @@ test('config: sin entorno, valores por defecto del contrato y nada personal', ()
     assert.equal(d.STATE_DIR, path.join(home, '.local', 'state', 'jota-screen'));
     assert.equal(d.STAGE_DIR, path.join(d.STATE_DIR, 'stage'));
     for (const f of Object.values(d.FILES)) assert.equal(path.dirname(f), d.STATE_DIR, f);
-    assert.equal(d.OC_BIN, path.join(home, '.npm-global', 'bin', 'openclaw'));
-    assert.equal(d.OC_AGENT, 'jota');
     assert.equal(d.AGENT, 'j-assistant');
     assert.equal(d.GATEWAY_URL, '');
     assert.equal(d.GATEWAY_KEY, '');
     assert.equal(d.OWNER, '');
     assert.deepEqual({ ...d.PLACE }, { city: '', lat: null, lon: null, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
-    // OC_ENV copia el entorno, la zona horaria es la del sistema y las rutas del código dependen de dónde esté el repo;
+    // la zona horaria es la del sistema y las rutas del código dependen de dónde esté el repo;
     // lo demás es lo que decide la configuración
-    const rest = { ...d }; delete rest.OC_ENV;
-    const seen = JSON.stringify({ ...rest, PLACE: { ...d.PLACE, tz: '' } }).replaceAll(d.ROOT, '<repo>').replaceAll(home, '~');
+    const seen = JSON.stringify({ ...d, PLACE: { ...d.PLACE, tz: '' } }).replaceAll(d.ROOT, '<repo>').replaceAll(home, '~');
     assert.doesNotMatch(seen, PERSONAL);
     assert.doesNotMatch(JSON.stringify(prompts(d.NAME, d.OWNER)), PERSONAL, 'las instrucciones del agente son genéricas');
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
@@ -47,7 +44,7 @@ test('config: sin entorno, valores por defecto del contrato y nada personal', ()
 test('config: las variables del contrato mandan', () => {
   const c = loadConfig({
     HOME: '/h', TV_NAME: ' Cocina ', TV_STATE_DIR: '/var/x/', TV_PUBLIC_URL: 'https://tv.example:8443/', TV_SPOTIFY_DEVICE: 'Altavoz',
-    TV_CITY: 'Lugo', TV_LAT: '43.01', TV_LON: '-7.55', TV_TZ: 'Atlantic/Canary', TV_OWNER: 'Ana', TV_OPENCLAW: '/opt/oc',
+    TV_CITY: 'Lugo', TV_LAT: '43.01', TV_LON: '-7.55', TV_TZ: 'Atlantic/Canary', TV_OWNER: 'Ana',
   });
   assert.equal(c.NAME, 'Cocina');
   assert.equal(c.SP_DEVICE, 'Altavoz');
@@ -56,7 +53,6 @@ test('config: las variables del contrato mandan', () => {
   assert.equal(c.PUBLIC_URL, 'https://tv.example:8443');
   assert.deepEqual({ ...c.PLACE }, { city: 'Lugo', lat: 43.01, lon: -7.55, tz: 'Atlantic/Canary' });
   assert.equal(c.OWNER, 'Ana');
-  assert.equal(c.OC_BIN, '/opt/oc');
   assert.equal(loadConfig({ HOME: '/h', TV_NAME: 'Cocina' }).SP_DEVICE, 'Cocina');
   assert.equal(loadConfig({ HOME: '/h', TV_LAT: '', TV_LON: 'x' }).PLACE.lat, null, 'lat vacía o no numérica: sin tiempo');
 });
@@ -68,18 +64,6 @@ test('config: regla de TV_ADMIN_URL', () => {
   assert.equal(at({ TV_MDNS_NAME: '' }), 'http://caja.local:8787', 'sin alias: <hostname>.local y el puerto');
   assert.equal(at({ TV_MDNS_NAME: '' }, 9000), 'http://caja.local:9000');
   assert.equal(at({ TV_MDNS_NAME: '', TV_ADMIN_URL: 'http://m.example/' }), 'http://m.example', 'TV_ADMIN_URL gana siempre');
-});
-
-test('config: OpenClaw se busca en PATH', () => {
-  const d = tmpDir();
-  try {
-    const bin = path.join(d, 'bin'); fs.mkdirSync(bin);
-    fs.writeFileSync(path.join(bin, 'openclaw'), '#!/bin/sh\n', { mode: 0o755 });
-    fs.writeFileSync(path.join(d, 'openclaw'), 'no ejecutable', { mode: 0o644 });
-    const c = loadConfig({ HOME: '/h', PATH: [d, bin].join(path.delimiter) });
-    assert.equal(c.OC_BIN, path.join(bin, 'openclaw'), 'el primero ejecutable');
-    assert.ok(c.OC_ENV.PATH.startsWith(bin + ':'));
-  } finally { fs.rmSync(d, { recursive: true, force: true }); }
 });
 
 // ── carpeta de estado

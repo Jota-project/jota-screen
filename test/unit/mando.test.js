@@ -13,6 +13,8 @@ const { createStatic } = require(path.join(__dirname, '..', '..', 'remote', 'src
 
 const ENTRY = '/mando/app.js';
 const CLASSIC = new Set(['/mando/theme.js']); // script clásico del <head>, no es un módulo
+// módulos de AudioWorklet: no los importa nadie, los carga audioWorklet.addModule (voice.js) por su ruta
+const WORKLETS = new Map([['/mando/features/mic-worklet.js', '/mando/features/voice.js']]);
 
 // especificadores de import/export … from '…' e import '…' (sin comentarios)
 function specifiers(src) {
@@ -52,7 +54,13 @@ test('mando: cada importación existe y la sirve el servidor (rutas relativas, .
   const all = [];
   const walk = d => { for (const f of fs.readdirSync(path.join(PUB, d))) { const r = d + '/' + f; if (fs.statSync(path.join(PUB, r)).isDirectory()) walk(r); else if (f.endsWith('.js')) all.push(r); } };
   walk('/mando');
-  assert.deepEqual(all.filter(p => !CLASSIC.has(p) && !edges.has(p)), []);
+  assert.deepEqual(all.filter(p => !CLASSIC.has(p) && !WORKLETS.has(p) && !edges.has(p)), []);
+  // cada worklet lo sirve el servidor y lo carga su módulo por esa misma ruta
+  const statics = createStatic({ dir: PUB });
+  for (const [w, by] of WORKLETS) {
+    assert.ok(statics.has(w), w);
+    assert.ok(edges.has(by) && fs.readFileSync(path.join(PUB, by), 'utf8').includes(`addModule('${w}')`), `${by} carga ${w}`);
+  }
 });
 
 test('mando: sin ciclos y capas en un solo sentido (core ← ui ← features ← app)', () => {

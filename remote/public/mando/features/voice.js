@@ -1,90 +1,130 @@
-// Voz (v3): mantener el orbe de «Hablar con Jota» para hablar. Graba con el micrófono del móvil, sube el audio a
-// /api/voice y la vista del agente enseña lo entendido y la respuesta. La respuesta suena en UN solo sitio: la tele
-// (por defecto), este móvil o ninguno (solo texto). No es un módulo del mando: la hoja `agS` es de agent.js, que llama
-// aquí con sus funciones de pintar (una hoja solo puede tener un dueño, ver ui/sheets.js).
+// Voz (v4): mantener el orbe de «Hablar con Jota» para hablar. El micrófono del móvil sube en directo al servidor como
+// PCM (Float32 LE, 16 kHz, mono, trozos de 100 ms) por el WebSocket del mando: `vstart`, audio binario y `vend`. La vista
+// del agente enseña la frase mientras se dice (`talk` partial) y la respuesta. La respuesta suena en UN solo sitio: la
+// tele (por defecto), este móvil o ninguno (solo texto). No es un módulo del mando: la hoja `agS` es de agent.js, que
+// llama aquí con sus funciones de pintar (una hoja solo puede tener un dueño, ver ui/sheets.js).
 // El micrófono solo existe en una página segura (HTTPS, p. ej. la URL de Tailscale): en http://mando.local el orbe
 // sigue como antes y enfoca el campo para dictar con el teclado del móvil.
 import { $ } from '../core/dom.js';
-import { cfg, saveCfg, state } from '../core/store.js';
+import { cmd, rpc, sendBin } from '../core/api.js';
+import { cfg, saveCfg } from '../core/store.js';
 import { buzz } from '../ui/haptics.js';
 
 const OUTS = ['tv', 'phone', 'none'];
 const OUT_LABEL = { tv: 'Responde en la tele', phone: 'Responde en el móvil', none: 'Responde solo con texto' };
-const MAX_MS = 30000;                                   // el servidor admite ~4 MB; 30 s de voz van de sobra
-const TAP_MS = 300;                                     // soltar antes de esto es un toque: abre el teclado, no graba
+const MAX_MS = 30000;                                   // tope de una grabación (el servidor corta a los 32 s)
+const TAP_MS = 300;                                     // soltar antes de esto es un toque: abre el teclado, no manda nada
 
-let rec = null, chunks = [], stream = null, stopT = 0, downAt = 0, busy = false, player = null, cancelled = false;
+/** @type {AudioContext | null} */
+let ctx = null;                                         // uno para toda la página: se crea en el gesto y no se cierra
+/** @type {Promise<void> | null} */
+let mod = null;                                         // el worklet se carga una vez por contexto
+/** @type {MediaStream | null} */
+let stream = null;
+/** @type {MediaStreamAudioSourceNode | null} */
+let src = null;
+/** @type {AudioWorkletNode | null} */
+let node = null;
 let held = false;                                       // el dedo (o la tecla) sigue sobre el orbe
+let long = false;                                       // la pulsación ya pasa de TAP_MS (o es de teclado)
+let started = false;                                    // vstart enviado: el audio va al servidor
+let press = 0;                                          // número de la pulsación (lo que llega tarde de otra se ignora)
+let tapT = 0, stopT = 0;
+/** @type {Float32Array[]} */
+let pending = [];                                       // los primeros trozos, en memoria hasta saber que no es un toque
 /** @type {{ stage: (st: string) => void, said: (t: string) => void, rep: (t: string, cls?: string) => void, focus: () => void }} */
 let ui;
 
-export const canRecord = () => !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+export const canRecord = () => !!(window.isSecureContext && navigator.mediaDevices && navigator.mediaDevices.getUserMedia &&
+  window.AudioContext && window.AudioWorkletNode);
+/** El AudioContext del mando (null hasta la primera pulsación); la voz de vuelta en el móvil usa el mismo. */
+export const audioCtx = () => ctx;
 const out = () => (OUTS.includes(cfg.voiceOut) ? cfg.voiceOut : 'tv');
 function paintOut() { const b = $('#agOut'); b.textContent = OUT_LABEL[out()]; b.dataset.out = out(); }
 
-/** El tipo de audio que graba este navegador (Safari: mp4; Chrome y Firefox: webm u ogg). */
-function pickType() {
-  for (const t of ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg;codecs=opus']) if (MediaRecorder.isTypeSupported(t)) return t;
-  return '';
+/** Suelta el micrófono y los nodos (el contexto se queda). */
+function release() {
+  clearTimeout(tapT); clearTimeout(stopT);
+  if (node) { node.port.onmessage = null; node.disconnect(); node = null; }
+  if (src) { src.disconnect(); src = null; }
+  if (stream) stream.getTracks().forEach(t => t.stop());
+  stream = null; pending = [];
 }
-function release() { clearTimeout(stopT); if (stream) stream.getTracks().forEach(t => t.stop()); stream = null; }
+
+/** Un trozo de 100 ms del worklet: en memoria mientras puede ser un toque; luego, al servidor. @param {Float32Array} pcm */
+function chunk(pcm) {
+  if (started) sendBin(pcm); else pending.push(pcm);
+}
+
+/** La pulsación pasa a ser de voz: vstart, lo guardado y desde aquí en directo. */
+function go() {
+  if (started || !held || !long || !node) return;
+  started = true;
+  const me = press;
+  // el servidor abre el turno al leer vstart, antes que el audio que va detrás por el mismo socket
+  rpc({ t: 'vstart', out: out() }).then(r => {
+    if (!r || !r.error || r.error === 'sin respuesta' || me !== press) return;
+    if (started) { started = false; held = false; release(); }   // ocupado, sin permiso o Jota caído: no se sigue grabando
+    ui.rep(r.error); ui.stage('idle');                  // (también si ya se soltó: no se queda en «Pensando»)
+  });
+  for (const p of pending) sendBin(p);
+  pending = [];
+}
 
 /** @param {boolean} [key] con teclado no hay toque corto: soltar siempre envía */
 async function start(key = false) {
-  if (busy || rec || held) return;                       // ya hay una pulsación en curso (o se está pidiendo el micro)
-  held = true;
-  if (player) { player.pause(); player = null; }        // si aún suena la respuesta anterior, se calla
-  cancelled = false; downAt = key ? 0 : Date.now();
-  try { stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } }); }
-  catch { ui.rep('No tengo permiso para usar el micrófono.'); ui.stage('idle'); return; }
-  if (cancelled) { release(); return; }                  // se soltó (toque) mientras se pedía el permiso
-  // se soltó mientras se pedía el micrófono (p. ej. para tocar «Permitir»): no se graba a nadie
-  if (!held) { release(); ui.rep('Listo. Mantén el orbe otra vez para hablar.'); ui.stage('idle'); return; }
-  const type = pickType();
-  chunks = [];
-  rec = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
-  rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
-  rec.onstop = () => {
-    const t = rec.mimeType || type || 'audio/webm'; rec = null; release();
-    if (cancelled) { ui.stage('idle'); return; }
-    send(new Blob(chunks, { type: t }));
-  };
-  rec.start();
+  if (held || node || stream) return;                   // ya hay una pulsación en curso (o se está pidiendo el micro)
+  held = true; long = key; started = false; pending = [];
+  const me = ++press;
+  // iOS: el contexto se crea (o se reanuda) dentro del propio gesto, antes de cualquier await
+  try { if (!ctx) ctx = new AudioContext(); if (ctx.state !== 'running') ctx.resume().catch(() => {}); }
+  catch { ui.rep('Este navegador no puede usar el micrófono.'); held = false; return; }
+  if (!key) tapT = setTimeout(() => { long = true; go(); }, TAP_MS);
+  if (!mod) mod = ctx.audioWorklet.addModule('/mando/features/mic-worklet.js').catch(e => { mod = null; throw e; });
+  let s;
+  try {
+    [s] = await Promise.all([navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, channelCount: 1 } }), mod]);
+  } catch {
+    if (me === press) { clearTimeout(tapT); held = false; ui.rep('No tengo permiso para usar el micrófono.'); ui.stage('idle'); }
+    return;
+  }
+  if (me !== press || !held) {                          // se soltó (o se cerró la hoja) mientras se pedía el micrófono
+    s.getTracks().forEach(t => t.stop());
+    if (me === press && long) { ui.rep('Listo. Mantén el orbe otra vez para hablar.'); ui.stage('idle'); }
+    return;
+  }
+  stream = s;
+  src = ctx.createMediaStreamSource(s);
+  node = new AudioWorkletNode(ctx, 'pcm16k', { numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [1] });
+  node.port.onmessage = e => { if (me === press && e.data instanceof Float32Array) chunk(e.data); };
+  src.connect(node); node.connect(ctx.destination);    // la salida es silencio; sin destino Safari no lo procesa
   buzz(10); ui.rep(''); ui.stage('rec');
   stopT = setTimeout(stop, MAX_MS);
+  go();                                                 // si el permiso tardó más que un toque, ya es voz
 }
 
-/** Soltar: si fue un toque corto, se descarta y se abre el teclado (lo de siempre); si no, se envía. */
+/** Soltar: un toque corto se descarta sin mandar nada y abre el teclado (lo de siempre); si no, vend. */
 function stop() {
   if (!held) return;
   held = false;
-  const tap = Date.now() - downAt < TAP_MS;
-  if (tap) cancelled = true;
-  if (rec && rec.state === 'recording') { if (!tap) buzz(6); rec.stop(); }
-  if (tap) ui.focus();
-}
-
-async function send(blob) {
-  if (blob.size < 400) { ui.rep('No he oído nada. Prueba otra vez.'); ui.stage('idle'); return; }
-  busy = true; ui.rep('Pensando', 'wait'); ui.stage('wait');
-  let st = 'idle';                                       // 'done' solo si Jota ha contestado
-  try {
-    const r = await fetch('/api/voice?out=' + out(), { method: 'POST', headers: { 'Content-Type': blob.type, ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}) }, body: blob });
-    const j = await r.json().catch(() => ({}));
-    if (!r.ok && !j.error) j.error = r.status === 401 ? 'Este móvil no está emparejado aquí. Empareja con el código de la tele.' : `No ha funcionado (error ${r.status}).`;
-    if (j.text) ui.said(j.text);
-    if (j.error && !j.reply) ui.rep(j.error);
-    else {
-      ui.rep(j.reply || 'No he recibido respuesta.'); buzz(12); st = 'done';
-      if (j.audio && out() === 'phone') { player = new Audio(j.audio); player.play().catch(() => {}); }   // solo si se pidió el móvil
-    }
-  } catch { ui.rep('No hay conexión con el mando.'); }
-  busy = false; ui.stage(st);
+  const tap = !long, sent = started;
+  release();
+  if (tap) { started = false; ui.stage('idle'); ui.focus(); return; }
+  if (!sent) return;                                    // aún sin micrófono: start() avisa al volver
+  started = false;
+  buzz(6); cmd({ t: 'vend' });
+  ui.rep('Pensando', 'wait'); ui.stage('wait');
 }
 
 export const voice = {
-  /** La hoja se cierra: si se estaba grabando, se descarta. */
-  close() { held = false; if (rec) { cancelled = true; rec.stop(); } },
+  /** La hoja se cierra: si se estaba grabando, se descarta (y el servidor también). */
+  close() {
+    if (!held && !started) return;
+    const sent = started;
+    held = false; started = false; press++; release();
+    if (sent) cmd({ t: 'vcancel' });
+    ui.stage('idle');
+  },
   /** @param {typeof ui} hooks @returns {boolean} true si hay micrófono (el orbe graba) */
   init(hooks) {
     ui = hooks;

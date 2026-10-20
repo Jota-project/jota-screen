@@ -225,7 +225,7 @@ valores por defecto, está en [config/screen.env.example](../config/screen.env.e
   de Spotify; por defecto `http://127.0.0.1:<puerto>`), `TV_ADMIN_URL` (por defecto `http://<TV_MDNS_NAME>` o, sin
   alias, `http://<equipo>.local:<puerto>`).
 - **Kiosco**: `TV_CHROME`, `TV_CDP_PORT` (9222), `TV_HOME_URL` (el reposo).
-- **Agente**: `TV_OPENCLAW` (`openclaw` del PATH o `~/.npm-global/bin/openclaw`), `TV_AGENT` (`jota`), `TV_OWNER`
+- **Agente**: `TV_GATEWAY_URL` y `TV_GATEWAY_KEY` (J Gateway; vacías = sin agente), `TV_AGENT` (`j-assistant`), `TV_OWNER`
   (nombre del dueño en las instrucciones al agente; vacío = «el dueño»).
 - **Spotify**: `TV_SPOTIFY_DEVICE` (= `TV_NAME`), `TV_SPOTIFYD`, `TV_SPOTIFY_BANNER`.
 - **Tiempo**: `TV_CITY`, `TV_LAT`, `TV_LON`, `TV_TZ` (la del sistema): valores iniciales del reposo; lo guardado desde el

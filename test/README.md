@@ -19,7 +19,7 @@ código por dentro: deben seguir pasando igual tras un refactor.
 
 `start({ files, env, legacy, cdpPort })` copia `remote/` a una carpeta temporal (con `node_modules` enlazado), usa un
 `HOME` temporal, el estado en `<tmp>/state` (`TV_STATE_DIR`), un puerto libre, sin Chrome (o el falso en `cdpPort`), sin
-puntero X y con un agente falso (`TV_OPENCLAW=/bin/false`):
+puntero X y sin J Gateway (`TV_GATEWAY_URL` vacía: el agente contesta «Jota no está disponible.»):
 
 - `files`: estado inicial, p. ej. `{ 'spotify.json': {…} }`, escrito en `TV_STATE_DIR`; con `legacy: true`, donde
   estaba antes (junto a `server.js`), para probar la migración.
@@ -44,7 +44,7 @@ tiempo fijo y apunta en el registro `fetch-spy: open-meteo <lat>,<lon>` para com
 
 | Fichero | Qué cubre |
 |---|---|
-| `config.test.js` | `src/core/config.js`: valores por defecto del contrato sin nada personal, las variables mandan, regla de `TV_ADMIN_URL`, OpenClaw en el PATH; `src/core/state-dir.js`: carpeta 0700, mover lo antiguo con 0600 sin enseñar contenido, nunca sobrescribir |
+| `config.test.js` | `src/core/config.js`: valores por defecto del contrato sin nada personal, las variables mandan, regla de `TV_ADMIN_URL`, el J Gateway y `TV_AGENT`; `src/core/state-dir.js`: carpeta 0700, mover lo antiguo con 0600 sin enseñar contenido, nunca sobrescribir |
 | `scripts.test.js` | `scripts/lib.sh` (xrandr, `ip route`, config, urlencode, perfil de Chrome), plantillas sin nada personal y sin marcadores sin rellenar, `install.sh` (`--dry-run`, sin systemd, idempotente, se para si falta algo), `kiosk-session.sh`, `mdns-alias.sh`, `doctor.sh`, `update.sh` y `scripts/cdp.js` contra un Chrome falso. HOME temporal, copia del repo y órdenes falsas en el PATH (`systemctl`, `sudo`, `xrandr`, `npm`…): no toca el sistema. `bash -n` siempre y `shellcheck` si está |
 | `mando.test.js` | módulos ES del mando desde `mando/app.js`: sin ciclos, capas en un solo sentido (core ← ui ← features ← app), cada importación servida por `createStatic` (2 niveles de carpeta), ningún módulo suelto, un `modulepreload` por módulo y ninguno (salvo `app.js`) con efectos al cargarse |
 | `auth.test.js` | acceso (`src/auth`) y registro de órdenes, con dobles de las sesiones y de la tele |

@@ -69,7 +69,7 @@ Las principales:
 | `TV_MDNS_NAME`, `TV_NET_IFACE` | `mando.local`, interfaz de la ruta por defecto | Alias mDNS del mando (vacío = sin alias) |
 | `TV_PUBLIC_URL`, `TV_ADMIN_URL` | `http://127.0.0.1:8787`, `http://mando.local` | URL pública (vuelta de Spotify) y de los enlaces de admin |
 | `TV_CHROME`, `TV_HOME_URL` | primer Chrome/Chromium, el reposo | Navegador y página de inicio del kiosco |
-| `TV_OPENCLAW`, `TV_AGENT`, `TV_OWNER` | `openclaw` del PATH, `jota`, vacío | Agente que contesta desde el mando |
+| `TV_GATEWAY_URL`, `TV_GATEWAY_KEY`, `TV_AGENT`, `TV_OWNER` | vacía (sin agente), vacía, `j-assistant`, vacío | J Gateway y agente que contesta desde el mando (texto y voz) |
 | `TV_SPOTIFY_DEVICE`, `TV_SPOTIFYD` | `TV_NAME`, `spotifyd` del PATH | Altavoz Spotify Connect |
 | `TV_CITY`, `TV_LAT`, `TV_LON`, `TV_TZ` | vacío, zona del sistema | Tiempo en el reposo: sin latitud y longitud no se pide |
 | `TV_STATE_DIR` | `~/.local/state/jota-screen` | Estado: token, dispositivos, ajustes, escenario, perfil de Chrome |

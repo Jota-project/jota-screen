@@ -187,18 +187,6 @@ test('permisos: el admin retira al invitado y su conexión se cierra', async () 
   a.close();
 });
 
-test('voz: /api/voice llega a su ruta (no la tapa el prefijo /api/) y pide token', async () => {
-  const v = await start();                                // servidor propio: las pruebas de arriba agotan el límite de intentos
-  try {
-    const audio = { method: 'POST', headers: { 'Content-Type': 'audio/webm' }, body: Buffer.alloc(2000, 1) };
-    // con el agente falso (/bin/false) no hay transcripción: 422 de la propia ruta de voz, nunca el 404 de la API
-    const r = await v.api('/api/voice?out=none', v.token, audio);
-    assert.equal(r.status, 422);
-    assert.match((await r.json()).error, /No te he entendido/);
-    assert.equal((await v.api('/api/voice', 'mal', audio)).status, 401);
-  } finally { await v.stop(); }
-});
-
 test('salto a https: con TV_PUBLIC_URL https el mando la recibe y su CSP le deja comprobarla; sin ella, nada', async () => {
   const S = 'https://tele.example.ts.net:8443';
   const v = await start({ env: { TV_PUBLIC_URL: S + '/' } });

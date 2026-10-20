@@ -16,6 +16,8 @@ export const resetTries = () => { tries = 0; };
 
 export const send = s => { if (ws && ws.readyState === 1) ws.send(s); };
 export const cmd = o => send(JSON.stringify(o));
+/** Un mensaje binario (el audio del micrófono, ver features/voice.js). @param {ArrayBufferView} b */
+export const sendBin = b => { if (ws && ws.readyState === 1) ws.send(b); };
 /** Orden con respuesta (sin conexión, falla enseguida). */
 export const rpc = o => new Promise(res => {
   if (!ws || ws.readyState !== 1) return res({ error: 'sin conexión' });

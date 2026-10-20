@@ -1,6 +1,6 @@
 // Hablar con Jota (v3): un velo con luces sobre el mando. Lo que se escribe (o se dicta con el micrófono del teclado) va
 // al J Gateway; la frase entra palabra a palabra, las luces crecen mientras piensa y la respuesta se escribe en directo
-// por el WebSocket (`talk`: final, token con lo acumulado, done, error).
+// por el WebSocket (`talk`: partial y final de la voz, token con lo acumulado, done, error).
 import { $, el } from '../core/dom.js';
 import { rpc } from '../core/api.js';
 import { buzz } from '../ui/haptics.js';
@@ -32,6 +32,8 @@ function ask(text) {
 }
 function onTalk(j) {
   const rep = $('#rep');
+  // la parcial es la frase acumulada mientras se habla: sustituye sin animar (las palabras animadas, para la final)
+  if (j.ev === 'partial') { const q = $('#agQ'); q.classList.remove('said'); q.textContent = j.text || ''; return; }
   if (j.ev === 'final') { said(j.text || ''); return; }
   if (j.ev === 'token') { rep.className = 'rep'; rep.textContent = j.text || ''; stage('wait'); return; }   // la respuesta acumulada, en directo
   if (j.ev === 'done') { rep.className = 'rep'; rep.textContent = j.reply || 'No he recibido respuesta.'; buzz(12); stage('done'); return; }
