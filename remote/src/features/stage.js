@@ -55,7 +55,7 @@ module.exports = function createStage({ cdp, state, cfg, nav }) {
         : /^\s*<!doctype[^>]*>/i.test(html) ? html.replace(/^\s*<!doctype[^>]*>/i, h => h + tag) : tag + html;
     }
     const id = 'p' + Date.now().toString(36);
-    fs.writeFileSync(path.join(STAGE_DIR, id + '.html'), html);
+    fs.writeFileSync(path.join(STAGE_DIR, id + '.html'), html, { mode: 0o600 });
     try { // conserva solo las 30 últimas
       const old = fs.readdirSync(STAGE_DIR).filter(f => /^p\w+\.html$/.test(f)).sort().slice(0, -30);
       for (const f of old) fs.unlinkSync(path.join(STAGE_DIR, f));

@@ -2,7 +2,7 @@
 
 Plugin para controlar la tele del salón (Chrome kiosco en green-house) desde Claude Code / Claude Desktop.
 
-- `mcp/server.js`: servidor MCP (stdio) con 18 herramientas `tv_*`. Habla con la API del mando (`/api/cmd`).
+- `mcp/server.js`: servidor MCP (stdio) con 22 herramientas `tv_*`. Habla con la API del mando (`/api/cmd`).
 - `skills/tv-canvas`: cuándo y cómo usarlas.
 
 ## Instalación fuera del servidor

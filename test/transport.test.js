@@ -127,6 +127,15 @@ test('escenario: la página del agente solo la puede pedir la propia tele, con s
   await cmd({ t: 'close' });
 });
 
+test('Spotify: la página de vuelta lleva su propia CSP y escapa el error', async () => {
+  const r = await s.get('/spotify/callback?state=nada&code=<b>');
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get('content-security-policy'), /default-src 'none'; style-src 'unsafe-inline'/);
+  const html = await r.text();
+  assert.match(html, /No se pudo conectar/);
+  assert.doesNotMatch(html, /<script/);
+});
+
 test('WebSocket: los canales de la tele no se abren desde fuera; /ws sin token se cierra con 4001', async () => {
   const refused = url => new Promise(ok => {
     const w = new WS(url, { headers: viaProxy });

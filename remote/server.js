@@ -5,7 +5,7 @@
 //
 //   src/core/       configuración, registro con redacción, almacén JSON, estado de la tele
 //   src/auth/       token maestro, dispositivos, roles, emparejar, permisos y freno de intentos
-//   src/tv/         adaptadores de la tele: Chrome (CDP), puntero, volumen, sondeo de la página
+//   src/tv/         adaptadores de la tele: Chrome (CDP), puntero, volumen, sondeo de la página, tokens de la isla
 //   src/features/   capacidades, cada una con sus órdenes (y rutas, si las tiene)
 //   src/transport/  registro de órdenes, HTTP (rutas y estáticos), WebSocket, sesiones de los mandos
 
