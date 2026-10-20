@@ -3,9 +3,8 @@
 //  - Reposo: página /idle.html con fondo animado según el momento del día (o los colores de la canción),
 //    hora y tiempo siempre visibles y «ahora suena». Se abre sola tras N minutos sin uso.
 //  - Live Activities: píldoras por encima de lo que se esté viendo (también en el reposo), en tiempo real.
-// Config en idle.json (junto al servidor): ciudad, horario de sueño (fijo o por día), minutos sin uso…
+// Config en idle.json (en TV_STATE_DIR): ciudad, horario de sueño (fijo o por día), minutos sin uso…
 const fs = require('node:fs');
-const path = require('node:path');
 const { WebSocketServer, WebSocket } = require('ws');
 const { writeJson } = require('./src/core/json-store');
 const { islandSource } = require('./src/tv/tokens');
@@ -30,16 +29,16 @@ const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m;
 
 /**
  * @typedef {{
- *   ROOT: string, PUB: string, SELF: string,
+ *   PUB: string, SELF: string, file: string,
  *   cdp: { call: Function, session: string | null }, nav: (url: string) => Promise<any>, state: { url: string },
  *   stageKind: () => string | null, onWatch?: () => void, log?: (...a: any[]) => void,
  * }} IdleDeps
  */
 /** @param {IdleDeps} o */
 module.exports = function createIdle(o) {
-  const { ROOT, PUB, SELF, cdp, nav, state, stageKind, log = () => {} } = o;
+  const { PUB, SELF, cdp, nav, state, stageKind, log = () => {} } = o;
   const URL_IDLE = SELF + '/idle.html';
-  const CFG_FILE = path.join(ROOT, 'idle.json');
+  const CFG_FILE = o.file;
   let cfg = { ...DEFAULTS };
   try { cfg = sanitize({ ...DEFAULTS, ...JSON.parse(fs.readFileSync(CFG_FILE, 'utf8')) }); } catch {}
   const save = () => writeJson(CFG_FILE, cfg, { pretty: true }); // atómico y 0600 (src/core/json-store.js)

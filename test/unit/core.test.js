@@ -72,8 +72,8 @@ test('config: valores por defecto y entorno', () => {
   assert.equal(d.PORT, 8787);
   assert.equal(d.SELF, 'http://127.0.0.1:8787');
   assert.equal(d.HOME_URL, 'http://127.0.0.1:8787/idle.html');
-  assert.equal(d.SP_DEVICE, 'Salón');
-  assert.ok(d.FILES.token.endsWith(path.join('remote', 'token')));
+  assert.equal(d.SP_DEVICE, 'Pantalla');
+  assert.ok(d.FILES.token.endsWith(path.join('.local', 'state', 'jota-screen', 'token')));
   assert.ok(Object.isFrozen(d));
   const c = loadConfig({ TV_PORT: '9000', TV_DEBUG: '1', TV_ADMIN_URL: 'http://m.local/', TV_SPOTIFY_BANNER: '1' });
   assert.equal(c.PORT, 9000);

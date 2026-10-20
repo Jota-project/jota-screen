@@ -24,7 +24,7 @@ test('una espera ya vencida se borra al arrancar', async () => {
   try {
     await new Promise(r => setTimeout(r, 200));
     assert.doesNotMatch(s.logs(), /sigo esperando/);
-    const saved = JSON.parse(fs.readFileSync(path.join(s.root, 'spotify.json'), 'utf8'));
+    const saved = JSON.parse(fs.readFileSync(path.join(s.state, 'spotify.json'), 'utf8'));
     assert.equal(saved.waitUntil, undefined);
     assert.equal(saved.refresh, 'refresco', 'el resto de spotify.json no se toca');
   } finally { await s.stop(); }

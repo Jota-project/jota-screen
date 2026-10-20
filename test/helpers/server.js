@@ -1,6 +1,7 @@
 'use strict';
 // Arranca el servidor del mando de verdad, pero aislado: copia de remote/ en una carpeta temporal,
-// HOME temporal, puerto libre, sin Chrome (CDP a un puerto cerrado), sin puntero X y con un agente falso.
+// HOME temporal, estado en <tmp>/state (TV_STATE_DIR), puerto libre, sin Chrome (CDP a un puerto cerrado), sin puntero X
+// y con un agente falso. Sin TV_LAT/TV_LON, así que el reposo no sale a internet a por el tiempo.
 // Así las pruebas comprueban el contrato desde fuera (HTTP y WebSocket) y valen igual antes y después de refactorizar.
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
@@ -25,20 +26,28 @@ function copyRemote(dst) {
   fs.symlinkSync(path.join(REMOTE, 'node_modules'), path.join(dst, 'node_modules'), 'dir');
 }
 
-async function start({ files = {}, cdpPort } = {}) { // cdpPort: puerto de un Chrome falso (test/helpers/fake-cdp.js) // files: estado inicial, { 'spotify.json': {...} }
+/**
+ * @param {{ files?: object, cdpPort?: number, env?: object, legacy?: boolean }} [o]
+ *   files: estado inicial, { 'spotify.json': {...} }, en TV_STATE_DIR (o, con legacy, donde estaba antes: junto a server.js)
+ *   cdpPort: puerto de un Chrome falso (test/helpers/fake-cdp.js); env: variables de más (TV_NAME…)
+ */
+async function start({ files = {}, cdpPort, env = {}, legacy = false } = {}) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-test-'));
   const root = path.join(tmp, 'remote');
+  const state = path.join(tmp, 'state');
   copyRemote(root);
+  const dir = legacy ? root : state;
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
   const token = crypto.randomBytes(16).toString('hex');
-  fs.writeFileSync(path.join(root, 'token'), token + '\n', { mode: 0o600 });
-  for (const [f, v] of Object.entries(files)) fs.writeFileSync(path.join(root, f), JSON.stringify(v), { mode: 0o600 });
+  fs.writeFileSync(path.join(dir, 'token'), token + '\n', { mode: 0o600 });
+  for (const [f, v] of Object.entries(files)) fs.writeFileSync(path.join(dir, f), JSON.stringify(v), { mode: 0o600 });
   const port = await freePort();
   const out = [];
   const proc = spawn(process.execPath, ['server.js'], {
     cwd: root,
     env: {
       PATH: process.env.PATH, HOME: tmp, TV_PORT: String(port), TV_CDP_PORT: String(cdpPort || await freePort()),
-      TV_NO_POINTER: '1', TV_OPENCLAW: '/bin/false', XDG_RUNTIME_DIR: tmp,
+      TV_NO_POINTER: '1', TV_OPENCLAW: '/bin/false', XDG_RUNTIME_DIR: tmp, TV_STATE_DIR: state, ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -49,7 +58,7 @@ async function start({ files = {}, cdpPort } = {}) { // cdpPort: puerto de un Ch
     try { await fetch(base + '/index.html'); break; } catch { await new Promise(r => setTimeout(r, 100)); }
   }
   const srv = {
-    base, port, token, root, logs: () => out.join(''),
+    base, port, token, root, state, home: tmp, logs: () => out.join(''),
     async stop() { proc.kill('SIGTERM'); await new Promise(r => proc.once('exit', r)); fs.rmSync(tmp, { recursive: true, force: true }); },
     get: (p, opts = {}) => fetch(base + p, opts),
     api: (p, tok = token, opts = {}) => fetch(base + p, { ...opts, headers: { Authorization: 'Bearer ' + tok, ...(opts.headers || {}) } }),
