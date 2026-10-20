@@ -55,11 +55,30 @@ test('start con otra reproducción viva la mata; stop corta', () => {
 test('un fallo al lanzar se avisa una vez y no lanza', () => {
   const warns = [];
   const s = createSpeaker({ spawnImpl: () => { throw new Error('ENOENT'); }, log: { warn: (...a) => warns.push(a) } });
-  s.start(); s.write(Buffer.from([1])); s.end(); s.start();
-  assert.equal(warns.length, 1);
+  s.start(); s.write(Buffer.from([1])); s.end();
+  assert.equal(warns.length, 1, 'una vez por reproducción');
   const f = fake();
   const s2 = createSpeaker({ spawnImpl: f.spawnImpl, log: { warn: (...a) => warns.push(a) } });
   s2.start(); f.procs[0].emit('error', new Error('spawn pw-cat ENOENT')); f.procs[0].emit('error', new Error('otra'));
   assert.equal(warns.length, 2, 'el error asíncrono también se avisa una vez');
   s2.write(Buffer.from([1]));
+});
+
+test('end deja la reproducción en el hueco de vaciado: start o stop aún la matan, y su exit lo libera', () => {
+  const f = fake();
+  const s = createSpeaker({ spawnImpl: f.spawnImpl });
+  s.start(); s.end(); s.start();
+  assert.equal(f.procs[0].killed, true, 'start mata la que vacía');
+  s.end(); s.stop();
+  assert.equal(f.procs[1].killed, true, 'stop mata la que vacía');
+  s.start(); s.end(); f.procs[2].emit('exit');
+  s.stop();
+  assert.equal(f.procs[2].killed, false, 'tras su exit ya no hay nada que matar');
+});
+
+test('el aviso de fallo se repite una vez en la siguiente reproducción', () => {
+  const warns = [];
+  const s = createSpeaker({ spawnImpl: () => { throw new Error('x'); }, log: { warn: (...a) => warns.push(a) } });
+  s.start(); s.start(); s.write(Buffer.from([1]));
+  assert.equal(warns.length, 2, 'una vez por reproducción, no una por llamada');
 });
