@@ -16,5 +16,5 @@ args=(--no-daemon --device-name "$TV_SPOTIFY_DEVICE")
 for conf in "$HOME/.config/spotifyd/spotifyd.conf" "$(dirname "$(jsc_config_path)")/spotifyd.conf"; do
   if [ -r "$conf" ]; then args+=(--config-path "$conf"); break; fi
 done
-echo "spotifyd: altavoz «$TV_SPOTIFY_DEVICE»"
+echo "spotifyd: altavoz «${TV_SPOTIFY_DEVICE}»"
 exec "$bin" "${args[@]}"

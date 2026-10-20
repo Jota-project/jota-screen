@@ -94,7 +94,7 @@ else
   [ $DRY = 1 ] || ok "creada $CFG desde config/screen.env.example (edítala si hace falta)"
 fi
 jsc_load_config
-info "nombre «$TV_NAME», puerto $TV_PORT, estado en $TV_STATE_DIR"
+info "nombre «${TV_NAME}», puerto $TV_PORT, estado en $TV_STATE_DIR"
 
 # ─────────────────────────────────────────────── dependencias
 step "Dependencias"

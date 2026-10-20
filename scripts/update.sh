@@ -43,7 +43,7 @@ main() {
     }
   fi
   remote=${FROM%%/*}
-  git remote | grep -qx "$remote" || { echo "✗ $FROM no es una rama remota (remoto «$remote» desconocido)" >&2; exit 1; }
+  git remote | grep -qx "$remote" || { echo "✗ $FROM no es una rama remota (remoto «${remote}» desconocido)" >&2; exit 1; }
 
   echo "· git fetch $remote"
   git fetch --prune "$remote"
