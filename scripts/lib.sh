@@ -104,15 +104,14 @@ jsc_node_major() {
   "$1" -p 'process.versions.node.split(".")[0]' 2>/dev/null
 }
 
-# Codifica $1 para usarlo en una URL (componente de query o fragmento).
+# Codifica $1 para usarlo en una URL (componente de query o fragmento), byte a byte (UTF-8 → %XX).
+# Con od y no con ${s:i:1}: bash 3.2 (macOS) no cambia de locale con un «local LC_ALL» y partía por caracteres.
 jsc_urlencode() {
-  local s=$1 out='' c i
-  local LC_ALL=C
-  for ((i = 0; i < ${#s}; i++)); do
-    c=${s:i:1}
-    case $c in
-      [a-zA-Z0-9.~_-]) out+=$c ;;
-      *) out+=$(printf '%%%02X' "'$c") ;;
+  local b out=''
+  for b in $(printf '%s' "$1" | LC_ALL=C od -An -v -tx1 | LC_ALL=C tr abcdef ABCDEF); do
+    case $b in
+      3[0123456789] | [46][123456789ABCDEF] | [57][0123456789A] | 2D | 2E | 5F | 7E) out+=$(printf '%b' "\\x$b") ;;
+      *) out+=%$b ;;
     esac
   done
   printf '%s\n' "$out"
