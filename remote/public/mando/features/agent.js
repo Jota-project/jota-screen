@@ -59,6 +59,7 @@ function ask(text) {
   const rep = $('#rep'); rep.className = 'rep wait'; rep.textContent = 'Pensando';
   stage('wait');
   // el permiso, un texto vacío o BUSY se contestan por aquí (no hay turno, así que no habrá evento talk)
+  talking = false;                                      // la voz de la anterior ya no cuenta: vuelve con el primer token
   const me = ++asked;
   rpc({ t: 'ask', text, out, interrupt: interruptOn() }).then(r => {
     if (me !== asked) return;                           // la sustituyó otra (p. ej. al interrumpir): su «Parado.» no va encima
@@ -118,7 +119,7 @@ export const agent = {
     });
     const rep = (t, cls = '') => { const r = $('#rep'); r.className = 'rep' + (cls ? ' ' + cls : ''); r.textContent = t; };
     onWs('bin', b => player.play(b));
-    mic = voice.init({ stage, said, rep, press: () => { cut(); out = outSel(); asked++; }, focus: () => { buzz(8); agin.focus(); } });
+    mic = voice.init({ stage, said, rep, press: () => { cut(); out = outSel(); asked++; talking = false; }, focus: () => { buzz(8); agin.focus(); } });
     $('#agStop').addEventListener('click', stop);
     $('#agHide').addEventListener('click', () => { buzz(7); noQuit(); acts(); cmd({ t: 'hide' }); });
     // sin micrófono propio (http): el orbe enfoca el campo y el teclado del móvil trae el suyo
