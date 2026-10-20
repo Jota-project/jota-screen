@@ -71,6 +71,7 @@ async function send(blob) {
   try {
     const r = await fetch('/api/voice?out=' + out(), { method: 'POST', headers: { 'Content-Type': blob.type, ...(state.token ? { Authorization: 'Bearer ' + state.token } : {}) }, body: blob });
     const j = await r.json().catch(() => ({}));
+    if (!r.ok && !j.error) j.error = r.status === 401 ? 'Este móvil no está emparejado aquí. Empareja con el código de la tele.' : `No ha funcionado (error ${r.status}).`;
     if (j.text) ui.said(j.text);
     if (j.error && !j.reply) ui.rep(j.error);
     else {

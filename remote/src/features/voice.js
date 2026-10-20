@@ -56,9 +56,10 @@ function cliEngine({ bin, env, agent, sttModel = 'elevenlabs/scribe_v2', ttsMode
  *   run: (m: any, ws: any, ctx: { dev: any }) => Promise<any>,
  *   engine?: { stt: (file: string, lang: string) => Promise<string>, tts: (text: string, outFile: string) => Promise<boolean> },
  *   play?: (file: string) => Promise<void>,
+ *   log?: (m: string) => void,
  * }} deps
  */
-module.exports = function createVoice({ cfg, limiter, auth, run, engine, play }) {
+module.exports = function createVoice({ cfg, limiter, auth, run, engine, play, log = () => {} }) {
   const eng = engine || cliEngine({ bin: cfg.OC_BIN, env: cfg.OC_ENV, agent: cfg.OC_AGENT, sttModel: cfg.VOICE_STT_MODEL, ttsModel: cfg.VOICE_TTS_MODEL, ttsVoice: cfg.VOICE_TTS_VOICE });
   const lang = cfg.VOICE_LANG || 'es';
   // el sonido de la pantalla: PipeWire, igual que el volumen (src/tv/devices.js)
@@ -69,31 +70,37 @@ module.exports = function createVoice({ cfg, limiter, auth, run, engine, play })
   let busy = false;
   const rm = d => fs.rmSync(d, { recursive: true, force: true });
 
-  async function voice(req, res, { url, ip }) {
-    if (req.method !== 'POST') return send(res, 405, '');
-    if (limiter.blocked(ip)) return send(res, 429, 'demasiados intentos');
+  // una línea por petición (tamaño, formato, resultado y tiempo; nunca el texto ni el audio) para ver qué pasa desde el móvil
+  async function voice(req, res, ctx) {
+    const t0 = Date.now(); const r = await handle(req, res, ctx);
+    log(`voz: ${r.code} ${r.why || ''} ${r.bytes ?? '-'} B ${String(req.headers['content-type'] || '-').split(';')[0]} en ${Date.now() - t0} ms`);
+  }
+  async function handle(req, res, { url, ip }) {
+    const done = (code, why, bytes) => ({ code, why, bytes });
+    if (req.method !== 'POST') { send(res, 405, ''); return done(405); }
+    if (limiter.blocked(ip)) { send(res, 429, 'demasiados intentos'); return done(429, 'límite'); }
     const tok = reqToken(req, url);
-    if (!auth.okToken(tok)) { limiter.fail(ip); return send(res, 401, 'no autorizado'); }
+    if (!auth.okToken(tok)) { limiter.fail(ip); send(res, 401, 'no autorizado'); return done(401, 'token'); }
     const dev = auth.tokenDev(tok);
     const m = TYPE_RE.exec(String(req.headers['content-type'] || ''));
-    if (!m) return json(res, 415, { error: 'formato de audio no admitido' });
-    if (busy) return json(res, 429, { error: 'Sigo con la petición anterior. Espera un momento.' });
+    if (!m) { json(res, 415, { error: 'formato de audio no admitido' }); return done(415, 'formato'); }
+    if (busy) { json(res, 429, { error: 'Sigo con la petición anterior. Espera un momento.' }); return done(429, 'ocupado'); }
     busy = true;
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'jota-voice-'));  // propia de cada petición, con permisos 0700
     let keep = false;                                                    // true: la borra el reproductor al acabar
     try {
       const buf = await readBuf(req, MAX_AUDIO);
-      if (buf === null) return send(res, 413, 'audio demasiado grande', { Connection: 'close' });
-      if (buf.length < 400) return json(res, 400, { error: 'audio vacío' });
+      if (buf === null) { send(res, 413, 'audio demasiado grande', { Connection: 'close' }); return done(413); }
+      if (buf.length < 400) { json(res, 400, { error: 'audio vacío' }); return done(400, 'vacío', buf.length); }
       const inFile = path.join(dir, 'in.' + (EXT[m[1].toLowerCase()] || 'webm'));
       fs.writeFileSync(inFile, buf, { mode: 0o600 });
 
       const text = await eng.stt(inFile, lang);
-      if (!text) return json(res, 422, { error: 'No te he entendido. Prueba otra vez.' });
+      if (!text) { json(res, 422, { error: 'No te he entendido. Prueba otra vez.' }); return done(422, 'sin transcripción', buf.length); }
 
       // la transcripción entra como cualquier mensaje escrito: mismos permisos, misma sesión del agente
       const r = await run({ t: 'ask', text }, null, { dev });
-      if (r.error) return json(res, 400, { text, error: r.error });
+      if (r.error) { json(res, 400, { text, error: r.error }); return done(400, 'agente', buf.length); }
       /** @type {any} */
       const out = { ok: 1, text, reply: r.reply };
 
@@ -109,7 +116,7 @@ module.exports = function createVoice({ cfg, limiter, auth, run, engine, play })
           if (wantTv) { out.tv = true; keep = true; player(outFile).finally(() => rm(dir)); }
         }
       }
-      return json(res, 200, out);
+      json(res, 200, out); return done(200, to + (out.audio || out.tv ? '' : ' sin voz'), buf.length);
     } finally {
       busy = false;
       if (!keep) rm(dir);

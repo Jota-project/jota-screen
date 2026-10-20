@@ -108,7 +108,7 @@ async function run(m, sock, ctx = {}) {
   return commands.dispatch(m, { dev, ws: sock });
 }
 
-const voice = createVoice({ cfg: CFG, limiter, auth: acc, run }); // hablar con el agente: audio -> texto -> agente -> voz
+const voice = createVoice({ cfg: CFG, limiter, auth: acc, run, log: log.info }); // hablar con el agente: audio -> texto -> agente -> voz
 
 // ───────────────────────── transporte: HTTP (rutas + estáticos) y WebSocket
 // {{TV_NAME}} en el HTML y el manifiesto; secure: el mando abierto por http salta a la URL https (micrófono para la voz)

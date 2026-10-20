@@ -143,3 +143,10 @@ test('mando: salto a https para la voz (core/secure.js): solo desde http fuera d
       assert.equal(secureTarget(at('http://mando.local/'), s, 'tok0tok0tok0tok0'), '', `sin destino https: ${s}`);
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+test('mando: el orbe de la voz no deja el gesto al navegador (touch-action:none; si no, un temblor del dedo cancela la grabación)', () => {
+  const css = fs.readFileSync(path.join(PUB, 'mando', 'styles', 'mando.css'), 'utf8');
+  const rules = [...css.matchAll(/(?:^|})\s*\.vzOrb\{([^}]*)\}/g)].map(m => m[1]).join(';');
+  assert.match(rules, /touch-action:none/);
+  assert.doesNotMatch(rules, /touch-action:(manipulation|pan|auto)/);
+});

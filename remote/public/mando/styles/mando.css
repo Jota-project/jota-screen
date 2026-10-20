@@ -255,7 +255,7 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .rep:empty{display:none}
 .vzIn{margin-top:20px;background:var(--pad);border-color:transparent;border-radius:999px;padding:0 20px}
 .vzO{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:22px;flex:none}
-.vzOrb{width:96px;height:96px;border-radius:999px;border:0;padding:0;cursor:pointer;background:radial-gradient(circle at 35% 30%,#a99ad1 0%,#7c6aae 55%,#6e8cc4 120%);box-shadow:0 0 0 14px rgba(124,106,174,.16),0 0 80px rgba(124,106,174,.55);animation:breathe 3.4s ease-in-out infinite;touch-action:manipulation}
+.vzOrb{width:96px;height:96px;border-radius:999px;border:0;padding:0;cursor:pointer;background:radial-gradient(circle at 35% 30%,#a99ad1 0%,#7c6aae 55%,#6e8cc4 120%);box-shadow:0 0 0 14px rgba(124,106,174,.16),0 0 80px rgba(124,106,174,.55);animation:breathe 3.4s ease-in-out infinite;touch-action:none}
 #agS[data-st=wait] .vzOrb{animation:listen 1.2s ease-in-out infinite}
 @keyframes listen{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}
 .vzOrb:focus-visible{outline:2px solid var(--accent-text);outline-offset:3px}
