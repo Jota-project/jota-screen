@@ -10,14 +10,14 @@ const { WebSocket } = require(path.join(__dirname, '..', 'remote', 'node_modules
 
 const PERMS = { full: { agent: 'full', admin: true }, guest: { agent: 'guest' }, off: { agent: 'off' } };
 
-function make({ ensure = true, media = 0 } = {}) {
+function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false } = {}) {
   const subs = new Set(), sent = [], views = [];
   const gw = {
-    ensure: async () => ensure, send: t => sent.push(t), on: fn => { subs.add(fn); return () => subs.delete(fn); },
+    ensure: async () => { if (slowEnsure) await new Promise(r => setTimeout(r, 20)); return ensure; }, send: t => sent.push(t), on: fn => { subs.add(fn); return () => subs.delete(fn); },
     emit: ev => subs.forEach(f => f(ev)),
   };
   const view = Object.fromEntries(['turn', 'you', 'jota', 'done', 'error'].map(k => [k, (...a) => views.push([k, ...a])]));
-  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view });
+  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, turnIdleMs });
   const msgs = [];
   const ws = { readyState: WebSocket.OPEN, send: s => msgs.push(JSON.parse(s)) };
   const perm = { current: 'full' };
@@ -100,6 +100,7 @@ test('segundo ask durante un turno: «Sigo con la petición anterior…» y no s
   const p = t.ask('uno'); await t.tick();
   assert.deepEqual(await t.ask('dos'), { error: 'Sigo con la petición anterior. Espera un momento.' });
   assert.equal(t.sent.length, 1);
+  assert.deepEqual(t.msgs, [], 'el aviso va solo en el resultado, no como ev:error al móvil con turno');
   assert.equal(t.talk.busy(), true);
   t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
   assert.equal((await p).ok, 1);
@@ -123,4 +124,40 @@ test('view.turn recibe island si media() === 1 y panel si es 0 o -1', async () =
     t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit({ type: 'token', turnId: 'a', text: 'x' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
     await p;
   }
+});
+
+test('un turn_start de push durante ensure() (antes de send) no se queda el turno', async () => {
+  const t = make({ slowEnsure: true });
+  const p = t.ask('hola');
+  t.gw.emit({ type: 'turn_start', turnId: 'push', seq: 1 });
+  t.gw.emit({ type: 'token', turnId: 'push', text: 'ajeno' });
+  t.gw.emit({ type: 'turn_end', turnId: 'push' });
+  assert.equal(t.talk.busy(), true);
+  assert.deepEqual(t.msgs, []);
+  await new Promise(r => setTimeout(r, 40));
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 2 }); t.gw.emit({ type: 'token', turnId: 'a', text: 'mío' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  assert.deepEqual(await p, { ok: 1, reply: 'mío' });
+});
+
+test('turno sin eventos: a turnIdleMs falla como down y libera busy; cada evento reinicia el plazo', async () => {
+  const t = make({ turnIdleMs: 60 });
+  const p = t.ask('hola'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  await new Promise(r => setTimeout(r, 40));
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'x' });
+  await new Promise(r => setTimeout(r, 40));
+  assert.equal(t.talk.busy(), true, 'el token reinició el plazo');
+  assert.deepEqual(await p, { error: 'Jota no está disponible.' });
+  assert.deepEqual(t.msgs.at(-1), { t: 'talk', ev: 'error', error: 'Jota no está disponible.' });
+  assert.equal(t.views.at(-1)[0], 'error');
+  assert.equal(t.talk.busy(), false);
+});
+
+test('turn_end sin turn_start previo: no engancha, y el plazo libera el turno', async () => {
+  const t = make({ turnIdleMs: 50 });
+  const p = t.ask('hola'); await t.tick();
+  t.gw.emit({ type: 'turn_end', turnId: 'z' });
+  assert.equal(t.talk.busy(), true);
+  assert.deepEqual(await p, { error: 'Jota no está disponible.' });
+  assert.equal(t.talk.busy(), false);
 });

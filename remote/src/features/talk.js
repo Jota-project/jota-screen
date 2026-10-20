@@ -33,13 +33,14 @@ const NO_VIEW = { turn() {}, you() {}, jota() {}, done() {}, error() {} };
  *   gw: { ensure: () => Promise<boolean>, send: (t: string) => void, on: (fn: (ev: any) => void) => () => void },
  *   cfg: { NAME: string, OWNER?: string }, media: () => number,
  *   view?: { turn: (mode: 'island' | 'panel') => void, you: (t: string, final: boolean) => void, jota: (t: string) => void, done: () => void, error: (t: string) => void },
- *   speaker?: any, log?: { info: Function, warn: Function }, finalMs?: number,
+ *   speaker?: any, log?: { info: Function, warn: Function }, finalMs?: number, turnIdleMs?: number,
  * }} deps
  */
-module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { info() {}, warn() {} } }) {
+module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { info() {}, warn() {} }, turnIdleMs = 150000 }) {
   const { askPrefix: ASK_PREFIX, askGuest: ASK_GUEST } = prompts(cfg.NAME, cfg.OWNER);
   /** El turno en curso: quién preguntó, el id que le da el Gateway (tras turn_start) y la respuesta acumulada.
-   *  @type {null | { ws: any, turnId: string | null, reply: string, finish: (r: object) => void }} */
+   *  `sent`: ya se llamó a gw.send; hasta entonces ningún turn_start puede ser el nuestro (un push).
+   *  @type {null | { ws: any, turnId: string | null, sent: boolean, reply: string, timer: any, finish: (r: object) => void }} */
   let turn = null;
 
   /** @param {any} ws @param {object} o */
@@ -48,7 +49,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { i
   /** Cierra el turno en curso con un error (el Gateway cae, rechaza el turno o no está). @param {string} text */
   function fail(text) {
     const t = turn; if (!t) return;
-    turn = null;
+    turn = null; clearTimeout(t.timer);
     tell(t.ws, { ev: 'error', error: text });
     try { view.error(text); } catch (e) { log.warn('talk: vista con error', e); }
     t.finish({ error: text });
@@ -56,15 +57,25 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { i
 
   function end() {
     const t = turn; if (!t) return;
-    turn = null;
-    if (!t.reply) { tell(t.ws, { ev: 'error', error: 'sin respuesta del agente' }); try { view.error('sin respuesta del agente'); } catch {} return t.finish({ error: 'sin respuesta del agente' }); }
+    turn = null; clearTimeout(t.timer);
+    if (!t.reply) { tell(t.ws, { ev: 'error', error: 'sin respuesta del agente' }); try { view.error('sin respuesta del agente'); } catch (e) { log.warn('talk: vista con error', e); } return t.finish({ error: 'sin respuesta del agente' }); }
     tell(t.ws, { ev: 'done', reply: t.reply });
     try { view.done(); } catch (e) { log.warn('talk: vista con error', e); }
     t.finish({ ok: 1, reply: t.reply });
   }
 
+  /** Sin ningún evento del Gateway en turnIdleMs, el turno se da por perdido y se libera `busy`. */
+  function arm() {
+    if (!turn) return;
+    clearTimeout(turn.timer);
+    turn.timer = setTimeout(() => { log.warn('talk: turno sin eventos'); fail(DOWN); }, turnIdleMs);
+    if (turn.timer.unref) turn.timer.unref();
+  }
+
   gw.on(ev => {
-    if (!turn) return;                                     // sin turno nuestro (un push del Gateway): se ignora
+    if (!turn || !turn.sent) return;                       // sin turno nuestro, o aún sin enviar (un push del Gateway): se ignora
+    if (ev.type !== 'down' && ev.type !== 'turn_error' && !turn.turnId && ev.type !== 'turn_start') return;
+    arm();
     switch (ev.type) {
       case 'turn_start': if (!turn.turnId) turn.turnId = ev.turnId; return;
       case 'token':
@@ -87,15 +98,16 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, log = { i
   async function ask(text, ws, mode = 'full', who = '') {
     text = String(text || '').trim().slice(0, 1000);
     if (!text) return { error: 'mensaje vacío' };
-    if (turn) { tell(ws, { ev: 'error', error: BUSY }); return { error: BUSY }; }
+    if (turn) return { error: BUSY };
     /** @type {(r: object) => void} */ let finish = () => {};
     const result = new Promise(res => { finish = res; });
-    const mine = turn = { ws, turnId: null, reply: '', finish };
+    const mine = turn = { ws, turnId: null, sent: /** @type {boolean} */ (false), reply: '', timer: null, finish };
     let ok = false;
     try { ok = await gw.ensure(); } catch (e) { log.warn('talk: ensure con error', e); }
     if (turn !== mine) return /** @type {any} */ (result);   // el turno se cerró mientras se conectaba (down)
     if (!ok) { fail(DOWN); return /** @type {any} */ (result); }
     try { view.turn(media() === 1 ? 'island' : 'panel'); view.you(text, true); } catch (e) { log.warn('talk: vista con error', e); }
+    mine.sent = true; arm();
     gw.send((mode === 'full' ? ASK_PREFIX : ASK_GUEST + (who ? `(Se llama ${who}.) ` : '')) + text);
     return /** @type {any} */ (result);
   }

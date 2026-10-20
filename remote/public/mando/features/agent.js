@@ -2,7 +2,7 @@
 // al J Gateway; la frase entra palabra a palabra, las luces crecen mientras piensa y la respuesta se escribe en directo
 // por el WebSocket (`talk`: final, token con lo acumulado, done, error).
 import { $, el } from '../core/dom.js';
-import { cmd } from '../core/api.js';
+import { rpc } from '../core/api.js';
 import { buzz } from '../ui/haptics.js';
 import { openSheet, closeSheet } from '../ui/sheets.js';
 import { voice } from './voice.js';
@@ -24,10 +24,11 @@ function said(text) {
   q.classList.remove('said'); requestAnimationFrame(() => q.classList.add('said'));
 }
 function ask(text) {
-  cmd({ t: 'ask', text });
   said(text);
   const rep = $('#rep'); rep.className = 'rep wait'; rep.textContent = 'Pensando';
   stage('wait');
+  // el permiso o un texto vacío se contestan por aquí (no hay turno, así que no habrá evento talk)
+  rpc({ t: 'ask', text }).then(r => { if (r && r.error && r.error !== 'sin respuesta' && $('#agS').dataset.st === 'wait') { rep.className = 'rep'; rep.textContent = r.error; stage('idle'); } });
 }
 function onTalk(j) {
   const rep = $('#rep');
