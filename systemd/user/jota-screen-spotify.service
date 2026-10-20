@@ -1,0 +1,16 @@
+# jota-screen: altavoz Spotify Connect. scripts/spotifyd-run.sh arranca spotifyd con
+# ~/.config/spotifyd/spotifyd.conf si existe (o la que genera el instalador en ~/.config/jota-screen/spotifyd.conf)
+# y el nombre TV_SPOTIFY_DEVICE (por defecto TV_NAME). Generada por scripts/install.sh. No la edites.
+[Unit]
+Description=jota-screen: altavoz Spotify Connect (spotifyd)
+After=pipewire.service pipewire-pulse.service wireplumber.service
+
+[Service]
+Environment=TV_CONFIG=@CONFIG@
+EnvironmentFile=-@CONFIG@
+ExecStart=@APP_DIR@/scripts/spotifyd-run.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

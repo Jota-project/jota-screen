@@ -42,16 +42,16 @@ test('IP real tras el proxy local y tele solo en bucle local sin proxy', () => {
   assert.equal(clientIp(req('GET', '/', '192.168.1.5', { 'x-forwarded-for': '1.2.3.4' })), '192.168.1.5', 'solo se fía del proxy local');
   assert.equal(isLocalTV(req('GET', '/', '::1')), true);
   assert.equal(isLocalTV(req('GET', '/', '127.0.0.1', { 'tailscale-user-login': 'x' })), false);
-  assert.equal(isLocalTV(req('GET', '/', '192.168.1.19')), false);
+  assert.equal(isLocalTV(req('GET', '/', '192.168.1.50')), false);
 });
 
 test('escucha solo en bucle local, red privada y Tailscale', () => {
   const v4 = address => ({ family: 'IPv4', internal: false, address });
   const got = bindAddrs({
-    lo: [{ family: 'IPv4', internal: true, address: '127.0.0.1' }], eth0: [v4('192.168.1.19'), v4('8.8.8.8')],
+    lo: [{ family: 'IPv4', internal: true, address: '127.0.0.1' }], eth0: [v4('192.168.1.50'), v4('8.8.8.8')],
     tailscale0: [v4('100.109.57.116')], docker0: [v4('172.17.0.1')], wg0: [v4('172.40.0.1'), { family: 'IPv6', internal: false, address: 'fe80::1' }],
   });
-  assert.deepEqual(got, ['127.0.0.1', '192.168.1.19', '100.109.57.116']);
+  assert.deepEqual(got, ['127.0.0.1', '192.168.1.50', '100.109.57.116']);
 });
 
 test('estado de la tele: varios cambios seguidos, un solo mensaje', async () => {

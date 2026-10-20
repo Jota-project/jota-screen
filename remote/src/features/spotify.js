@@ -1,6 +1,6 @@
 'use strict';
 // @ts-check
-// Capacidad «Spotify»: spotifyd («Salón») es el altavoz Spotify Connect de la tele y se maneja con la Web API de Spotify
+// Capacidad «Spotify»: spotifyd (TV_SPOTIFY_DEVICE, por defecto TV_NAME) es el altavoz Spotify Connect de la tele y se maneja con la Web API de Spotify
 // (app propia, PKCE). Aquí viven el token, el límite de peticiones (429, con la espera guardada), todas las acciones de
 // la orden `spotify`, el «ahora suena» en vivo (nowplaying.js) para el mando y el reposo, y el retoque de la web de Spotify.
 const crypto = require('node:crypto');
@@ -19,7 +19,7 @@ const { send, TYPES } = require('../transport/http-util');
  */
 module.exports = function createSpotify({ cdp, cfg, log, clients, idle }) {
   const CFG = cfg;
-  // Spotify: spotifyd ("Salón") es el dispositivo Spotify Connect; se controla con la API web de Spotify (app propia, PKCE).
+  // Spotify: spotifyd (SP_DEVICE) es el dispositivo Spotify Connect; se controla con la API web de Spotify (app propia, PKCE).
   // Los tokens se guardan en ./spotify.json (0600). Conexión: abrir /spotify/login?t=TOKEN desde cualquier dispositivo de la red.
   const SP_FILE = CFG.FILES.spotify;
   const { SP_DEVICE, PUBLIC_URL, DEBUG } = CFG;
@@ -282,7 +282,7 @@ module.exports = function createSpotify({ cdp, cfg, log, clients, idle }) {
     onChange: n => { idle().setMusic(n); spBroadcast(n); }, log: log.info,
   });
 
-  // En la web de Spotify, la barra verde «Reproduciendo en Salón» sobra: «Salón» es la propia tele.
+  // En la web de Spotify, la barra verde «Reproduciendo en <SP_DEVICE>» sobra: ese altavoz es la propia tele.
   // Se oculta el bloque de esa barra (nunca los controles). Con TV_SPOTIFY_BANNER=1 se deja como viene.
   function spotifyTweak() {
     if (location.hostname !== 'open.spotify.com' || window.__tvTweak) return;

@@ -52,7 +52,7 @@ module.exports = function createKeyboard({ cdp, log, clients, devOf }) {
     }
     if (el.isContentEditable) {
       const sel = doc.getSelection();
-      if (el.innerText.replace(/ /g, ' ').replace(/\n$/, '') !== v) {
+      if (el.innerText.replace(/\u00a0/g, ' ').replace(/\n$/, '') !== v) {
         const r = doc.createRange(); r.selectNodeContents(el); sel.removeAllRanges(); sel.addRange(r);
         if (!doc.execCommand(v ? 'insertText' : 'delete', false, v)) return { fallback: 1 };
       }

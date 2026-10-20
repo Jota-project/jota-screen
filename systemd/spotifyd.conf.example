@@ -1,11 +1,14 @@
+# Plantilla de spotifyd para jota-screen. scripts/install.sh la rellena en
+# ~/.config/jota-screen/spotifyd.conf si no tienes ya ~/.config/spotifyd/spotifyd.conf.
+# El nombre del altavoz no va aquí: scripts/spotifyd-run.sh lo pasa con --device-name
+# (TV_SPOTIFY_DEVICE o TV_NAME), para que coincida con el que busca el servidor.
 [global]
 backend = "pulseaudio"
-device_name = "Salón"
 device_type = "t_v"
 bitrate = 320
 volume_controller = "softvol"
 initial_volume = 70
 volume_normalisation = true
 use_mpris = true
-cache_path = "/home/sito/.cache/spotifyd"
+cache_path = "@HOME@/.cache/spotifyd"
 max_cache_size = 2000000000

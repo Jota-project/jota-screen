@@ -2,7 +2,7 @@
   "name": "tv-canvas-mcp",
   "version": "0.1.0",
   "private": true,
-  "description": "MCP para controlar el navegador/lienzo de la tele del salón",
+  "description": "MCP para controlar el navegador/lienzo de la pantalla (jota-screen)",
   "type": "commonjs",
   "main": "server.js",
   "dependencies": {

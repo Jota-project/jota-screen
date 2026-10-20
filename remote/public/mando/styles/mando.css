@@ -293,11 +293,11 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .b2.dn::before,.b2:active::before{opacity:1;transform:none;transition-duration:.08s}
 @media (hover:hover){.b2:hover{color:var(--accent-text)}.pp2:hover{filter:brightness(1.08);color:var(--on-accent)}}
 .b2:focus-visible,.jota2:focus-visible,.re2:focus-visible{outline:2px solid var(--accent-text);outline-offset:2px;border-radius:16px}
-/* cabecera: «Salón» y, debajo, lo que hay en la tele con su color; al cambiar, sale con un fundido */
+/* cabecera: el nombre de la pantalla y, debajo, lo que hay en la tele con su color; al cambiar, sale con un fundido */
 .top2{display:flex;align-items:flex-start;gap:12px}
 .ttl2{flex:1;min-width:0;display:flex;flex-direction:column;gap:10px}
 .nm2{display:flex;align-items:center;gap:10px}
-.nm2 b{font:380 36px/1 var(--serif);font-variation-settings:"opsz" 144;letter-spacing:-.02em}
+.nm2 b{font:380 36px/1 var(--serif);font-variation-settings:"opsz" 144;letter-spacing:-.02em;overflow-wrap:anywhere}
 .app2 .dot,.app2 .dot.ok,.app2 .dot.bad{width:8px;height:8px;box-shadow:none}
 .sub2{display:flex;align-items:center;gap:10px;min-width:0;font-size:15px;line-height:1.3;transition:opacity .5s ease,transform .6s var(--ease)}
 .sub2.out{opacity:0;transform:translateY(6px);transition-duration:.3s}

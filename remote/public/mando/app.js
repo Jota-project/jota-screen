@@ -1,4 +1,4 @@
-// Mando del salón (remote/public/index.html): arranque. Cada parte vive en su módulo y exporta un descriptor
+// Mando de la pantalla (remote/public/index.html): arranque. Cada parte vive en su módulo y exporta un descriptor
 // { name, msgs, sheets, clicks, acts, init }; aquí se registra todo (error si un mensaje, hoja o acción se repite) y se
 // llama a los init() en el mismo orden que tenía el script único, para no cambiar el orden de los listeners del documento
 // ni la fase de los intervalos. Ningún otro módulo hace nada al cargarse.

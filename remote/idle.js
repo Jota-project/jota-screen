@@ -3,9 +3,9 @@
 //  - Reposo: página /idle.html con fondo animado según el momento del día (o los colores de la canción),
 //    hora y tiempo siempre visibles y «ahora suena». Se abre sola tras N minutos sin uso.
 //  - Live Activities: píldoras por encima de lo que se esté viendo (también en el reposo), en tiempo real.
-// Config en idle.json (junto al servidor): ciudad, horario de sueño (fijo o por día), minutos sin uso…
+// Config en idle.json (en TV_STATE_DIR): ciudad, horario de sueño (fijo o por día), minutos sin uso…
+// Sin latitud y longitud no se pide el tiempo y el reposo se pinta sin él.
 const fs = require('node:fs');
-const path = require('node:path');
 const { WebSocketServer, WebSocket } = require('ws');
 const { writeJson } = require('./src/core/json-store');
 const { islandSource } = require('./src/tv/tokens');
@@ -14,7 +14,7 @@ const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const MODES = ['auto', 'day', 'evening', 'night', 'cinema'];
 const LAYOUTS = ['rotar', 'margen', 'zonas', 'apilada']; // distribuciones del reposo v2
 const DEFAULTS = {
-  city: 'Elche', lat: 38.2669, lon: -0.6983, tz: 'Europe/Madrid',
+  city: '', lat: /** @type {number | null} */ (null), lon: /** @type {number | null} */ (null), tz: 'UTC', // los pone TV_CITY, TV_LAT…
   mode: 'auto',                 // auto | day | evening | night | cinema
   bed: '23:30', wake: '07:30',  // horario fijo de sueño
   perDay: false, week: {},      // si perDay: { mon: {bed, wake}, … } (bed de la noche de ese día, wake de la mañana de ese día)
@@ -27,21 +27,25 @@ const DEFAULTS = {
 };
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
+const validTz = tz => { try { new Intl.DateTimeFormat('en-GB', { timeZone: tz }); return true; } catch { return false; } };
 
 /**
  * @typedef {{
- *   ROOT: string, PUB: string, SELF: string,
+ *   PUB: string, SELF: string, file: string,
+ *   place?: { city?: string, lat?: number | null, lon?: number | null, tz?: string },
  *   cdp: { call: Function, session: string | null }, nav: (url: string) => Promise<any>, state: { url: string },
  *   stageKind: () => string | null, onWatch?: () => void, onAmbient?: () => void, log?: (...a: any[]) => void,
+ *   fetch?: typeof fetch,
  * }} IdleDeps
  */
 /** @param {IdleDeps} o */
 function createIdle(o) {
-  const { ROOT, PUB, SELF, cdp, nav, state, stageKind, log = () => {} } = o;
+  const { PUB, SELF, cdp, nav, state, stageKind, log = () => {}, fetch: get = fetch } = o;
   const URL_IDLE = SELF + '/idle.html';
-  const CFG_FILE = path.join(ROOT, 'idle.json');
-  let cfg = { ...DEFAULTS };
-  try { cfg = sanitize({ ...DEFAULTS, ...JSON.parse(fs.readFileSync(CFG_FILE, 'utf8')) }); } catch {}
+  const CFG_FILE = o.file;
+  const BASE = sanitize({ ...DEFAULTS, ...(o.place || {}) }, DEFAULTS); // valores iniciales: TV_CITY, TV_LAT, TV_LON, TV_TZ
+  let cfg = { ...BASE };
+  try { cfg = sanitize({ ...BASE, ...JSON.parse(fs.readFileSync(CFG_FILE, 'utf8')) }); } catch {}
   const save = () => writeJson(CFG_FILE, cfg, { pretty: true }); // atómico y 0600 (src/core/json-store.js)
 
   const isIdle = u => typeof u === 'string' && u.startsWith(URL_IDLE);
@@ -52,11 +56,15 @@ function createIdle(o) {
   const clients = new Set();
 
   // ───────── config
-  function sanitize(c) {
-    const out = { ...DEFAULTS };
+  function sanitize(c, base = BASE) {
+    const out = { ...base };
     if (typeof c.city === 'string') out.city = c.city.slice(0, 60);
-    for (const k of ['lat', 'lon']) if (Number.isFinite(+c[k])) out[k] = +c[k];
-    if (typeof c.tz === 'string' && c.tz.length < 60) out.tz = c.tz;
+    // null o '' quitan la ubicación (sin tiempo); un número fuera de rango se ignora
+    for (const [k, lim] of /** @type {[string, number][]} */ ([['lat', 90], ['lon', 180]])) {
+      if (c[k] === null || c[k] === '') out[k] = null;
+      else if (c[k] !== undefined && typeof c[k] !== 'boolean' && Number.isFinite(+c[k]) && Math.abs(+c[k]) <= lim) out[k] = +c[k];
+    }
+    if (typeof c.tz === 'string' && c.tz.length < 60 && validTz(c.tz)) out.tz = c.tz;
     if (MODES.includes(c.mode)) out.mode = c.mode;
     if (HHMM.test(c.bed)) out.bed = c.bed;
     if (HHMM.test(c.wake)) out.wake = c.wake;
@@ -105,7 +113,9 @@ function createIdle(o) {
   }
 
   // ───────── tiempo (Open-Meteo, sin clave)
+  const hasPlace = () => cfg.lat !== null && cfg.lon !== null;
   async function fetchWeather() {
+    if (!hasPlace()) { if (weather) { weather = null; tick(true); } return; } // sin ubicación no se pide (ni se sale a internet)
     try {
       const q = new URLSearchParams(/** @type {Record<string, any>} */ ({
         latitude: cfg.lat, longitude: cfg.lon, timezone: cfg.tz, forecast_days: 2, timeformat: 'unixtime',
@@ -113,7 +123,7 @@ function createIdle(o) {
         daily: 'temperature_2m_max,temperature_2m_min,sunrise,sunset,precipitation_probability_max,weather_code',
         hourly: 'precipitation_probability', forecast_hours: 6,
       }));
-      const r = await fetch('https://api.open-meteo.com/v1/forecast?' + q, { signal: AbortSignal.timeout(10_000) });
+      const r = await get('https://api.open-meteo.com/v1/forecast?' + q, { signal: AbortSignal.timeout(10_000) });
       const j = await r.json();
       if (!j.current) throw new Error('sin datos');
       const rain = (j.hourly?.precipitation_probability || []).slice(0, 6);
@@ -199,7 +209,7 @@ function createIdle(o) {
   const islandSrc = () => { try { return islandSource(PUB); } catch (e) { log('isla: ' + e.message); return ''; } };
   let overlayOn = false;
   function payload() {
-    return JSON.stringify({ t: 'idle', now: Date.now(), profile, cfg: { city: cfg.city, dimMin: cfg.dimMin, mode: cfg.mode, music: cfg.music, layout: cfg.layout, rearrangeMin: cfg.rearrangeMin, calm: cfg.calm }, weather, music, acts: actList() });
+    return JSON.stringify({ t: 'idle', now: Date.now(), profile, cfg: { city: cfg.city, tz: cfg.tz, dimMin: cfg.dimMin, mode: cfg.mode, music: cfg.music, layout: cfg.layout, rearrangeMin: cfg.rearrangeMin, calm: cfg.calm }, weather, music, acts: actList() });
   }
   let pTimer = null;
   function push() {

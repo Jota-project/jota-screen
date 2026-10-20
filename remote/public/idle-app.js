@@ -5,54 +5,73 @@ const B = document.body, BG = $('bg'), G = $('grid');
 const W = { hora: $('wHora'), ctx: $('wCtx'), mus: $('wMus') };
 let D = { profile: 'day', weather: null, music: null, acts: [], cfg: { dimMin: 20, layout: 'rotar', rearrangeMin: 18, calm: false } }, off = 0, lastEvent = Date.now();
 
-// ── distribuciones: cada escena coloca los widgets en la rejilla (fila-inicio / col-inicio / fila-fin / col-fin)
+// ── distribuciones: cada escena coloca los widgets en la rejilla (fila-inicio / col-inicio / fila-fin / col-fin), sin que
+// dos áreas se pisen: cada widget tiene su sitio reservado. A 1920×1080 caben la hora (3 filas × 7 columnas: «00:00» mide
+// ≈ 2,3 em), el contexto con una actividad (3 filas) y la música en línea (1 fila); si no, se encogen (idle.css, fit())
 const L = {
   margen: [
-    { hora: ['4/1/7/10', 'start', 'end', 'line', 'left'], ctx: ['1/8/3/13', 'end', 'start', 'col', 'right'], mus: ['6/8/7/13', 'end', 'end', 'line', 'right'] },
-    { hora: ['1/4/4/13', 'end', 'start', 'line', 'right'], ctx: ['3/1/5/7', 'start', 'end', 'col', 'left'], mus: ['6/1/7/7', 'start', 'end', 'line', 'left'] },
-    { hora: ['2/2/5/12', 'center', 'center', 'line', 'left'], ctx: ['5/1/7/7', 'start', 'end', 'col', 'left'], mus: ['1/8/2/13', 'end', 'start', 'line', 'right'] },
+    { hora: ['4/1/7/8', 'start', 'end', 'line', 'left'], ctx: ['1/8/4/13', 'end', 'start', 'col', 'right'], mus: ['5/8/7/13', 'end', 'end', 'line', 'right'] },
+    { hora: ['1/6/4/13', 'end', 'start', 'line', 'right'], ctx: ['1/1/5/6', 'start', 'end', 'col', 'left'], mus: ['5/1/7/7', 'start', 'end', 'line', 'left'] },
+    { hora: ['2/3/5/11', 'center', 'center', 'line', 'left'], ctx: ['5/1/7/7', 'start', 'end', 'col', 'left'], mus: ['1/8/2/13', 'end', 'start', 'line', 'right'] },
   ],
   zonas: [
-    { ctx: ['1/1/2/13', 'stretch', 'center', 'row', 'left'], hora: ['2/1/5/13', 'start', 'center', 'line', 'left'], mus: ['6/1/7/13', 'stretch', 'center', 'band', 'left'] },
+    { ctx: ['1/1/2/13', 'stretch', 'center', 'row', 'left'], hora: ['2/1/5/13', 'start', 'start', 'line', 'left'], mus: ['6/1/7/13', 'stretch', 'center', 'band', 'left'] },
     { hora: ['1/1/4/13', 'start', 'start', 'line', 'left'], mus: ['5/1/6/13', 'stretch', 'center', 'band', 'left'], ctx: ['6/1/7/13', 'stretch', 'center', 'row', 'left'] },
     { mus: ['1/1/2/13', 'stretch', 'center', 'band', 'left'], ctx: ['3/1/4/13', 'stretch', 'center', 'row', 'left'], hora: ['4/1/7/13', 'start', 'end', 'line', 'left'] },
   ],
   apilada: [
-    { hora: ['1/1/7/7', 'start', 'center', 'stack', 'left'], ctx: ['1/8/3/13', 'stretch', 'start', 'col', 'left'], mus: ['3/8/7/13', 'stretch', 'end', 'big', 'left'] },
-    { hora: ['1/7/7/13', 'end', 'center', 'stack', 'right'], ctx: ['1/1/3/7', 'stretch', 'start', 'col', 'left'], mus: ['3/1/7/7', 'stretch', 'end', 'big', 'left'] },
-    { hora: ['1/1/7/7', 'start', 'end', 'stack', 'left'], ctx: ['5/8/7/13', 'stretch', 'end', 'col', 'left'], mus: ['1/8/4/13', 'stretch', 'start', 'big', 'left'] },
+    { hora: ['1/1/7/7', 'start', 'center', 'stack', 'left'], ctx: ['1/8/4/13', 'stretch', 'start', 'col', 'left'], mus: ['4/8/7/13', 'stretch', 'end', 'big', 'left'] },
+    { hora: ['1/7/7/13', 'end', 'center', 'stack', 'right'], ctx: ['1/1/4/7', 'stretch', 'start', 'col', 'left'], mus: ['4/1/7/7', 'stretch', 'end', 'big', 'left'] },
+    { hora: ['1/1/7/7', 'start', 'end', 'stack', 'left'], ctx: ['4/8/7/13', 'stretch', 'end', 'col', 'left'], mus: ['1/8/4/13', 'stretch', 'start', 'big', 'left'] },
   ],
 };
 L.rotar = [...L.margen, ...L.zonas, ...L.apilada];
 let layout = '', scene = 0, rTimer = 0, moving = false;
+// cada widget ocupa su celda entera; su contenido (.wi) se alinea dentro con data-jx/data-jy (idle.css)
 function place(sc) {
   for (const k of ['hora', 'ctx', 'mus']) {
     const [area, jx, jy, v, ta] = sc[k], e = W[k];
-    e.style.gridArea = area; e.style.justifySelf = jx; e.style.alignSelf = jy;
+    e.style.gridArea = area; e.dataset.jx = jx; e.dataset.jy = jy;
     e.dataset.v = D.profile === 'night' && k === 'mus' ? 'line' : v; e.dataset.ta = ta;
     if (k === 'mus') e.dataset.dir = ta === 'right' ? 'rev' : '';
   }
+  fit();
 }
-// reacomodo coreografiado: atenuar, colocar, y que cada widget viaje desde donde estaba (FLIP)
+// si el contenido de un widget no cabe en su celda (más media separación, como mucho), se encoge entero: --fit < 1
+// escala todas sus medidas (--s en idle.css). La hora no lo necesita: se ajusta a su celda con cqh/cqw.
+function fit() {
+  const g = parseFloat(getComputedStyle(G).rowGap) || 0;
+  for (const e of [W.ctx, W.mus]) {
+    e.style.setProperty('--fit', '1');
+    const kids = [...e.firstElementChild.children].map(c => c.getBoundingClientRect()).filter(r => r.width || r.height);
+    if (!kids.length || !e.clientHeight) continue;
+    const h = Math.max(...kids.map(r => r.bottom)) - Math.min(...kids.map(r => r.top));
+    const w = Math.max(...kids.map(r => r.right)) - Math.min(...kids.map(r => r.left));
+    const k = Math.min(1, (e.clientHeight + g / 2) / h, (e.clientWidth + g / 2) / w);
+    if (k < 1) e.style.setProperty('--fit', (k * .98).toFixed(3));
+  }
+}
+// reacomodo coreografiado: atenuar, colocar, y que el contenido de cada widget viaje desde donde estaba (FLIP)
 function rearrange(next) {
   if (moving) return;
   const calm = !!D.cfg.calm; moving = true;
   G.classList.add('leaving');
   setTimeout(() => {
-    const els = Object.values(W), first = els.map(e => e.getBoundingClientRect());
+    const els = Object.values(W), ins = els.map(e => e.firstElementChild), first = ins.map(e => e.getBoundingClientRect());
     place(L[layout][next]); scene = next;
-    if (!calm) els.forEach((e, i) => {
+    if (!calm) ins.forEach((e, i) => {
       const a = first[i], b = e.getBoundingClientRect();
       e.style.transition = 'none'; e.style.transform = `translate(${a.left - b.left}px,${a.top - b.top}px)`;
     });
     requestAnimationFrame(() => requestAnimationFrame(() => {
       els.forEach((e, i) => {
         const d = i * .12;
-        e.style.transition = `transform 1.5s var(--ease) ${d}s, opacity .7s ease ${d + .35}s`;
-        e.style.transform = '';
+        e.style.transition = `opacity .7s ease ${d + .35}s`;
+        ins[i].style.transition = `transform 1.5s var(--ease) ${d}s`;
+        ins[i].style.transform = '';
       });
       G.classList.remove('leaving');
-      setTimeout(() => { els.forEach(e => { e.style.transition = ''; }); moving = false; }, 2200);
+      setTimeout(() => { els.forEach((e, i) => { e.style.transition = ins[i].style.transition = ''; }); moving = false; }, 2200);
     }));
   }, 650);
 }
@@ -69,8 +88,17 @@ function schedule() {
 }
 
 // ── reloj con dígitos que caen al cambiar
-const fmtDate = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Europe/Madrid' });
-const fmtHM = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: 'Europe/Madrid' });
+// zona horaria: la del reposo (TV_TZ o idle.json); si no llega o no vale, la del navegador (la del sistema)
+let fmtTz, fmtDate, fmtHM;
+function setTz(tz) {
+  if (fmtDate && tz === fmtTz) return;
+  fmtTz = tz;
+  try {
+    fmtDate = new Intl.DateTimeFormat('es-ES', { weekday: 'long', day: 'numeric', month: 'long', timeZone: tz || undefined });
+    fmtHM = new Intl.DateTimeFormat('es-ES', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23', timeZone: tz || undefined });
+  } catch { fmtTz = null; fmtDate = fmtHM = null; setTz(undefined); }
+}
+setTz(undefined);
 const slots = [...document.querySelectorAll('.dg')];
 function setDigit(s, ch) {
   const cur = s.querySelector('span:not(.old)');
@@ -229,6 +257,7 @@ function onData(m) {
   const prev = key(D), prevCfg = JSON.stringify(D.cfg);
   off = Date.now() - m.now;
   D = { ...m, cfg: { ...D.cfg, ...(m.cfg || {}) } };
+  setTz(D.cfg.tz);
   if (key(D) !== prev) lastEvent = Date.now();
   profile(); weather(); music(); acts();
   if (JSON.stringify(D.cfg) !== prevCfg) { setLayout(D.cfg.layout); schedule(); }
@@ -239,11 +268,14 @@ function connect() {
   ws.onmessage = e => { try { const m = JSON.parse(e.data); if (m.t === 'idle') onData(m); } catch {} };
   ws.onclose = () => setTimeout(connect, 1500);
 }
-// para pruebas y capturas: TVIdle.scene(n) fuerza una escena
-window.TVIdle = { scene: n => rearrange(n % L[layout].length), now: () => ({ layout, scene }) };
+// para pruebas y capturas: TVIdle.scene(n) fuerza una escena con su reacomodo; TVIdle.place(n), al momento
+window.TVIdle = { scene: n => rearrange(n % L[layout].length), place: n => { scene = n % L[layout].length; place(L[layout][scene]); }, now: () => ({ layout, scene, moving }) };
 // sin servidor también funciona: reloj y ambiente según la hora
 D.profile = (h => h >= 8 && h < 20 ? 'day' : 'evening')(new Date().getHours());
-function drift() { const r = () => Math.round(Math.random() * 64 - 32); $('dx').style.transform = `translate(${r()}px,${r()}px)`; }
+// ±32 px de la tele de 1920×1080 (la misma unidad --u que idle.css), para que la deriva no se coma el margen en pantallas pequeñas
+function drift() { const u = Math.min(innerWidth / 1920, innerHeight / 1080), r = () => Math.round((Math.random() * 64 - 32) * u); $('dx').style.transform = `translate(${r()}px,${r()}px)`; }
 setInterval(drift, 150e3); setTimeout(drift, 1000);
 setLayout(D.cfg.layout); schedule(); profile(); clock(); connect();
 setInterval(applyPalette, 5 * 60e3);
+// el ajuste depende de las fuentes y del tamaño de la pantalla
+addEventListener('resize', fit); document.fonts.ready.then(fit);

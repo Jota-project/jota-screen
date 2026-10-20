@@ -1,0 +1,25 @@
+{
+  "name": "jota-screen",
+  "private": true,
+  "description": "Herramientas de desarrollo de jota-screen (lint, tipos y pruebas). El servidor tiene sus dependencias en remote/.",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js test/unit/*.test.js",
+    "lint": "eslint .",
+    "check": "tsc -p remote && tsc -p remote/tsconfig.mando.json",
+    "verify": "npm run lint && npm run check && npm test",
+    "e2e:reposo": "npm --prefix e2e run reposo",
+    "e2e:solapes": "npm --prefix e2e run solapes --",
+    "e2e:mando": "npm --prefix e2e run mando",
+    "sync-plugin": "bash scripts/sync-plugin.sh"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "@types/node": "24.19.2",
+    "eslint": "9.39.5",
+    "globals": "17.13.0",
+    "typescript": "5.9.3"
+  }
+}

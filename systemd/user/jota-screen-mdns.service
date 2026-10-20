@@ -1,0 +1,15 @@
+# jota-screen: alias mDNS del mando (TV_MDNS_NAME) en TV_NET_IFACE o la interfaz de la ruta por defecto.
+# Generada por scripts/install.sh desde systemd/user/jota-screen-mdns.service. No la edites.
+[Unit]
+Description=jota-screen: alias mDNS del mando
+After=network-online.target
+
+[Service]
+Environment=TV_CONFIG=@CONFIG@
+EnvironmentFile=-@CONFIG@
+ExecStart=@APP_DIR@/mdns-alias.sh
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

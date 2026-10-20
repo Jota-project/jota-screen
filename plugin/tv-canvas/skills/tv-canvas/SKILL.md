@@ -1,11 +1,11 @@
 ---
 name: tv-canvas
-description: Controlar la tele del salón (Chrome en pantalla completa): abrir YouTube/Netflix/webs, controlar Spotify, play/pausa/volumen, mostrar tareas, recordatorios, presentaciones o páginas HTML animadas y avisos sobre lo que se está viendo. Usar cuando se pida poner algo en la tele, mostrar algo en pantalla, avisar o recordar en la tele.
+description: Controlar la tele (Chrome en pantalla completa): abrir YouTube/Netflix/webs, controlar Spotify, play/pausa/volumen, mostrar tareas, recordatorios, presentaciones o páginas HTML animadas y avisos sobre lo que se está viendo. Usar cuando se pida poner algo en la tele, mostrar algo en pantalla, avisar o recordar en la tele.
 ---
 
-# Tele del salón (tv-canvas)
+# Tele (tv-canvas)
 
-La tele es un Chrome en modo kiosco en el servidor green-house. Se maneja con las herramientas MCP `tv_*` (servidor `tv-canvas`). Los comandos que llegan por voz piden **respuestas de una frase**: actúa y confirma en pocas palabras ("Hecho, Netflix abierto"), sin explicar los pasos.
+La tele es un Chrome en modo kiosco en el servidor de jota-screen. Se maneja con las herramientas MCP `tv_*` (servidor `tv-canvas`). Los comandos que llegan por voz piden **respuestas de una frase**: actúa y confirma en pocas palabras ("Hecho, Netflix abierto"), sin explicar los pasos.
 
 ## Cómo reproducir algo (YouTube / Netflix)
 1. `tv_open_app` con `app` y `query` (abre los resultados de búsqueda).
@@ -19,7 +19,7 @@ Los fotogramas de vídeo con DRM salen negros en las capturas; es normal. Si la 
 - `tv_media`: `playpause`, o `seek` con segundos (negativo = atrás). `tv_volume`: `up`/`down` (con `steps`), `mute`, `set` (0-100). `tv_nav`: `back`, `forward`, `reload`, `home`, `fullscreen`. `tv_key`, `tv_type`, para teclas y texto.
 
 ## Spotify
-`tv_spotify`: el servidor es un dispositivo Spotify Connect («Salón», cuenta Premium del usuario) y suena por la tele. Para «ponme X» usa `search_play` con `query` y `type` (`track` por defecto; `artist` para «algo de X»; `playlist` para estados de ánimo o géneros). Otras acciones: `status`, `play`, `pause`, `playpause`, `next`, `prev`, `volume` (0-100), `search` (candidatos con URI) y `uri` (enlace o URI). Para enseñar la interfaz de Spotify en la tele (explorar, ver qué suena) usa `tv_open_app` con `app: spotify`; el sonido sale por «Salón». Si `status` dice que no está configurado o conectado, díselo al usuario en una frase. No mezcles Spotify con un vídeo en marcha: pausa el vídeo antes (`tv_media`).
+`tv_spotify`: el servidor es un dispositivo Spotify Connect (con el nombre de la pantalla, cuenta Premium del usuario) y suena por la tele. Para «ponme X» usa `search_play` con `query` y `type` (`track` por defecto; `artist` para «algo de X»; `playlist` para estados de ánimo o géneros). Otras acciones: `status`, `play`, `pause`, `playpause`, `next`, `prev`, `volume` (0-100), `search` (candidatos con URI) y `uri` (enlace o URI). Para enseñar la interfaz de Spotify en la tele (explorar, ver qué suena) usa `tv_open_app` con `app: spotify`; el sonido sale por ese altavoz. Si `status` dice que no está configurado o conectado, díselo al usuario en una frase. No mezcles Spotify con un vídeo en marcha: pausa el vídeo antes (`tv_media`).
 
 ## Mostrar contenido propio
 - `tv_toast`: aviso corto arriba a la derecha sobre lo que se vea (también a pantalla completa). Ideal para recordatorios mientras se ve algo.
@@ -32,11 +32,11 @@ Los fotogramas de vídeo con DRM salen negros en las capturas; es normal. Si la 
 - `tv_events` lee lo que ocurre en la tele (tareas marcadas, diapositivas). `tv_close` vuelve a lo anterior.
 
 ## Reposo y Live Activities
-- La tele vuelve sola a la **pantalla en reposo** (fondo animado según la hora o los colores de la canción, reloj, tiempo de Elche, «ahora suena») tras unos minutos sin uso. `tv_nav home` o `tv_idle op:show` la abren; `tv_idle op:get|set` lee o cambia sus ajustes (modo, horario de sueño fijo o por día, minutos sin uso, atenuado nocturno, `layout` margen|zonas|apilada|rotar, `rearrangeMin` y `calm` para menos movimiento). Las Live Activities también salen dentro del reposo, junto a la fecha y el tiempo.
+- La tele vuelve sola a la **pantalla en reposo** (fondo animado según la hora o los colores de la canción, reloj, el tiempo si hay una ubicación configurada, «ahora suena») tras unos minutos sin uso. `tv_nav home` o `tv_idle op:show` la abren; `tv_idle op:get|set` lee o cambia sus ajustes (modo, ubicación del tiempo `city`/`lat`/`lon`/`tz`, horario de sueño fijo o por día, minutos sin uso, atenuado nocturno, `layout` margen|zonas|apilada|rotar, `rearrangeMin` y `calm` para menos movimiento). Las Live Activities también salen dentro del reposo, junto a la fecha y el tiempo.
 - `tv_activity`: píldora en vivo arriba en el centro, por encima de todo (reposo, webs, vídeo a pantalla completa). Para cosas que duran: temporizadores (`seconds`), cronómetros (`elapsed`), progreso (`progress` 0-1), marcadores o estados (`value`). Usa un `id` estable para actualizarla (`quiet` para no expandirla) y `op:end` cuando acabe. Título de 2-4 palabras, un emoji en `icon` y un color en `accent`.
 
 ## Acceso de administrador
-- `tv_admin_link` crea un enlace (y un código tecleable) de un solo uso que caduca en 10 minutos. Con él, un móvil pasa a administrador con su propio token, sin ver el token maestro. Dáselo solo a Sito, nunca a invitados. En el servidor hace lo mismo `node remote/admin-link.js`.
+- `tv_admin_link` crea un enlace (y un código tecleable) de un solo uso que caduca en 10 minutos. Con él, un móvil pasa a administrador con su propio token, sin ver el token maestro. Dáselo solo al dueño, nunca a invitados. En el servidor hace lo mismo `node remote/admin-link.js`.
 
 ## Criterio
 - Al terminar un recordatorio o una presentación, cierra con `tv_close` si ya no hace falta.

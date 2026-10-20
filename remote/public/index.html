@@ -42,7 +42,7 @@
 <meta name="apple-mobile-web-app-title" content="Mando">
 <link rel="apple-touch-icon" href="/icon-180.png">
 <link rel="icon" href="/icon-180.png">
-<title>Mando</title>
+<title>Mando · {{TV_NAME}}</title>
 </head>
 <body>
 <svg class="sprite" width="0" height="0" aria-hidden="true"><defs>
@@ -82,7 +82,7 @@
 <main class="app2">
   <header class="top2">
     <div class="ttl2">
-      <div class="nm2"><b>Salón</b><i class="dot" id="dot" role="img" aria-label="Conectando"></i></div>
+      <div class="nm2"><b>{{TV_NAME}}</b><i class="dot" id="dot" role="img" aria-label="Conectando"></i></div>
       <div class="sub2" id="sub2" aria-live="polite"><i class="thumb2" aria-hidden="true"></i><span id="t1">Conectando…</span><span id="t2"></span></div>
       <button class="re2" id="re2" type="button" hidden>Sin conexión · <u>Reintentar</u></button>
     </div>
@@ -207,7 +207,7 @@
 <div class="pairV" id="pairV" hidden>
   <div class="pc">
     <svg class="lg" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="12" rx="2.5"/><path d="M9 20.5h6M12 17v3.5"/></svg>
-    <h1>Mando del salón</h1>
+    <h1>Mando · {{TV_NAME}}</h1>
     <p id="pMsg">Pide acceso al administrador o escribe el código que aparecerá en la tele.</p>
     <div id="p1" class="pc">
       <input class="in" id="pName" placeholder="Tu nombre (opcional)" maxlength="24" autocomplete="given-name" autocapitalize="words" enterkeyhint="go">
@@ -274,7 +274,7 @@
 
 <!-- hablar con Jota: un velo con luces sobre el mando; se escribe o se dicta con el micrófono del teclado -->
 <div class="sheet vzV" id="agS" role="dialog" aria-label="Hablar con Jota">
-  <div class="vzTop"><button class="b2 vzX" id="agX" type="button" aria-label="Cerrar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button><span>Salón</span></div>
+  <div class="vzTop"><button class="b2 vzX" id="agX" type="button" aria-label="Cerrar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button><span>{{TV_NAME}}</span></div>
   <div class="vzSt" id="agSt" aria-live="polite">Te escucho</div>
   <p class="vzQ" id="agQ"></p>
   <div class="rep" id="rep"></div>

@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 __pycache__/
 # secretos y estado local (nunca al repo)
 remote/token
@@ -11,12 +11,12 @@ stage/
 spotify/
 *.log
 .env
-tv-kiosk.service
 remote/idle.json
 remote/access.json
 
 # worktrees de otras sesiones de Claude
 .claude/worktrees/
 
-# capturas del mando (e2e/mando-capturas.js)
+# capturas del reposo y del mando (e2e/reposo-capturas.js, e2e/mando-capturas.js)
+e2e/capturas/
 e2e/capturas-mando/

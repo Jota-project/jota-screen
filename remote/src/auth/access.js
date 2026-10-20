@@ -42,7 +42,7 @@ function createAccess({ files, adminUrl, log, sessions, tv, now = Date.now }) {
   let devices = readJson(files.devices, []); if (!Array.isArray(devices)) devices = [];
   const devSave = () => writeJson(files.devices, devices);
   let migrated = false;
-  for (const d of devices) if (!ROLES.includes(d.role)) { d.role = 'admin'; migrated = true; } // los emparejados antes de los roles eran de Sito
+  for (const d of devices) if (!ROLES.includes(d.role)) { d.role = 'admin'; migrated = true; } // los emparejados antes de los roles eran del dueño
   if (migrated) devSave();
   const byId = id => devices.find(x => x.id === id) || null;
 
@@ -129,7 +129,7 @@ function createAccess({ files, adminUrl, log, sessions, tv, now = Date.now }) {
     return access;
   }
 
-  // ── emparejar: el código aparece en la tele (hay que estar en el salón) o se pide permiso a un admin conectado
+  // ── emparejar: el código aparece en la tele (hay que estar delante de la tele) o se pide permiso a un admin conectado
   const pairs = new Map(); // pid -> {code, name, ts, tries} o {ask: true, name, ts, result?, denied?}
   const pairLast = new Map();
   const pairDone = pid => sessions.notifyAdmins({ t: 'pairdone', pid });

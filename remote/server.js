@@ -1,9 +1,9 @@
 'use strict';
 // Mando web para la tele: raíz de composición. Aquí solo se crean las piezas, se conectan entre sí y se arrancan.
 // HTTP + WebSocket  ->  Chrome (CDP: teclas, texto, navegación)  +  puntero X real (pointer.py)  +  volumen (wpctl)
-// Escucha solo en loopback, red privada y Tailscale. Todo requiere token (fichero ./token).
+// Escucha solo en loopback, red privada y Tailscale. Todo requiere token (fichero token en TV_STATE_DIR).
 //
-//   src/core/       configuración, registro con redacción, almacén JSON, estado de la tele
+//   src/core/       configuración, carpeta de estado, registro con redacción, almacén JSON, estado de la tele
 //   src/auth/       token maestro, dispositivos, roles, emparejar, permisos y freno de intentos
 //   src/tv/         adaptadores de la tele: Chrome (CDP), puntero, volumen, sondeo de la página, tokens de la isla
 //   src/features/   capacidades, cada una con sus órdenes (y rutas, si las tiene)
@@ -11,6 +11,7 @@
 
 const path = require('node:path');
 const { loadConfig } = require('./src/core/config');
+const { prepareStateDir } = require('./src/core/state-dir');
 const { createLog } = require('./src/core/log');
 const { createTvState } = require('./src/core/tv-state');
 const { createRateLimiter } = require('./src/auth/ratelimit');
@@ -41,6 +42,8 @@ const { ROOT, PUB, PORT, CDP_PORT, DEBUG, NO_POINTER, SELF } = CFG;
 let acc = null; // el acceso se crea un poco más abajo; quien lo usa antes, lo hace al llamar
 // registro con redacción: el token maestro, los ?t= y los Bearer nunca llegan al journal
 const log = createLog({ secrets: () => (acc ? [acc.masterToken()] : []), debug: DEBUG });
+// antes de leer nada: la carpeta de estado (0700) con lo que hubiera en las ubicaciones antiguas
+prepareStateDir(CFG, log.info);
 const ws = createWs();
 const sessions = createSessions({ clients: ws.clients, acc: () => acc });
 const { devOf, meOf } = sessions;
@@ -86,7 +89,7 @@ const stage = createStage({ cdp, state, cfg: CFG, nav: u => control.nav(u) });
 const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave() });
 const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: () => idle });
 const idle = createIdle({
-  ROOT, PUB, SELF, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
+  PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
   stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info,
 });
 const agent = createAgent({ cfg: CFG, toast: m => stage.toast(m) });
@@ -105,7 +108,7 @@ async function run(m, sock, ctx = {}) {
 }
 
 // ───────────────────────── transporte: HTTP (rutas + estáticos) y WebSocket
-const statics = createStatic({ dir: PUB });
+const statics = createStatic({ dir: PUB, vars: { TV_NAME: CFG.NAME } }); // {{TV_NAME}} en el HTML y el manifiesto
 const handler = createHttp({
   routes: [
     ...createApiRoutes({ limiter, auth: acc, run, publicState, stage, agentBusy: () => agent.busy() }),

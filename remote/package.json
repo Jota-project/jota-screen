@@ -1,18 +1,11 @@
 {
-  "name": "tv-remote",
+  "name": "jota-screen-server",
   "version": "1.0.0",
   "private": true,
-  "description": "Mando web para la tele del salón",
+  "description": "Mando web para la pantalla (jota-screen)",
   "main": "server.js",
-  "scripts": {
-    "check": "tsc -p . && tsc -p tsconfig.mando.json"
-  },
   "dependencies": {
     "jpeg-js": "^0.4.4",
     "ws": "^8.18.0"
-  },
-  "devDependencies": {
-    "@types/node": "24.19.2",
-    "typescript": "5.9.3"
   }
 }

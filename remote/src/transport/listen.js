@@ -24,7 +24,7 @@ function listen({ port, handler, onUpgrade, log }) {
     const s = http.createServer(handler);
     s.on('upgrade', onUpgrade);
     s.on('error', e => log.error('no se pudo escuchar en', addr, /** @type {any} */ (e).code));
-    s.listen(port, addr, () => log.info(`escuchando en http://${addr}:${port}/ (token maestro en remote/token; nunca se escribe en el registro)`));
+    s.listen(port, addr, () => log.info(`escuchando en http://${addr}:${port}/ (token maestro en TV_STATE_DIR/token; nunca se escribe en el registro)`));
     return s;
   });
 }

@@ -15,7 +15,7 @@ const { STAGE_CSP } = require('../transport/static');
  */
 module.exports = function createStage({ cdp, state, cfg, nav }) {
   const { SELF, HOME_URL, STAGE_DIR } = cfg;
-  fs.mkdirSync(STAGE_DIR, { recursive: true });
+  fs.mkdirSync(STAGE_DIR, { recursive: true, mode: 0o700 });
   // ───────────────────────── escenario: contenido que el agente pone en la tele
   // Plantillas (tasks, reminder, slides) o HTML propio. Los datos se actualizan en vivo por WebSocket local.
   const stage = { kind: null, data: null, prev: null, timer: null };

@@ -28,13 +28,28 @@ const cacheFor = p => (LONG_CACHE.has(path.extname(p)) && !p.startsWith('/shared
 // CSP de cada página; los .js, .css e imágenes no la llevan
 const pageCsp = p => (p === '/index.html' ? CSP : p === '/idle.html' ? IDLE_CSP : /^\/tpl-[\w-]+\.html$/.test(p) ? STAGE_CSP : null);
 
+const escHtml = (/** @type {string} */ v) => v.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
+const escJson = (/** @type {string} */ v) => JSON.stringify(v).slice(1, -1);
+/**
+ * Pone los valores de la instalación ({{TV_NAME}}…) en el HTML y en el manifiesto, escapados para cada formato.
+ * @param {Buffer} buf @param {string} ext @param {Record<string, string>} vars
+ */
+function fill(buf, ext, vars) {
+  const esc = ext === '.html' ? escHtml : ext === '.webmanifest' || ext === '.json' ? escJson : null;
+  if (!esc || !Object.keys(vars).length) return buf;
+  const src = buf.toString('utf8');
+  const out = src.replace(/\{\{([A-Z_]+)\}\}/g, (m, k) => (Object.hasOwn(vars, k) ? esc(String(vars[k])) : m));
+  return out === src ? buf : Buffer.from(out);
+}
+
 /**
  * Carga public/ en memoria al arrancar, con subcarpetas (hasta 2 niveles). Solo se sirve lo cargado aquí: una ruta con
  * «..» o %2F nunca llega al disco (la URL ya viene normalizada y se busca la clave exacta). Se saltan los ficheros
- * ocultos y los enlaces simbólicos (que podrían apuntar fuera de public/).
- * @param {{ dir: string, maxDepth?: number }} o
+ * ocultos y los enlaces simbólicos (que podrían apuntar fuera de public/). En el HTML y el manifiesto, {{CLAVE}} se cambia
+ * por vars.CLAVE (p. ej. el nombre de la pantalla).
+ * @param {{ dir: string, maxDepth?: number, vars?: Record<string, string> }} o
  */
-function createStatic({ dir, maxDepth = 2 }) {
+function createStatic({ dir, maxDepth = 2, vars = {} }) {
   const assets = new Map();
   function walk(abs, rel, depth) {
     for (const f of fs.readdirSync(abs)) {
@@ -47,8 +62,8 @@ function createStatic({ dir, maxDepth = 2 }) {
         continue;
       }
       if (!st.isFile()) continue;
-      const buf = fs.readFileSync(full);
       const ext = path.extname(f);
+      const buf = fill(fs.readFileSync(full), ext, vars);
       assets.set(key, {
         buf, gz: ZIP.has(ext) ? zlib.gzipSync(buf, { level: 9 }) : null, type: TYPES[ext] || 'application/octet-stream',
         etag: '"' + crypto.createHash('sha1').update(buf).digest('hex').slice(0, 16) + '"',

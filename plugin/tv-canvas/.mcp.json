@@ -4,8 +4,8 @@
       "command": "node",
       "args": ["${CLAUDE_PLUGIN_ROOT}/mcp/server.js"],
       "env": {
-        "TV_URL": "https://green-house.tailf2c275.ts.net:8443",
-        "TV_TOKEN": "${TV_TOKEN}"
+        "TV_URL": "${TV_URL:-http://127.0.0.1:8787}",
+        "TV_TOKEN": "${TV_TOKEN:-}"
       }
     }
   }

@@ -100,7 +100,7 @@ test('estado: los ficheros de dispositivos y accesos quedan con permisos 600', a
   await a.rpc({ t: 'access', op: 'set', cfg: { guestHours: 24 } });
   a.close();
   for (const f of ['devices.json', 'access.json']) {
-    const st = fs.statSync(path.join(s.root, f));
+    const st = fs.statSync(path.join(s.state, f));
     assert.equal(st.mode & 0o777, 0o600, f);
   }
 });

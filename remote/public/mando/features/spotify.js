@@ -1,6 +1,6 @@
-// Spotify («Ahora suena», v3): panel completo del dispositivo «Salón», con datos en vivo empujados por el servidor. Las
-// luces del panel toman los colores de la carátula (recortados para que el texto se lea) y, al cambiar de canción, el
-// texto sale en 200 ms, la carátula entra en 800 ms y el texto nuevo llega escalonado.
+// Spotify («Ahora suena», v3): panel completo del altavoz de la pantalla (TV_SPOTIFY_DEVICE), con datos en vivo empujados
+// por el servidor. Las luces del panel toman los colores de la carátula (recortados para que el texto se lea) y, al
+// cambiar de canción, el texto sale en 200 ms, la carátula entra en 800 ms y el texto nuevo llega escalonado.
 import { $, hide } from '../core/dom.js';
 import { state, on } from '../core/store.js';
 import { cmd, rpc } from '../core/api.js';
