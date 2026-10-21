@@ -39,11 +39,11 @@ test('historial: fecha, serie, temporada y capítulo, aunque lleven dos puntos',
 });
 
 /** Netflix y Chrome de mentira para el orquestador */
-function rig({ active = false, tabGuid = null, read, last = null, now } = {}) {
+function rig({ active = false, tabGuid = null, alive = false, read, last = null, now } = {}) {
   const seen = [];
   const netflix = {
     isActive: () => active,
-    profileInfo: () => ({ name: 'Alfonso', guid: 'GA', tabGuid }),
+    profileInfo: () => ({ name: 'Alfonso', guid: 'GA', alive: alive || !!tabGuid, tabGuid }),
     learn: () => {},
     play: async m => { seen.push(m); return { ok: 1, title: m.title, id: m.id || 'buscado', playing: true }; },
     last: () => last,
@@ -71,6 +71,12 @@ test('lectura: en una pestaña de fondo, guarda, avisa al reposo y la cierra sie
 test('lectura: no con Netflix delante ni con su pestaña en otro perfil; dos a la vez son una', async () => {
   assert.match((await rig({ active: true }).w.refresh()).skipped, /delante/);
   assert.match((await rig({ tabGuid: 'GC' }).w.refresh()).skipped, /otro perfil/);
+  // con la pestaña de Netflix viva (en el perfil bueno, o adoptada tras reiniciar sin saber cuál) no se cambia de perfil
+  for (const o of [{ tabGuid: 'GA' }, { alive: true }]) {
+    const r = rig(o);
+    await r.w.refresh();
+    assert.ok(r.seen.includes('read:GA:false'), JSON.stringify(o) + ' ' + r.seen.join(','));
+  }
   const { w, seen } = rig({ tabGuid: 'GA' });
   const [a, b] = await Promise.all([w.refresh(), w.refresh()]);
   assert.equal(a, b);

@@ -218,7 +218,8 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
   /** Para el lector de «Seguir viendo»: qué perfil leer y en cuál está la pestaña de Netflix (si vive). */
   function profileInfo() {
     const name = defaultProfile();
-    return { name, guid: guidOf(name), tabGuid: alive() ? tabGuid : null };
+    const on = !!alive();
+    return { name, guid: guidOf(name), alive: on, tabGuid: on ? tabGuid : null };
   }
 
   function profiles() {
