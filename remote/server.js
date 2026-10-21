@@ -121,7 +121,11 @@ const netflix = createNetflix({ cdp, cfg: CFG, store: createJsonStore(CFG.FILES.
 const nfxWatch = createWatch({ cdp, netflix, store: createJsonStore(CFG.FILES.watching, { fallback: {} }), log: log.info, onChange: () => idle.nfxChanged(), self: SELF });
 netflix.extend({ ...nfxWatch.ops,
   // «¿qué estoy viendo?»: además de la respuesta para el agente, la lista con sus imágenes en la conversación
-  watching: () => { const card = nfxWatch.media('list'); if (card) talkView.media(card); return nfxWatch.watching(); } });
+  watching: () => {
+    const card = nfxWatch.media('list'), shown = !!card && talkView.media(card);
+    log.info(`netflix: «qué estoy viendo» (tarjeta en la conversación: ${shown ? 'sí' : card ? 'no, la capa no la admite ahora' : 'no, sin datos'})`);
+    return nfxWatch.watching();
+  } });
 // tv_open / tv_open_app con `layout`: Jota elige el formato de la conversación para la página que abre. Abrir la misma
 // URL (o recargar) es un documento nuevo sin cambio de URL: onPage no lo ve y se avisa desde aquí
 const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave(), netflix,
