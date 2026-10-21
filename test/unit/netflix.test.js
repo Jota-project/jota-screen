@@ -182,3 +182,19 @@ test('Netflix: antes de traerlo al frente avisa de lo que va a poner (la convers
   const m = createNetflix({ cdp: fakeTv().cdp, cfg: { NETFLIX_PROFILE: 'Alfonso' }, store: memStore({ profiles: PROFILES }), ...fast, beforePlay: async () => { throw new Error('sin capa'); } });
   assert.equal((await m.play({ title: 'Dark' })).ok, 1);
 });
+
+test('Netflix: la pestaña adoptada tras reiniciar dice en qué perfil está (sin traerla al frente) y se suelta', async () => {
+  const calls = [];
+  const cdp = {
+    pages: new Map([['MAIN', { url: 'http://127.0.0.1:8787/idle.html' }], ['NF', { url: 'https://www.netflix.com/browse' }]]), targetId: 'MAIN',
+    show: async () => calls.push('show'), newTab: async () => 'X',
+    call: async (m, p) => { calls.push(m); return m === 'Target.attachToTarget' ? { sessionId: 'S-NF' } : {}; },
+    request: async (m, p, sid) => { calls.push(m + '@' + sid); return { result: { value: { cur: 'GC', gate: false } } }; },
+  };
+  const n = createNetflix({ cdp, cfg: { NETFLIX_PROFILE: 'Alfonso' }, store: memStore({ profiles: PROFILES }), ...fast });
+  assert.deepEqual(await n.profileInfo(), { name: 'Alfonso', guid: 'GA', alive: true, tabGuid: 'GC' });
+  assert.deepEqual(calls, ['Target.attachToTarget', 'Runtime.evaluate@S-NF', 'Target.detachFromTarget']);
+  calls.length = 0;
+  await n.profileInfo();
+  assert.deepEqual(calls, [], 'ya sabido: no se vuelve a preguntar');
+});

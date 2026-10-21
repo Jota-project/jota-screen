@@ -35,7 +35,7 @@ const PRIVATE = new Set(['watching', 'history', 'play_last', 'refresh']);
  * @typedef {{ profile?: string, profiles?: Record<string, string>, titles?: Record<string, { id: string, title: string }>,
  *   last?: { at: number, id?: string, title?: string, vid?: number } }} Data
  * @param {{
- *   cdp: { call: Function, show: (id: string) => Promise<void>, newTab: () => Promise<string>, pages: Map<string, { url: string }>, targetId: string | null },
+ *   cdp: { call: Function, request?: Function, show: (id: string) => Promise<void>, newTab: () => Promise<string>, pages: Map<string, { url: string }>, targetId: string | null },
  *   cfg: { NETFLIX_PROFILE?: string },
  *   store: { load: () => any, save: (v: any) => void },
  *   log?: (s: string) => void,
@@ -215,10 +215,24 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
     try { onLeave(); } catch {}
   }
 
-  /** Para el lector de «Seguir viendo»: qué perfil leer y en cuál está la pestaña de Netflix (si vive). */
-  function profileInfo() {
+  /**
+   * Para el lector de «Seguir viendo»: qué perfil leer y en cuál está la pestaña de Netflix (si vive). Si se adoptó tras
+   * reiniciar el servidor y no se sabe, se le pregunta a ella (sin traerla al frente: una sesión aparte, y se suelta).
+   */
+  async function profileInfo() {
     const name = defaultProfile();
     const on = !!alive();
+    if (on && !tabGuid) {
+      try {
+        const id = /** @type {string} */ (tab);
+        const { sessionId } = await cdp.call('Target.attachToTarget', { targetId: id, flatten: true }, true);
+        try {
+          const r = await /** @type {Function} */ (cdp.request)('Runtime.evaluate', { expression: PROBE, returnByValue: true }, sessionId);
+          const p = r && r.result && r.result.value;
+          if (p && p.cur && !p.gate) tabGuid = p.cur;
+        } finally { cdp.call('Target.detachFromTarget', { sessionId }, true).catch(() => {}); }
+      } catch {}
+    }
     return { name, guid: guidOf(name), alive: on, tabGuid: on ? tabGuid : null };
   }
 

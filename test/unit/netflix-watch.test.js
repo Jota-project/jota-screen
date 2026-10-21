@@ -71,11 +71,11 @@ test('lectura: en una pestaña de fondo, guarda, avisa al reposo y la cierra sie
 test('lectura: no con Netflix delante ni con su pestaña en otro perfil; dos a la vez son una', async () => {
   assert.match((await rig({ active: true }).w.refresh()).skipped, /delante/);
   assert.match((await rig({ tabGuid: 'GC' }).w.refresh()).skipped, /otro perfil/);
-  // con la pestaña de Netflix viva (en el perfil bueno, o adoptada tras reiniciar sin saber cuál) no se cambia de perfil
-  for (const o of [{ tabGuid: 'GA' }, { alive: true }]) {
+  // con la pestaña de Netflix viva en el perfil bueno se puede elegir ese mismo; si no se sabe en cuál está, no se toca
+  for (const [o, can] of [[{ tabGuid: 'GA' }, true], [{ alive: true }, false]]) {
     const r = rig(o);
     await r.w.refresh();
-    assert.ok(r.seen.includes('read:GA:false'), JSON.stringify(o) + ' ' + r.seen.join(','));
+    assert.ok(r.seen.includes('read:GA:' + can), JSON.stringify(o) + ' ' + r.seen.join(','));
   }
   const { w, seen } = rig({ tabGuid: 'GA' });
   const [a, b] = await Promise.all([w.refresh(), w.refresh()]);

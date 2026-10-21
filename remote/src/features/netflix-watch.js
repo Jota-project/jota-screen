@@ -169,7 +169,7 @@ const fmtMin = sec => { const m = Math.max(1, Math.round(sec / 60)); return m >=
 /**
  * @param {{
  *   cdp: { ready: boolean, bgTab: () => Promise<any> },
- *   netflix: { isActive: () => boolean, profileInfo: () => { name: string, guid: string | null, alive?: boolean, tabGuid: string | null }, learn: (ps: Record<string, string>) => void, play: (m: any) => Promise<any>, last?: () => any },
+ *   netflix: { isActive: () => boolean, profileInfo: () => any, learn: (ps: Record<string, string>) => void, play: (m: any) => Promise<any>, last?: () => any },
  *   store: { load: () => any, save: (v: any) => void },
  *   log?: (s: string) => void, onChange?: () => void, now?: () => number, read?: typeof readAll, fetch?: typeof fetch,
  *   self?: string,
@@ -188,11 +188,11 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
     busy = (async () => {
       if (!cdp.ready) return { error: 'la tele no está conectada' };
       if (netflix.isActive()) return { skipped: 'Netflix está delante' };        // ni con algo sonando ni a medias
-      const w = netflix.profileInfo();
+      const w = await netflix.profileInfo();
       if (w.tabGuid && w.guid && w.tabGuid !== w.guid) return { skipped: 'Netflix está en otro perfil' };
-      // la cookie de perfil es de todo Chrome: con una pestaña de Netflix viva (también una adoptada tras reiniciar, de
-      // perfil desconocido) no se cambia nunca; se lee solo si la web ya está en el perfil por defecto
-      const canSwitch = !w.alive;
+      // la cookie de perfil es de todo Chrome: con una pestaña de Netflix viva solo se elige el perfil si es el mismo en
+      // el que está ella (el de por defecto); si no se sabe en cuál está, no se toca y se lee solo si ya es el bueno
+      const canSwitch = !w.alive || (!!w.guid && w.tabGuid === w.guid);
       const t0 = now();
       const tab = await cdp.bgTab();
       try {
