@@ -254,6 +254,11 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
   const sub = it => (it.ep ? [it.ep.s && 'T' + it.ep.s, it.ep.e && 'E' + it.ep.e, it.ep.title].filter(Boolean).join(' · ') : 'Película');
   const left = it => (it.dur ? (it.pos >= 30 ? 'quedan ' + fmtMin(it.dur - it.pos) : (it.ep ? 'siguiente · ' : '') + fmtMin(it.dur)) : '');
   const frac = it => (it.dur ? Math.min(1, it.pos / it.dur) : 0);
+  /** El título de «seguir viendo» que se nombra en una frase («¿por dónde voy de Suits?»), el más largo; o null. @param {string} text */
+  function named(text) {
+    const t = ' ' + norm(text) + ' ';
+    return data.items.filter(i => norm(i.title).length > 2 && t.includes(' ' + norm(i.title) + ' ')).sort((a, b) => b.title.length - a.title.length)[0] || null;
+  }
   /** Un título de «seguir viendo» por id (de la serie o del capítulo) o por nombre. @param {{ id?: any, title?: string }} q */
   function find(q) {
     const id = Number(q && q.id) || null;
@@ -384,7 +389,7 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
   /** órdenes para `netflix` (src/features/netflix.js: extend) */
   const ops = { watching: () => watching(), history: () => history(), last: () => last(), play_last: () => playLast(), refresh: () => refresh('a petición') };
 
-  return { refresh, soon, start, forIdle, watching, history, last, playLast, serveImg, routes, ops, find, media, data: () => data };
+  return { refresh, soon, start, forIdle, watching, history, last, playLast, serveImg, routes, ops, find, named, media, data: () => data };
 }
 
 module.exports = { readAll, createWatch, pgProfile, pgReady, pgContinue, pgArt, pgHistory, isoDate, NFX_IMG };

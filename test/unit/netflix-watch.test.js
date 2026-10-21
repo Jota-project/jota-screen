@@ -200,3 +200,11 @@ test('«¿por dónde voy de X?»: solo esa serie; lo del historial sin «seguir 
   assert.equal(R.items[1].title, 'Una película');
   assert.equal(R.items[1].img, 'http://127.0.0.1:8787/idle/nfx?u=' + encodeURIComponent(IMG('hc')), 'imagen sacada por el capítulo del historial');
 });
+
+test('la serie que se nombra en la pregunta («¿por dónde voy de X?»), aunque el agente no la diga', async () => {
+  const { w } = rig();
+  await w.refresh();
+  assert.equal(w.named('¿Por dónde voy de La serie de prueba?').id, 1001);
+  assert.equal(w.named('¿Qué series estoy viendo?'), null);
+  assert.equal(w.named(''), null);
+});

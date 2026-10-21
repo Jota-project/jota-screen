@@ -626,6 +626,8 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
       schedule();
       return true;
     },
+    /** Lo que se ha preguntado en el turno en curso ('' si no hay): para afinar su tarjeta (¿nombra una serie?). */
+    asked() { return open ? cur.you : ''; },
     /** Estado de la tarjeta del turno ('press': se pulsa su ▶). @param {'idle' | 'press'} st */
     mediaState(st) {
       if (!cur.media || (st !== 'idle' && st !== 'press')) return;

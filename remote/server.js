@@ -122,8 +122,10 @@ const nfxWatch = createWatch({ cdp, netflix, store: createJsonStore(CFG.FILES.wa
 netflix.extend({ ...nfxWatch.ops,
   // «¿qué estoy viendo?»: además de la respuesta para el agente, la lista con sus imágenes en la conversación
   watching: m => {
-    // «¿por dónde voy de X?»: la tarjeta grande de esa serie; si no, la lista de lo que está a medias
-    const one = m.title ? nfxWatch.media('play', { title: m.title }) : null;
+    // «¿por dónde voy de X?»: la tarjeta grande de esa serie (la que diga el agente o, si no, la que se nombra en la
+    // pregunta); si no, la lista de lo que está a medias
+    const it = m.title ? { title: m.title } : nfxWatch.named(talkView.asked());
+    const one = it ? nfxWatch.media('play', it) : null;
     const card = one || nfxWatch.media('list'), shown = !!card && talkView.media(card);
     log.info(`netflix: «qué estoy viendo»${m.title ? ' de «' + m.title + '»' : ''} (tarjeta en la conversación: ${shown ? 'sí' : card ? 'no, la capa no la admite ahora' : 'no, sin datos'})`);
     return nfxWatch.watching(m.title);

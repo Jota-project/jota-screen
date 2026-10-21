@@ -945,3 +945,10 @@ test('tarjeta de contenido (Netflix): solo en v2, con el panel y un turno abiert
   const old = make({ design: 'v1' }); old.v.turn('panel', { voice: true });
   assert.equal(old.v.media(card), false);
 });
+
+test('asked(): lo preguntado en el turno en curso (y nada sin turno)', () => {
+  const { v } = make();
+  assert.equal(v.asked(), '');
+  v.turn('panel', { voice: true }); v.you('¿Por dónde voy de Suits?', true);
+  assert.equal(v.asked(), '¿Por dónde voy de Suits?');
+});
