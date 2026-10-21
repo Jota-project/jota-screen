@@ -13,6 +13,8 @@ const { createStatic } = require(path.join(__dirname, '..', '..', 'remote', 'src
 
 const ENTRY = '/mando/app.js';
 const CLASSIC = new Set(['/mando/theme.js']); // script clásico del <head>, no es un módulo
+// módulos de AudioWorklet: no los importa nadie, los carga audioWorklet.addModule (voice.js) por su ruta
+const WORKLETS = new Map([['/mando/features/mic-worklet.js', '/mando/features/voice.js']]);
 
 // especificadores de import/export … from '…' e import '…' (sin comentarios)
 function specifiers(src) {
@@ -52,7 +54,13 @@ test('mando: cada importación existe y la sirve el servidor (rutas relativas, .
   const all = [];
   const walk = d => { for (const f of fs.readdirSync(path.join(PUB, d))) { const r = d + '/' + f; if (fs.statSync(path.join(PUB, r)).isDirectory()) walk(r); else if (f.endsWith('.js')) all.push(r); } };
   walk('/mando');
-  assert.deepEqual(all.filter(p => !CLASSIC.has(p) && !edges.has(p)), []);
+  assert.deepEqual(all.filter(p => !CLASSIC.has(p) && !WORKLETS.has(p) && !edges.has(p)), []);
+  // cada worklet lo sirve el servidor y lo carga su módulo por esa misma ruta
+  const statics = createStatic({ dir: PUB });
+  for (const [w, by] of WORKLETS) {
+    assert.ok(statics.has(w), w);
+    assert.ok(edges.has(by) && fs.readFileSync(path.join(PUB, by), 'utf8').includes(`addModule('${w}')`), `${by} carga ${w}`);
+  }
 });
 
 test('mando: sin ciclos y capas en un solo sentido (core ← ui ← features ← app)', () => {
@@ -149,4 +157,25 @@ test('mando: el orbe de la voz no deja el gesto al navegador (touch-action:none;
   const rules = [...css.matchAll(/(?:^|})\s*\.vzOrb\{([^}]*)\}/g)].map(m => m[1]).join(';');
   assert.match(rules, /touch-action:none/);
   assert.doesNotMatch(rules, /touch-action:(manipulation|pan|auto)/);
+});
+
+test('pcm-player: PCM16 LE se pasa a Float32 y el frame sin 0xA1 ni seq no suena', async () => {
+  const { pcm16ToFloat32, createPcmPlayer } = await import(pathToFileURL(path.join(PUB, 'mando', 'features', 'pcm-player.js')).href);
+  const b = new Uint8Array([0xA1, 0, 5, 0x00, 0x80, 0xFF, 0x7F, 0, 0]).buffer;   // -32768, 32767, 0
+  const f = pcm16ToFloat32(b, 3);
+  assert.deepEqual([...f], [-1, 32767 / 32768, 0]);
+  const srcs = [], ctx = { state: 'running', currentTime: 1, destination: {}, resume() { return Promise.resolve(); },
+    createBuffer: (_c, n, r) => ({ duration: n / r, copyToChannel() {} }),
+    createBufferSource: () => { const s = { connect() {}, disconnect() {}, start(at) { s.at = at; }, stop() { s.stopped = true; } }; srcs.push(s); return s; } };
+  const p = createPcmPlayer(() => ctx);
+  p.play(b);                                               // seq 5: abre el turno
+  p.play(new Uint8Array([0xA1, 0, 6, 1, 0]).buffer);       // seq 6: se descarta
+  p.play(new Uint8Array([0x00, 0, 5, 1, 0]).buffer);       // sin 0xA1: se descarta
+  p.play(new Uint8Array([0xA1, 0, 5, 1, 0]).buffer);       // seq 5: detrás del anterior
+  assert.equal(srcs.length, 2);
+  assert.ok(srcs[1].at > srcs[0].at, 'back-to-back');
+  p.stop();
+  assert.ok(srcs.every(s => s.stopped));
+  p.play(new Uint8Array([0xA1, 0, 6, 1, 0]).buffer);       // tras stop, otro turno vale
+  assert.equal(srcs.length, 3);
 });

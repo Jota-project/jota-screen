@@ -1,6 +1,6 @@
 'use strict';
 // Unitarias de la configuración (remote/src/core/config.js) y de la carpeta de estado (remote/src/core/state-dir.js):
-// valores por defecto sin nada personal, la regla de TV_ADMIN_URL, OpenClaw en PATH y la migración del estado antiguo.
+// valores por defecto sin nada personal, la regla de TV_ADMIN_URL y la migración del estado antiguo.
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -9,7 +9,7 @@ const path = require('node:path');
 const R = path.join(__dirname, '..', '..', 'remote', 'src');
 const { loadConfig } = require(path.join(R, 'core', 'config'));
 const { prepareStateDir } = require(path.join(R, 'core', 'state-dir'));
-const { prompts } = require(path.join(R, 'features', 'agent'));
+const { prompts } = require(path.join(R, 'features', 'talk'));
 
 const tmpDir = () => fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-cfg-'));
 const PERSONAL = /sito|sal[oó]n|elche|green-house|ts\.net|tailf2c|madrid|38\.26|-0\.69|192\.168/i;
@@ -28,14 +28,14 @@ test('config: sin entorno, valores por defecto del contrato y nada personal', ()
     assert.equal(d.STATE_DIR, path.join(home, '.local', 'state', 'jota-screen'));
     assert.equal(d.STAGE_DIR, path.join(d.STATE_DIR, 'stage'));
     for (const f of Object.values(d.FILES)) assert.equal(path.dirname(f), d.STATE_DIR, f);
-    assert.equal(d.OC_BIN, path.join(home, '.npm-global', 'bin', 'openclaw'));
-    assert.equal(d.OC_AGENT, 'jota');
+    assert.equal(d.AGENT, 'j-assistant');
+    assert.equal(d.GATEWAY_URL, '');
+    assert.equal(d.GATEWAY_KEY, '');
     assert.equal(d.OWNER, '');
     assert.deepEqual({ ...d.PLACE }, { city: '', lat: null, lon: null, tz: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC' });
-    // OC_ENV copia el entorno, la zona horaria es la del sistema y las rutas del código dependen de dónde esté el repo;
+    // la zona horaria es la del sistema y las rutas del código dependen de dónde esté el repo;
     // lo demás es lo que decide la configuración
-    const rest = { ...d }; delete rest.OC_ENV;
-    const seen = JSON.stringify({ ...rest, PLACE: { ...d.PLACE, tz: '' } }).replaceAll(d.ROOT, '<repo>').replaceAll(home, '~');
+    const seen = JSON.stringify({ ...d, PLACE: { ...d.PLACE, tz: '' } }).replaceAll(d.ROOT, '<repo>').replaceAll(home, '~');
     assert.doesNotMatch(seen, PERSONAL);
     assert.doesNotMatch(JSON.stringify(prompts(d.NAME, d.OWNER)), PERSONAL, 'las instrucciones del agente son genéricas');
   } finally { fs.rmSync(home, { recursive: true, force: true }); }
@@ -44,7 +44,7 @@ test('config: sin entorno, valores por defecto del contrato y nada personal', ()
 test('config: las variables del contrato mandan', () => {
   const c = loadConfig({
     HOME: '/h', TV_NAME: ' Cocina ', TV_STATE_DIR: '/var/x/', TV_PUBLIC_URL: 'https://tv.example:8443/', TV_SPOTIFY_DEVICE: 'Altavoz',
-    TV_CITY: 'Lugo', TV_LAT: '43.01', TV_LON: '-7.55', TV_TZ: 'Atlantic/Canary', TV_OWNER: 'Ana', TV_OPENCLAW: '/opt/oc',
+    TV_CITY: 'Lugo', TV_LAT: '43.01', TV_LON: '-7.55', TV_TZ: 'Atlantic/Canary', TV_OWNER: 'Ana',
   });
   assert.equal(c.NAME, 'Cocina');
   assert.equal(c.SP_DEVICE, 'Altavoz');
@@ -53,7 +53,6 @@ test('config: las variables del contrato mandan', () => {
   assert.equal(c.PUBLIC_URL, 'https://tv.example:8443');
   assert.deepEqual({ ...c.PLACE }, { city: 'Lugo', lat: 43.01, lon: -7.55, tz: 'Atlantic/Canary' });
   assert.equal(c.OWNER, 'Ana');
-  assert.equal(c.OC_BIN, '/opt/oc');
   assert.equal(loadConfig({ HOME: '/h', TV_NAME: 'Cocina' }).SP_DEVICE, 'Cocina');
   assert.equal(loadConfig({ HOME: '/h', TV_LAT: '', TV_LON: 'x' }).PLACE.lat, null, 'lat vacía o no numérica: sin tiempo');
 });
@@ -65,18 +64,6 @@ test('config: regla de TV_ADMIN_URL', () => {
   assert.equal(at({ TV_MDNS_NAME: '' }), 'http://caja.local:8787', 'sin alias: <hostname>.local y el puerto');
   assert.equal(at({ TV_MDNS_NAME: '' }, 9000), 'http://caja.local:9000');
   assert.equal(at({ TV_MDNS_NAME: '', TV_ADMIN_URL: 'http://m.example/' }), 'http://m.example', 'TV_ADMIN_URL gana siempre');
-});
-
-test('config: OpenClaw se busca en PATH', () => {
-  const d = tmpDir();
-  try {
-    const bin = path.join(d, 'bin'); fs.mkdirSync(bin);
-    fs.writeFileSync(path.join(bin, 'openclaw'), '#!/bin/sh\n', { mode: 0o755 });
-    fs.writeFileSync(path.join(d, 'openclaw'), 'no ejecutable', { mode: 0o644 });
-    const c = loadConfig({ HOME: '/h', PATH: [d, bin].join(path.delimiter) });
-    assert.equal(c.OC_BIN, path.join(bin, 'openclaw'), 'el primero ejecutable');
-    assert.ok(c.OC_ENV.PATH.startsWith(bin + ':'));
-  } finally { fs.rmSync(d, { recursive: true, force: true }); }
 });
 
 // ── carpeta de estado
@@ -151,4 +138,17 @@ test('estado: nunca sobrescribe lo que ya está en la carpeta nueva', () => {
     assert.deepEqual(r.kept.sort(), [path.join(s.root, 'token'), s.cfg.LEGACY.stage].sort());
     assert.ok(lines.some(l => /no se mueve, ya existe/.test(l) && !/viejo|nuevo\n/.test(l)));
   } finally { s.done(); }
+});
+
+test('config: TV_SPEAKER_CMD se parte por espacios; vacío = null (altavoz por defecto)', () => {
+  assert.deepEqual(loadConfig({ HOME: '/h', PATH: '' }).SPEAKER_CMD, null);
+  assert.deepEqual(loadConfig({ HOME: '/h', PATH: '', TV_SPEAKER_CMD: ' aplay -q  -t raw -f S16_LE -r 24000 -c 1 ' }).SPEAKER_CMD,
+    ['aplay', '-q', '-t', 'raw', '-f', 'S16_LE', '-r', '24000', '-c', '1']);
+});
+
+test('config: el Gateway de voz se lee del entorno y TV_AGENT cambia el agente', () => {
+  const c = loadConfig({ HOME: '/h', PATH: '', TV_GATEWAY_URL: ' ws://gw:8004/ws/stream ', TV_GATEWAY_KEY: 'k1', TV_AGENT: 'otro' });
+  assert.equal(c.GATEWAY_URL, 'ws://gw:8004/ws/stream');
+  assert.equal(c.GATEWAY_KEY, 'k1');
+  assert.equal(c.AGENT, 'otro');
 });

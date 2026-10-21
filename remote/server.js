@@ -21,13 +21,15 @@ const createPairRoutes = require('./src/auth/pair-http');
 const { createCdp } = require('./src/tv/cdp');
 const { createPointer, createAudio, createPairScreen } = require('./src/tv/devices');
 const { createPagePoll } = require('./src/tv/page-poll');
-const createAgent = require('./src/features/agent');
+const { createGatewayClient } = require('./src/gateway/client');
+const createTalk = require('./src/features/talk');
+const { createSpeaker } = require('./src/tv/speaker');
+const { createTalkView } = require('./src/tv/talk-view');
 const createStage = require('./src/features/stage');
 const createKeyboard = require('./src/features/keyboard');
 const createControl = require('./src/features/control');
 const createSpotify = require('./src/features/spotify');
 const createIdle = require('./src/features/idle');
-const createVoice = require('./src/features/voice');
 const { createCommands } = require('./src/transport/commands');
 const { createSessions } = require('./src/transport/sessions');
 const { createWs } = require('./src/transport/ws');
@@ -41,8 +43,8 @@ const { ROOT, PUB, PORT, CDP_PORT, DEBUG, NO_POINTER, SELF } = CFG;
 
 // ───────────────────────── base: registro, conexiones de los mandos y estado de la tele
 let acc = null; // el acceso se crea un poco más abajo; quien lo usa antes, lo hace al llamar
-// registro con redacción: el token maestro, los ?t= y los Bearer nunca llegan al journal
-const log = createLog({ secrets: () => (acc ? [acc.masterToken()] : []), debug: DEBUG });
+// registro con redacción: el token maestro, la clave del Gateway, los ?t= y los Bearer nunca llegan al journal
+const log = createLog({ secrets: () => [...(acc ? [acc.masterToken()] : []), ...(CFG.GATEWAY_KEY ? [CFG.GATEWAY_KEY] : [])], debug: DEBUG });
 // antes de leer nada: la carpeta de estado (0700) con lo que hubiera en las ubicaciones antiguas
 prepareStateDir(CFG, log.info);
 const ws = createWs();
@@ -56,16 +58,17 @@ const { state, publicState, broadcast } = tv;
 // ───────────────────────── Chrome (CDP): lo que pasa en la pestaña activa se reparte entre las capacidades
 // (los ganchos solo se disparan tras cdp.connect(), al final, cuando todas las capacidades ya existen)
 cdp = createCdp({ port: CDP_PORT, log, hooks: {
-  onDown() { tv.clearPage(); keyboard.focusSet(null); broadcast(); },
+  onDown() { tv.clearPage(); keyboard.focusSet(null); talkView.reset(); broadcast(); },
   onActivating() { keyboard.focusSet(null); },
   onAttached(t) {
     if (t) { state.title = t.title; state.url = t.url; }
+    talkView.reset(); // otra pestaña: la conversación se vuelve a inyectar en ella
     spotify.page.attached();
     keyboard.watchFocus();
     broadcast();
   },
   onPage(t) {
-    if (t.url !== state.url) idle.onNav(t.url);
+    if (t.url !== state.url) { idle.onNav(t.url); talkView.reset(); }
     state.title = t.title; state.url = t.url; broadcast();
     spotify.page.changed(t.url); // al cambiar de página dentro de Spotify (o llegar a él) se repasa el retoque
   },
@@ -93,11 +96,18 @@ const idle = createIdle({
   PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
   stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info,
 });
-const agent = createAgent({ cfg: CFG, toast: m => stage.toast(m) });
+// J Gateway (voz): sin TV_GATEWAY_URL el cliente no se crea y todo se comporta como un Gateway caído
+const gw = CFG.GATEWAY_URL
+  ? createGatewayClient({ url: CFG.GATEWAY_URL, key: CFG.GATEWAY_KEY, agent: CFG.AGENT, log })
+  : { ensure: async () => false, send() {}, on: () => () => {}, audio() {}, end() {}, isReady: () => false, close() {} };
+const speaker = createSpeaker({ runtimeDir: CFG.XDG_RUNTIME_DIR, cmd: CFG.SPEAKER_CMD, log });
+// la conversación en la tele: isla con vídeo, panel sin él (se inyecta una vez por página)
+const talkView = createTalkView({ cdp, pub: PUB, log: log.info });
+const talk = createTalk({ gw, cfg: CFG, media: () => state.media, view: talkView, speaker, log });
 
 // ───────────────────────── órdenes: cada una con su permiso al lado, en su capacidad
 const commands = createCommands({ permsOf: acc.permsOf, onUse: () => idle.touch(), log });
-for (const list of [agent.commands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
+for (const list of [talk.commands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
   createAccessCommands({ acc, meOf }), tv.commands]) commands.register(list);
 
 /** Una orden del mando (sock), de la API o del MCP (ctx.dev), con los permisos de su dispositivo. */
@@ -108,15 +118,12 @@ async function run(m, sock, ctx = {}) {
   return commands.dispatch(m, { dev, ws: sock });
 }
 
-const voice = createVoice({ cfg: CFG, limiter, auth: acc, run, log: log.info }); // hablar con el agente: audio -> texto -> agente -> voz
-
 // ───────────────────────── transporte: HTTP (rutas + estáticos) y WebSocket
 // {{TV_NAME}} en el HTML y el manifiesto; secure: el mando abierto por http salta a la URL https (micrófono para la voz)
 const statics = createStatic({ dir: PUB, vars: { TV_NAME: CFG.NAME }, secure: CFG.PUBLIC_URL });
 const handler = createHttp({
   routes: [
-    ...voice.routes,                                    // antes que la API: su prefijo /api/ se comería /api/voice
-    ...createApiRoutes({ limiter, auth: acc, run, publicState, stage, agentBusy: () => agent.busy() }),
+    ...createApiRoutes({ limiter, auth: acc, run, publicState, stage, agentBusy: () => talk.busy() || talk.speaking() }),
     ...createPairRoutes({ acc, limiter, adminOnline: () => sessions.adminSockets().length > 0, tvReady: tvPair.ready }),
     ...spotify.httpRoutes({ ...limiter, okToken: acc.okToken }),
     manifestRoute(statics, acc.tokenDev),
@@ -129,6 +136,8 @@ const onUpgrade = ws.wire({
   log, limiter, auth: acc, run,
   local: { '/idle-ws': (req, socket, head) => idle.upgrade(req, socket, head) }, // datos de la pantalla en reposo
   onStageSocket: stage.onSocket,
+  onBinary: talk.onBinary,
+  onClose: talk.onClose,
   onLine(s) {
     idle.touch();
     if (s.charCodeAt(0) === 119) pagePoll.soon();  // "w": scroll desde el mando, el carril se sondea más a menudo

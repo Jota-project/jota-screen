@@ -5,7 +5,7 @@ import { state, emit } from './store.js';
 let ws, tries = 0, rtt = 0, retryT = 0, rid = 0, gate = null;
 const pend = new Map();
 const handlers = new Map();
-const subs = { open: [], close: [], rtt: [] };
+const subs = { open: [], close: [], rtt: [], bin: [] };
 
 export const isUp = () => !!ws && ws.readyState === 1;
 /** Abierto o abriéndose. */
@@ -16,6 +16,8 @@ export const resetTries = () => { tries = 0; };
 
 export const send = s => { if (ws && ws.readyState === 1) ws.send(s); };
 export const cmd = o => send(JSON.stringify(o));
+/** Un mensaje binario (el audio del micrófono, ver features/voice.js). @param {ArrayBufferView} b */
+export const sendBin = b => { if (ws && ws.readyState === 1) ws.send(b); };
 /** Orden con respuesta (sin conexión, falla enseguida). */
 export const rpc = o => new Promise(res => {
   if (!ws || ws.readyState !== 1) return res({ error: 'sin conexión' });
@@ -31,7 +33,7 @@ export function handle(type, fn) {
 }
 /**
  * Avisos de la conexión: 'open' (tras poner tries a 0 y el primer eco), 'close' (fn(ev, lost); con lost, el acceso se ha
- * perdido: 4001/4002, y antes se ha avisado 'auth:lost') y 'rtt' (nueva latencia).
+ * perdido: 4001/4002, y antes se ha avisado 'auth:lost'), 'rtt' (nueva latencia) y 'bin' (un mensaje binario, ArrayBuffer).
  */
 export function onWs(ev, fn) { subs[ev].push(fn); }
 /**
@@ -42,6 +44,7 @@ export function setGate(fn) { gate = fn; }
 
 function onMessage(e) {
   const d = e.data;
+  if (typeof d !== 'string') { for (const f of subs.bin) f(d); return; }   // binario (la voz del Gateway): nunca a JSON.parse
   if (d.charCodeAt(0) === 112) { const r = performance.now() - parseFloat(d.slice(1)); rtt = rtt ? rtt * 0.6 + r * 0.4 : r; for (const f of subs.rtt) f(rtt); return; }
   try {
     const j = JSON.parse(d);
@@ -56,6 +59,7 @@ export async function connect() {
   if (g !== true && !(await g)) return;
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   ws = new WebSocket(`${proto}://${location.host}/ws` + (state.token ? `?t=${encodeURIComponent(state.token)}` : ''));
+  ws.binaryType = 'arraybuffer';
   ws.onopen = () => { tries = 0; ping(); for (const f of subs.open) f(); };
   ws.onmessage = onMessage;
   ws.onclose = ev => {

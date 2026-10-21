@@ -3,19 +3,8 @@
 // Configuración del servidor del mando: variables de entorno y rutas, en un solo objeto inmutable.
 // Es el único sitio que lee process.env; el resto recibe lo que necesita de aquí.
 // Las variables y sus valores por defecto son las del contrato común (config/screen.env.example).
-const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
-
-/** Primer ejecutable con ese nombre en PATH, o null. @param {string} name @param {string} [PATH] */
-function which(name, PATH = '') {
-  for (const dir of PATH.split(path.delimiter)) {
-    if (!dir) continue;
-    const f = path.join(dir, name);
-    try { fs.accessSync(f, fs.constants.X_OK); if (fs.statSync(f).isFile()) return f; } catch {}
-  }
-  return null;
-}
 
 /** Zona horaria del sistema (la de Node), o UTC si no se sabe. */
 const systemTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'; } catch { return 'UTC'; } };
@@ -23,6 +12,8 @@ const systemTz = () => { try { return Intl.DateTimeFormat().resolvedOptions().ti
 /** Número de una variable, o null si está vacía o no es un número. @param {string | undefined} v */
 const num = v => (v === undefined || String(v).trim() === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 
+/** TV_SPEAKER_CMD (palabras separadas por espacios) → lista, o null si está vacío. @param {string} [v] */
+const speakerCmd = v => { const a = String(v || '').trim().split(/\s+/).filter(Boolean); return a.length ? a : null; };
 const noSlash = (/** @type {string} */ s) => s.replace(/\/+$/, '');
 
 /**
@@ -47,7 +38,6 @@ function loadConfig(env = process.env, { hostname = os.hostname() } = {}) {
   const SELF = `http://127.0.0.1:${PORT}`;
   const NAME = (env.TV_NAME || '').trim() || 'Pantalla';
   const STATE_DIR = path.resolve(env.TV_STATE_DIR || path.join(HOME, '.local', 'state', 'jota-screen'));
-  const OC_BIN = env.TV_OPENCLAW || which('openclaw', env.PATH) || path.join(HOME, '.npm-global', 'bin', 'openclaw');
   return Object.freeze({
     ROOT,
     PUB: path.join(ROOT, 'public'),
@@ -62,10 +52,10 @@ function loadConfig(env = process.env, { hostname = os.hostname() } = {}) {
     HOME_URL: env.TV_HOME_URL || SELF + '/idle.html',          // la pantalla en reposo
     STATE_DIR,                                                  // todo el estado: token, *.json y stage/
     STAGE_DIR: path.join(STATE_DIR, 'stage'),
-    OC_BIN,                                                     // OpenClaw (agente), por su CLI
-    OC_AGENT: env.TV_AGENT || 'jota',
-    FFMPEG: env.TV_FFMPEG || which('ffmpeg', env.PATH) || '',  // voz: pasa a MP3 lo que graba el móvil (WebM de Safari y Chrome)
-    OC_ENV: Object.freeze({ ...env, PATH: path.dirname(OC_BIN) + ':' + (env.PATH || '') }),
+    GATEWAY_URL: (env.TV_GATEWAY_URL || '').trim(),             // J Gateway (voz): ws://<host>:8004/ws/stream; vacío = sin voz
+    GATEWAY_KEY: (env.TV_GATEWAY_KEY || '').trim(),             // clave del cliente en el Gateway (nunca a logs ni al repo)
+    SPEAKER_CMD: speakerCmd(env.TV_SPEAKER_CMD),   // altavoz de la tele (stdin = PCM16 24 kHz mono); vacío = pw-cat
+    AGENT: (env.TV_AGENT || '').trim() || 'j-assistant',        // agente del Gateway
     ADMIN_URL: adminUrl(env, PORT, hostname),
     SPOTIFY_BANNER: !!env.TV_SPOTIFY_BANNER,
     SP_DEVICE: (env.TV_SPOTIFY_DEVICE || '').trim() || NAME,
@@ -89,4 +79,4 @@ function loadConfig(env = process.env, { hostname = os.hostname() } = {}) {
   });
 }
 
-module.exports = { loadConfig, adminUrl, which };
+module.exports = { loadConfig, adminUrl };

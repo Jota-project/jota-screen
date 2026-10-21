@@ -2,7 +2,7 @@
 
 La pantalla del ecosistema Jota: convierte cualquier pantalla conectada a un equipo Linux (la tele del salón, un
 monitor, un kiosco) en un lienzo que se maneja desde el móvil y desde los agentes. Chrome a pantalla completa,
-controlado por un mando web (PWA), por el agente Jota (OpenClaw) y por Claude (MCP, skill y plugin `tv-canvas`).
+controlado por un mando web (PWA), por el agente Jota (J Gateway) y por Claude (MCP, skill y plugin `tv-canvas`).
 
 - **Mando** en el móvil: touchpad, teclado, atajos, música, ajustes. Roles admin, miembro e invitado; se empareja con un
   código que sale en la pantalla.
@@ -19,7 +19,7 @@ Antes se llamaba `tv-canvas`; el MCP, la skill y el plugin conservan ese nombre 
 - Google Chrome (recomendado: trae Widevine para Netflix y similares) o Chromium.
 - `xrandr`/`xset` (x11-xserver-utils), `python3` con libX11 y libXtst (puntero del mando), `openbox` (recomendado).
 - Opcional: `avahi-utils` (alias `mando.local`), PipeWire con `wpctl` (volumen), spotifyd, nginx (mando sin puerto),
-  OpenClaw (el agente que contesta desde el mando).
+  el J Gateway local (el agente que contesta desde el mando, por texto y voz).
 
 El instalador comprueba todo esto y dice qué paquetes faltan; no instala paquetes del sistema.
 
@@ -52,7 +52,7 @@ scripts/doctor.sh                # servicios, CDP, /api/state con y sin token, p
 node remote/admin-link.js        # enlace de admin de un solo uso para el primer móvil
 ```
 
-Para que Claude u OpenClaw manejen la pantalla: `(cd mcp && npm ci)` y el plugin de [plugin/tv-canvas](plugin/tv-canvas/README.md).
+Para que Claude o Jota manejen la pantalla: `(cd mcp && npm ci)` y el plugin de [plugin/tv-canvas](plugin/tv-canvas/README.md).
 
 ## Configuración
 
@@ -69,7 +69,8 @@ Las principales:
 | `TV_MDNS_NAME`, `TV_NET_IFACE` | `mando.local`, interfaz de la ruta por defecto | Alias mDNS del mando (vacío = sin alias) |
 | `TV_PUBLIC_URL`, `TV_ADMIN_URL` | `http://127.0.0.1:8787`, `http://mando.local` | URL pública (vuelta de Spotify) y de los enlaces de admin |
 | `TV_CHROME`, `TV_HOME_URL` | primer Chrome/Chromium, el reposo | Navegador y página de inicio del kiosco |
-| `TV_OPENCLAW`, `TV_AGENT`, `TV_OWNER` | `openclaw` del PATH, `jota`, vacío | Agente que contesta desde el mando |
+| `TV_GATEWAY_URL`, `TV_GATEWAY_KEY`, `TV_AGENT`, `TV_OWNER` | vacía (sin agente), vacía, `j-assistant`, vacío | J Gateway y agente que contesta desde el mando (texto y voz) |
+| `TV_SPEAKER_CMD` | `pw-cat` | Orden que reproduce el PCM de la respuesta en la tele |
 | `TV_SPOTIFY_DEVICE`, `TV_SPOTIFYD` | `TV_NAME`, `spotifyd` del PATH | Altavoz Spotify Connect |
 | `TV_CITY`, `TV_LAT`, `TV_LON`, `TV_TZ` | vacío, zona del sistema | Tiempo en el reposo: sin latitud y longitud no se pide |
 | `TV_STATE_DIR` | `~/.local/state/jota-screen` | Estado: token, dispositivos, ajustes, escenario, perfil de Chrome |
@@ -105,7 +106,7 @@ xdg-open "http://127.0.0.1:8787/?t=$(cat "$TV_STATE_DIR/token")"   # el mando ca
 
 Para tener «tele», un Chrome aparte con CDP:
 `google-chrome --remote-debugging-port=9222 --user-data-dir="$(mktemp -d)" http://127.0.0.1:8787/idle.html`.
-Sin `wpctl` no hay volumen y sin OpenClaw el agente no responde; el resto funciona. Con `TV_LAT`/`TV_LON` el reposo pide
+Sin `wpctl` no hay volumen y sin `TV_GATEWAY_URL` Jota no está disponible; el resto funciona. Con `TV_LAT`/`TV_LON` el reposo pide
 el tiempo a Open-Meteo.
 
 ## Herramientas

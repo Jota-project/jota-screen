@@ -66,6 +66,15 @@ test('órdenes: lo escrito en un campo no va al registro', async () => {
   assert.match(lines.join('\n'), /18 caracteres/);
 });
 
+test('órdenes: lo preguntado al agente (ask) no va al registro', async () => {
+  const lines = [];
+  const cmds = createCommands({ permsOf: () => ADMIN_PERMS, log: { debug: (...a) => lines.push(a.join(' ')) } });
+  cmds.register([{ t: 'ask', run: () => ({ ok: 1 }) }]);
+  await cmds.dispatch({ t: 'ask', text: 'dato-privado' });
+  assert.ok(!lines.join('\n').includes('dato-privado'));
+  assert.match(lines.join('\n'), /12 caracteres/);
+});
+
 // ── acceso con dobles
 function setup({ admins = 1, tvReady = true, t0 = 1_000_000 } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-acc-'));

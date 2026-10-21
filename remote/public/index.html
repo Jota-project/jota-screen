@@ -36,6 +36,7 @@
 <link rel="modulepreload" href="/mando/features/spotify-lists.js">
 <link rel="modulepreload" href="/mando/features/spotify.js">
 <link rel="modulepreload" href="/mando/features/pair.js">
+<link rel="modulepreload" href="/mando/features/pcm-player.js">
 <link rel="modulepreload" href="/mando/features/admin.js">
 <link rel="modulepreload" href="/mando/features/idle.js">
 <link rel="modulepreload" href="/mando/features/settings.js">
@@ -285,6 +286,7 @@
   <div class="vzSt" id="agSt" aria-live="polite">Te escucho</div>
   <p class="vzQ" id="agQ"></p>
   <div class="rep" id="rep"></div>
+  <div class="vzA"><button class="b2" id="agStop" type="button" hidden>Parar</button><button class="b2" id="agHide" type="button" hidden>Quitar de la tele</button></div>
   <input class="in vzIn" id="agin" placeholder="Pídele algo a Jota…" autocomplete="off" autocorrect="on" spellcheck="true" enterkeyhint="send">
   <div class="vzO">
     <button class="vzOrb" id="agOrb" type="button" aria-label="Escribir o dictar a Jota"></button>
@@ -303,6 +305,7 @@
   </div>
   <div class="sh">Mando</div>
   <div class="fld"><span>Modo oscuro<small>Activado por defecto</small></span><button class="sw" id="swDark" aria-pressed="true" aria-label="Modo oscuro"></button></div>
+  <div class="fld"><span>Al pulsar el orbe mientras Jota habla</span><div class="seg" id="segIntr"><button data-v="1">Interrumpir</button><button data-v="0">Esperar</button></div></div>
   <div class="sh">Puntero</div>
   <div class="fld"><span>Velocidad</span><span id="vSpeed">1.6×</span><input type="range" id="rSpeed" min="0.6" max="3.2" step="0.1"></div>
   <div class="fld"><span>Desplazamiento</span><span id="vScroll">1.0×</span><input type="range" id="rScroll" min="0.4" max="2.6" step="0.1"></div>

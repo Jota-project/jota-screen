@@ -98,6 +98,8 @@ function initScript({ token, cfg }) {
   const send = W.prototype.send;
   W.prototype.send = function (d) {
     if (typeof d === 'string' && d.charCodeAt(0) === 112) return; // «p<ts>»: el eco de latencia no se manda (sin ms en pantalla)
+    if (typeof d !== 'string') { window.__wsBin = (window.__wsBin || 0) + 1; return send.call(this, d); } // audio: se cuenta, no se apunta
+    if (typeof d === 'string' && d.startsWith('{"t":"vend"')) window.__wsBinAtVend = window.__wsBin || 0;     // el último trozo (flush) va antes de vend
     window.__wsLog.push(String(d));
     // respuesta falsa a una orden con id (p. ej. las playlists de una cuenta de Spotify que el servidor de prueba no tiene)
     try { const o = JSON.parse(d), r = o && o.id && window.__wsFake[o.t + ':' + (o.a || '')]; if (r) { setTimeout(() => this.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ t: 'res', id: o.id, r }) })), 30); return; } } catch {}
@@ -146,6 +148,7 @@ async function newPage({ token, theme, name, landscape }) {
   const ctx = await browser.newContext({
     viewport: landscape ? { width: 844, height: 390 } : { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true, userAgent: UA,
     locale: 'es-ES', timezoneId: 'Europe/Madrid', reducedMotion: 'reduce', colorScheme: theme === 'claro' ? 'light' : 'dark',
+    permissions: ['microphone'],                                      // el micrófono falso de Chromium (ver chromium.launch)
   });
   const page = await ctx.newPage();
   await page.clock.setFixedTime(NOW);
@@ -232,8 +235,39 @@ async function adminScenes(theme, admin) {
   await run('hoja-direccion', async p => { await tap(p, 'Abrir una dirección'); await p.keyboard.type('elpais.com'); await shot(p, T('hoja-direccion')); });
   await run('hoja-agente', async p => {
     await tap(p, 'Hablar con Jota'); await shot(p, T('hoja-agente'));
-    await inject(p, { t: 'ask', stage: 'done', reply: 'Hecho: he puesto «Lo-fi para estudiar» en YouTube a pantalla completa.' });
-    await shot(p, T('hoja-agente-respuesta'));
+    await inject(p, { t: 'talk', ev: 'done', reply: 'Hecho: he puesto «Lo-fi para estudiar» en YouTube a pantalla completa.' });
+    await shot(p, T('hoja-agente-respuesta'));                            // con «Quitar de la tele» (suena en la tele: hasta hidden)
+    await tap(p, 'Quitar de la tele');
+  });
+  // Jota escribe la respuesta: «Parar» a la vista; al pulsarlo, el turno se para y queda «Parado.»
+  await run('hoja-agente-parar', async p => {
+    await tap(p, 'Hablar con Jota');
+    await inject(p, { t: 'talk', ev: 'final', text: 'pon algo de jazz' });
+    await inject(p, { t: 'talk', ev: 'token', text: 'Voy a buscar algo de jazz tranquilo' });
+    await shot(p, T('hoja-agente-parar'));
+    await tap(p, 'Parar'); await shot(p, T('hoja-agente-parado'));
+  });
+  // voz: mantener el orbe con el micrófono falso. vstart se contesta aquí (sin Gateway el servidor diría «no disponible»);
+  // la parcial y la final las manda el servidor, inyectadas. Un toque corto no manda nada y abre el teclado.
+  await run('hoja-agente-voz', async p => {
+    await tap(p, 'Hablar con Jota');
+    await p.evaluate(() => { window.__wsFake['vstart:'] = { ok: 1 }; window.__wsFake['vend:'] = { ok: 1 }; });
+    const orb = await p.getByRole('button', { name: 'Mantén para hablar con Jota; toca para escribir', exact: true }).boundingBox();
+    const [x, y] = [orb.x + orb.width / 2, orb.y + orb.height / 2];
+    await p.mouse.move(x, y); await p.mouse.down(); await p.waitForTimeout(100); await p.mouse.up(); await p.waitForTimeout(500);
+    await takeLog(p, T('hoja-agente-voz: toque corto'));
+    await p.locator('#agin').blur();
+    await p.mouse.move(x, y); await p.mouse.down();
+    await p.locator('#agS[data-st="rec"]').waitFor({ state: 'attached', timeout: 5000 }); await p.waitForTimeout(900);   // la primera vez el micro tarda
+    await inject(p, { t: 'talk', ev: 'partial', text: 'pon algo de música' });
+    await shot(p, T('hoja-agente-voz-parcial'));
+    const b0 = await p.evaluate(() => window.__wsBin || 0);
+    await p.mouse.up(); await p.waitForTimeout(400);
+    const [bin, atVend] = await p.evaluate(() => [window.__wsBin || 0, window.__wsBinAtVend]);
+    if (bin < 5) errors.push(`${T('hoja-agente-voz')}: solo ${bin} trozos de audio en ~1 s`);
+    if (!(atVend > b0) || bin !== atVend) errors.push(`${T('hoja-agente-voz')}: el último trozo no va justo antes de vend (${b0} → ${atVend}, total ${bin})`);
+    await inject(p, { t: 'talk', ev: 'final', text: 'pon algo de música tranquila' });
+    await shot(p, T('hoja-agente-voz-final'));
   });
   await run('spotify', async p => {
     await tap(p, 'Abrir Spotify', 900); await shot(p, T('spotify-sin-cuenta'));
@@ -472,7 +506,9 @@ async function extraScenes(admin) {
   try {
     await cdp.waitFor(m => m.method === 'Runtime.addBinding' && m.params.name === '__tvFocus', 10000);
     const r = { token: ADMIN_TOKEN };
-    browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME } : {});
+    // micrófono falso (un pitido) y sin pedir permiso: la voz del mando graba de verdad
+    const args = ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream'];
+    browser = await chromium.launch(process.env.CHROME ? { executablePath: process.env.CHROME, args } : { args });
     if (!process.env.MANDO_SOLO_EXTRA) { // MANDO_SOLO_EXTRA=1: solo las escenas extra (para depurarlas)
       for (const theme of ['oscuro', 'claro']) {
         await adminScenes(theme, r.token);

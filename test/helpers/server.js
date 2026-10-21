@@ -47,7 +47,7 @@ async function start({ files = {}, cdpPort, env = {}, legacy = false } = {}) {
     cwd: root,
     env: {
       PATH: process.env.PATH, HOME: tmp, TV_PORT: String(port), TV_CDP_PORT: String(cdpPort || await freePort()),
-      TV_NO_POINTER: '1', TV_OPENCLAW: '/bin/false', XDG_RUNTIME_DIR: tmp, TV_STATE_DIR: state, ...env,
+      TV_NO_POINTER: '1', XDG_RUNTIME_DIR: tmp, TV_STATE_DIR: state, ...env,
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
