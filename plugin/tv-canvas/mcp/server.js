@@ -54,11 +54,11 @@ const LAYOUTS = ['pill', 'panel'];
 const layout = z.enum(LAYOUTS).optional().describe('pill when the page is meant to be watched full screen (a video, a photo gallery, a map); ' +
   'default keeps the conversation panel. Streaming apps already get the pill.');
 
-tool('tv_open', 'Open a URL on the TV. Bare text is turned into a Google search. Only http/https. For Netflix use tv_netflix; for YouTube searches tv_open_app.',
+tool('tv_open', 'Open a URL on the TV. Bare text is turned into a Google search. Only http/https. For Netflix use tv_netflix; to put a YouTube video on, tv_youtube.',
   { url: z.string().describe('Full URL, a domain, or search text'), layout },
   async ({ url, layout }) => out(await cmd({ t: 'nav', url, ...(layout ? { layout } : {}) }), 'Opened'));
 
-tool('tv_open_app', 'Open a streaming app on the TV, optionally searching inside it. After opening, use tv_screenshot / tv_links / tv_click_text to pick the result and start playback. For Netflix, tv_netflix is faster and plays in one call.',
+tool('tv_open_app', 'Open a streaming app on the TV, optionally searching inside it (just shows the app or its results; plays nothing). To play something use tv_netflix (Netflix) or tv_youtube (YouTube): they find it and play it in one call. Only for other cases, after opening use tv_screenshot / tv_links / tv_click_text.',
   { app: z.enum(['youtube', 'netflix', 'spotify', 'home']), query: z.string().optional().describe('Search text inside the app'), layout },
   async ({ app, query, layout }) => {
     const q = encodeURIComponent(query || '');
@@ -83,6 +83,17 @@ tool('tv_netflix', 'Netflix on the TV, fast: open it, or play a title in one cal
     const op = { open: 'open', play: 'play', search: 'search', profiles: 'profiles', set_default_profile: 'setprofile', watching: 'watching', history: 'history', last: 'last', play_last: 'play_last', refresh: 'refresh' }[action];
     return out(await cmd({ t: 'netflix', op, title, query: title, id, profile }));
   });
+
+tool('tv_youtube', 'YouTube on the TV, fast: play a video in one call (~3-4 s). play searches YouTube for query, takes the first real video ' +
+  '(not ads nor Shorts), opens it full screen and waits until it plays: use it directly with what the user asked for (e.g. "música lofi"), ' +
+  'do not open or search first. The result says what is playing (title); candidates are the next results: offer them if the user wants another ' +
+  'and play one with id. ad = YouTube is showing an ad before the video (it starts by itself). search = only the results, plays nothing.',
+  {
+    action: z.enum(['play', 'search']),
+    query: z.string().optional().describe('What to look for on YouTube, as the user said it'),
+    id: z.string().optional().describe('YouTube video id from candidates/search results (11 characters)'),
+  },
+  async ({ action, query, id }) => out(await cmd({ t: 'youtube', op: action, query, id })));
 
 tool('tv_nav', 'Browser navigation on the TV: back, forward, reload, or go to the home screen.',
   { action: z.enum(['back', 'forward', 'reload', 'home', 'fullscreen']) },

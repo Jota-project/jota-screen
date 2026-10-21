@@ -34,6 +34,7 @@ const createSpotify = require('./src/features/spotify');
 const createIdle = require('./src/features/idle');
 const createNetflix = require('./src/features/netflix');
 const { createWatch, intentOf } = require('./src/features/netflix-watch');
+const createYoutube = require('./src/features/youtube');
 const { createJsonStore } = require('./src/core/json-store');
 const { createCommands } = require('./src/transport/commands');
 const { createSessions } = require('./src/transport/sessions');
@@ -147,6 +148,13 @@ netflix.extend({ ...nfxWatch.ops,
     log.info(`netflix: «ponme lo último»: ${r.error || r.last}`);
     return r;
   } });
+// YouTube: el vídeo se busca en una pestaña de fondo y se pone en la de siempre (por control.nav); con la conversación en
+// el panel, antes su tarjeta con la miniatura y su ▶ (más corto que en Netflix: la búsqueda ya ha llevado su rato)
+const youtube = createYoutube({ cdp, nav: u => control.nav(u), key: k => keyboard.key(k), self: SELF, log: log.info,
+  beforePlay: async card => {
+    if (!talkView.media(card)) return;
+    await pause(700); talkView.mediaState('press'); await pause(300);
+  } });
 // tv_open / tv_open_app con `layout`: Jota elige el formato de la conversación para la página que abre. Abrir la misma
 // URL (o recargar) es un documento nuevo sin cambio de URL: onPage no lo ve y se avisa desde aquí
 const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave(), netflix,
@@ -190,7 +198,7 @@ const netflixCommands = netflix.commands.map(c => ({ ...c, run: (/** @type {any}
   if (m && (m.op === 'open' || m.op === 'play')) talkView.navigating();
   return c.run(m, ctx);
 } }));
-for (const list of [talk.commands, netflixCommands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
+for (const list of [talk.commands, netflixCommands, youtube.commands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
   createAccessCommands({ acc, meOf }), tv.commands]) commands.register(list);
 
 /** Una orden del mando (sock), de la API o del MCP (ctx.dev), con los permisos de su dispositivo. */
@@ -213,6 +221,7 @@ const handler = createHttp({
     ...stage.routes,
     ...idle.routes,
     ...nfxWatch.routes,
+    ...youtube.routes,
   ],
   fallback: statics.serve,
 });

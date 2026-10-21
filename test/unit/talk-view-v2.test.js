@@ -946,6 +946,21 @@ test('tarjeta de contenido (Netflix): solo en v2, con el panel y un turno abiert
   assert.equal(old.v.media(card), false);
 });
 
+test('tarjeta de contenido: puesta en el reposo, al pasar a una web ajena sigue sin sus imágenes (nada de 127.0.0.1 desde la web)', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const card = { key: 'yt-play-x', kind: 'play', items: [{ title: 'Lofi', sub: 'Lofi Girl', frac: 0, img: 'http://127.0.0.1:8787/yt/img?id=n61ULEU7CO0' }] };
+  const m = make({ page: IDLE });
+  m.v.turn('panel', { voice: true });
+  assert.equal(m.v.media(card), true);
+  await step(t);
+  assert.equal(last(m.cdp).turns.at(-1).media.items[0].img, card.items[0].img, 'en el reposo, con su miniatura');
+  m.c.now = ctxOf({ ctx: 'web', page: WEB });
+  m.v.jota('Hecho, ya suena');
+  await step(t);
+  assert.equal(last(m.cdp).turns.at(-1).media.items[0].img, '', 'en la web, sin ella');
+  assert.equal(last(m.cdp).turns.at(-1).media.items[0].title, 'Lofi', 'el resto de la tarjeta sigue');
+});
+
 test('asked(): lo preguntado en el turno en curso (y nada sin turno)', () => {
   const { v } = make();
   assert.equal(v.asked(), '');

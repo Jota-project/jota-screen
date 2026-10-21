@@ -16,7 +16,7 @@ const PAGE_GLOBALS = Object.fromEntries([
 
 // Ficheros de Node con funciones de página (si otro fichero empieza a tenerlas, añádelo aquí)
 const PAGE_FUNCTION_FILES = [
-  'remote/src/features/{control,keyboard,spotify,stage}.js',
+  'remote/src/features/{control,keyboard,spotify,stage,youtube}.js',
   'remote/src/tv/{devices,talk-view}.js',
   'e2e/mando-capturas.js',
   'e2e/reposo-solapes.js',

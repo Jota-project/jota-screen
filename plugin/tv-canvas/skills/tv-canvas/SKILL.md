@@ -22,8 +22,14 @@ La tele es un Chrome en modo kiosco en el servidor de jota-screen. Se maneja con
 - En el reposo puede salir un «Seguir viendo» grande con las imágenes: `tv_idle` `op: set` con `cfg: {netflix: "on"}` (o `"off"`).
 Si dice que Netflix pide iniciar sesión, no escribas contraseñas: díselo al usuario.
 
-## Cómo reproducir algo en YouTube (u otras webs)
-1. `tv_open_app` con `app` y `query` (abre los resultados de búsqueda).
+## YouTube
+`tv_youtube` pone un vídeo en una llamada (unos 3-4 s), sin capturas ni clics:
+- «Pon en YouTube X», «ponme un vídeo de X» → `action: play` con `query` tal como lo ha dicho (p. ej. `música lofi`), directamente: busca, elige el primer vídeo de verdad (ni anuncios ni Shorts), lo pone a pantalla completa y espera a que suene. No hagas `tv_open_app` ni `search` antes.
+- Contesta con el `title` que devuelve («Hecho, suena …»). Si quiere otro, ofrece los de `candidates` y ponlo con `id`. Si viene `ad: true`, antes sale un anuncio: dilo y ya empieza solo.
+- `action: search` solo da los resultados, sin poner nada.
+
+## Otras webs de vídeo
+1. `tv_open_app` con `app` y `query` (abre los resultados de búsqueda) o `tv_open` con la dirección.
 2. `tv_screenshot` o `tv_links` (con filtro, p. ej. el título) para ver los resultados.
 3. `tv_click_text` con el título (regex, sin distinguir mayúsculas) o `tv_click_at` con las coordenadas de `tv_links`.
 4. Comprueba con `tv_state` (`media: 1` = se está reproduciendo). Si no, repite desde 2 o usa `tv_key` con `Enter`.

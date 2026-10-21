@@ -214,6 +214,10 @@ function within(p, ms) {
 const newTurn = id => ({ id, you: '', youFinal: false, jota: '', tools: [], error: false, hint: '' }); // media: solo si la hay
 
 const MEDIA_MAX = 4;
+/** ¿La tele está en una página nuestra (el reposo)? Solo ahí van las imágenes de las tarjetas. @param {Look} l */
+const ourPage = l => l.ctx === 'idle' || l.ctx === 'music' || !!(l.page && l.page.idle);
+/** La tarjeta sin sus imágenes. @param {Media} m @returns {Media} */
+const noImages = m => ({ ...m, items: m.items.map(it => ({ ...it, img: '', still: '' })) });
 /** Tarjeta saneada (viene de otra capacidad del servidor; la capa la vuelve a sanear). @param {any} m @returns {Media | null} */
 function cleanMedia(m) {
   if (!m || typeof m !== 'object' || (m.kind !== 'list' && m.kind !== 'play')) return null;
@@ -326,7 +330,10 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
   function payload(l, enter = 'open') {
     if (l.design === 'v1') return { mode, lines: lines(), live };
     const form = mode === 'island' ? 'pill' : 'panel';
-    return snapshot({ form, ctx: l.ctx || (form === 'pill' ? 'video' : 'web'), state, live, look: l, turns: [...history, cur], enter });
+    // una tarjeta puesta en el reposo sigue en su turno al pasar a una web ajena: allí, sin sus imágenes (son de
+    // 127.0.0.1: desde la web, Chrome pediría permiso para «acceder a otras aplicaciones y servicios de este dispositivo»)
+    const turns = [...history, cur].map(t => (t.media && !ourPage(l) ? { ...t, media: noImages(t.media) } : t));
+    return snapshot({ form, ctx: l.ctx || (form === 'pill' ? 'video' : 'web'), state, live, look: l, turns, enter });
   }
 
   // ── scripts de documento nuevo: en cola (nunca dos cambios a la vez) y siempre contra la sesión que los registró
@@ -624,8 +631,7 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
       if (!c || !open || muted || formNow() !== 'panel' || l.design !== 'v2') return false;
       // las imágenes solo sobre una página nuestra (el reposo): la CSP de una web ajena las bloquearía (y ensuciaría su
       // consola); allí la tarjeta va sin ellas, con su texto y su progreso
-      if (!(l.ctx === 'idle' || l.ctx === 'music' || (l.page && l.page.idle))) for (const it of c.items) { it.img = ''; it.still = ''; }
-      cur.media = c;
+      cur.media = ourPage(l) ? c : noImages(c);
       schedule();
       return true;
     },
