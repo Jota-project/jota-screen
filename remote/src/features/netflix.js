@@ -133,8 +133,12 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
 
   /** Buscar en la web ya cargada y leer los resultados. @param {string} q */
   async function results(q) {
-    await go('/search?q=' + encodeURIComponent(q));
-    return (await until(CARDS(q), v => Array.isArray(v) && v.length > 0, 6000)) || [];
+    const path = '/search?q=' + encodeURIComponent(q);
+    const got = v => Array.isArray(v) && v.length > 0;
+    await go(path);
+    let r = await until(CARDS(q), got, 3000);
+    if (!got(r)) { await load(ORIGIN + path); r = await until(CARDS(q), got, 6000); } // a veces la web no repinta: plan B, recargar
+    return got(r) ? r : [];
   }
   /** @param {string} q @param {{ id: string, title: string }[]} list */
   function best(q, list) {
@@ -171,7 +175,8 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
       if (norm(pick.title) === norm(title)) { data.titles = { ...data.titles, [norm(title)]: pick }; save(); } // solo si es seguro
     }
     await go('/watch/' + pick.id);
-    const st = await until(PLAYING, v => v === 2, 12000);
+    let st = await until(PLAYING, v => v === 2, 6000);
+    if (st !== 2) { await load(ORIGIN + '/watch/' + pick.id); st = await until(PLAYING, v => v === 2, 10000); } // plan B: recargar
     return {
       ok: 1, title: pick.title, id: pick.id, playing: st === 2, profile: nameOf(f.p.cur), ms: now() - t0,
       ...(candidates.length > 1 && norm(pick.title) !== norm(title) ? { candidates: candidates.slice(0, 5) } : {}),

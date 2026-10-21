@@ -12,7 +12,7 @@ const PROFILES = { Carmen: 'GC', Alfonso: 'GA', Pablo: 'GP' };
 const CATALOG = { 'stranger things': [{ id: '80057281', title: 'Stranger Things' }, { id: '81398721', title: 'Stranger Things: Tales' }], dark: [{ id: '80114791', title: 'Dark Matter' }, { id: '80100172', title: 'Dark' }] };
 
 /** Chrome con una pestaña «de siempre» (el reposo) y, si se abre, la de Netflix. */
-function fakeTv({ login = false } = {}) {
+function fakeTv({ login = false, stuckSpa = false } = {}) {
   const pages = new Map([['MAIN', { url: 'http://127.0.0.1:8787/idle.html' }]]);
   const nf = { url: '', cur: null, gate: false, old: false, video: 0, hidden: false, loads: 0 };
   const log = [];
@@ -29,7 +29,7 @@ function fakeTv({ login = false } = {}) {
         if (login) nf.url = 'https://www.netflix.com/login';
         else if (u.pathname === '/SwitchProfile') { nf.cur = u.searchParams.get('tkn'); nf.gate = false; nf.url = 'https://www.netflix.com/browse'; }
         else { nf.url = params.url; nf.gate = !nf.cur; }
-        nf.video = 0;
+        nf.video = u.pathname.startsWith('/watch/') ? 2 : 0; nf.spaOnly = false;
         pages.get('NF').url = nf.url;
         return {};
       }
@@ -47,11 +47,12 @@ function fakeTv({ login = false } = {}) {
         const p = JSON.parse(e.match(/pushState\(history\.state,'',("[^"]*")\)/)[1]);
         nf.url = 'https://www.netflix.com' + p; pages.get('NF').url = nf.url;
         log.push('spa:' + p);
-        if (p.startsWith('/watch/')) nf.video = 2;
+        if (p.startsWith('/watch/') && !stuckSpa) nf.video = 2;
+        nf.spaOnly = stuckSpa; // la web cambia la dirección pero no repinta
         value = 1;
       } else if (e.includes('standard-card')) {
         const q = new URL(nf.url).searchParams.get('q') || '';
-        value = Object.entries(CATALOG).filter(([k]) => q && k.includes(q.toLowerCase())).flatMap(([, v]) => v);
+        value = nf.spaOnly ? [] : Object.entries(CATALOG).filter(([k]) => q && k.includes(q.toLowerCase())).flatMap(([, v]) => v);
       } else if (e.includes('v.currentTime>0')) value = nf.video;
       return { result: { value } };
     },
@@ -129,6 +130,14 @@ test('Netflix: otro perfil para una petición, perfil por defecto desde el mando
   assert.equal(nf.cur, 'GP');
   assert.match((await n.open({ profile: 'Lucía' })).error, /No hay un perfil «Lucía».*Carmen, Alfonso, Pablo/);
   assert.match(n.setProfile('Lucía').error, /desconocido/);
+});
+
+test('Netflix: si la web no repinta tras navegar por dentro, se recarga (búsqueda y vídeo)', async () => {
+  const { cdp, log } = fakeTv({ stuckSpa: true });
+  const n = createNetflix({ cdp, cfg: { NETFLIX_PROFILE: 'Alfonso' }, store: memStore({ profiles: PROFILES }), ...fast });
+  const r = await n.play({ title: 'Dark' });
+  assert.equal(r.id, '80100172'); assert.equal(r.playing, true);
+  assert.ok(log.includes('navigate:/search?q=Dark') && log.includes('navigate:/watch/80100172'), log.join(' '));
 });
 
 test('Netflix: si pide iniciar sesión, no escribe nada y lo dice', async () => {
