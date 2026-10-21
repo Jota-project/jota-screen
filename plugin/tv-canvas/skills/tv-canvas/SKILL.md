@@ -1,6 +1,6 @@
 ---
 name: tv-canvas
-description: Controlar la tele (Chrome en pantalla completa): abrir YouTube/Netflix/webs, controlar Spotify, play/pausa/volumen, mostrar tareas, recordatorios, presentaciones o páginas HTML animadas y avisos sobre lo que se está viendo. Usar cuando se pida poner algo en la tele, mostrar algo en pantalla, avisar o recordar en la tele.
+description: Controlar la tele (Chrome en pantalla completa): abrir YouTube/Netflix/webs, controlar Spotify, play/pausa/volumen, mostrar tareas, recordatorios, presentaciones o páginas HTML animadas y avisos sobre lo que se está viendo. Usar cuando se pida poner algo en la tele, mostrar algo en pantalla, avisar o recordar en la tele. Y también lo que se ve en Netflix: qué series se están viendo, por dónde se va, qué se vio ayer o esta semana, y poner la última o seguir una serie por donde iba.
 ---
 
 # Tele (tv-canvas)
