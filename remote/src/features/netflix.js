@@ -32,7 +32,8 @@ const UNHIDE = 'window.__tvHidden=false';
 const PRIVATE = new Set(['watching', 'history', 'play_last', 'refresh']);
 
 /**
- * @typedef {{ profile?: string, profiles?: Record<string, string>, titles?: Record<string, { id: string, title: string }> }} Data
+ * @typedef {{ profile?: string, profiles?: Record<string, string>, titles?: Record<string, { id: string, title: string }>,
+ *   last?: { at: number, id?: string, title?: string, vid?: number } }} Data
  * @param {{
  *   cdp: { call: Function, show: (id: string) => Promise<void>, newTab: () => Promise<string>, pages: Map<string, { url: string }>, targetId: string | null },
  *   cfg: { NETFLIX_PROFILE?: string },
@@ -185,6 +186,7 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
       if (norm(pick.title) === norm(title)) { data.titles = { ...data.titles, [norm(title)]: pick }; save(); } // solo si es seguro
     }
     await go('/watch/' + pick.id);
+    data.last = { at: now(), id: pick.id, title: pick.title }; save(); // «ponme la última que puse»
     let st = await until(PLAYING, v => v === 2, 6000);
     if (st !== 2) { await load(ORIGIN + '/watch/' + pick.id); st = await until(PLAYING, v => v === 2, 10000); } // plan B: recargar
     return {
@@ -200,6 +202,9 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
   async function leave() {
     if (!isActive()) return;
     try { await ev(HIDE); } catch {}
+    // lo último que se estaba viendo (el id del capítulo de /watch/): para «ponme la última que puse»
+    const vid = Number(((cdp.pages.get(/** @type {string} */ (tab)) || { url: '' }).url.match(/\/watch\/(\d+)/) || [])[1]) || null;
+    if (vid) { const l = data.last; data.last = { ...(l && l.id && now() - l.at < 6 * 3600e3 ? l : {}), at: now(), vid }; save(); }
     const other = [...cdp.pages.keys()].find(k => k !== tab);
     if (other) await cdp.show(other); else await cdp.newTab();
     try { onLeave(); } catch {}
@@ -237,6 +242,8 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
 
   return {
     isNetflix, open, search, play, leave, profiles, setProfile, run, isActive, profileInfo, learn,
+    /** lo último que se puso o se estaba viendo: { at, id?, title?, vid? } (vid: id del capítulo) */
+    last: () => data.last || null,
     /** añade órdenes (op → función) @param {Record<string, (m: any) => any>} ops */
     extend: ops => Object.assign(extra, ops),
     /** @type {import('../transport/commands').Command[]} */

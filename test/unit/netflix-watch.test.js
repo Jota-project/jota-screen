@@ -39,18 +39,19 @@ test('historial: fecha, serie, temporada y capítulo, aunque lleven dos puntos',
 });
 
 /** Netflix y Chrome de mentira para el orquestador */
-function rig({ active = false, tabGuid = null, read } = {}) {
+function rig({ active = false, tabGuid = null, read, last = null, now } = {}) {
   const seen = [];
   const netflix = {
     isActive: () => active,
     profileInfo: () => ({ name: 'Alfonso', guid: 'GA', tabGuid }),
     learn: () => {},
     play: async m => { seen.push(m); return { ok: 1, title: m.title, id: m.id || 'buscado', playing: true }; },
+    last: () => last,
   };
   const cdp = { ready: true, bgTab: async () => { seen.push('bgTab'); return { close: async () => seen.push('close') }; } };
   const store = memStore();
   const changed = [];
-  const w = W.createWatch({ cdp, netflix, store, onChange: () => changed.push(1), read: read || (async (tab, o) => { seen.push('read:' + o.guid + ':' + o.canSwitch); return { profile: 'GA', items: ITEMS, history: HISTORY, warn: [] }; }) });
+  const w = W.createWatch({ cdp, netflix, store, onChange: () => changed.push(1), ...(now ? { now } : {}), read: read || (async (tab, o) => { seen.push('read:' + o.guid + ':' + o.canSwitch); return { profile: 'GA', items: ITEMS, history: HISTORY, warn: [] }; }) });
   return { w, seen, store, changed };
 }
 
@@ -101,8 +102,36 @@ test('agente: qué tengo a medias, qué he visto y «ponme la de ayer»', async 
   assert.deepEqual(h.often[0], { title: 'La serie de prueba', episodes: 2 });
   const r = await w.playLast();
   assert.deepEqual(seen.pop(), { id: '1001', title: 'La serie de prueba' }, 'la serie de «seguir viendo»: retoma por donde iba');
-  assert.equal(r.last.title, 'La serie de prueba');
-  assert.match((await rig().w.playLast()).error, /historial/, 'sin historial, lo dice');
+  assert.equal(r.last, 'La serie de prueba');
+  assert.match((await rig().w.playLast()).error, /historial/, 'sin historial (aún sin leer), lo dice');
+});
+
+test('«la última que puse»: lo que se puso en esta tele manda sobre el orden del historial de ese día', async () => {
+  const day = new Date('2026-10-20T22:00:00').getTime();
+  // se puso la película en la tele después de la serie: el historial de ese día las trae en cualquier orden
+  const a = rig({ last: { at: day, id: '1002', title: 'Una película' } });
+  await a.w.refresh();
+  await a.w.playLast();
+  assert.deepEqual(a.seen.pop(), { id: '1002', title: 'Una película' });
+  // solo se sabe el capítulo que se estaba viendo (al salir de Netflix): se busca su serie en «seguir viendo»
+  const b = rig({ last: { at: day, vid: 2001 } });
+  await b.w.refresh();
+  await b.w.playLast();
+  assert.deepEqual(b.seen.pop(), { id: '1001', title: 'La serie de prueba' });
+  // si es de antes del último día del historial, manda el historial
+  const c = rig({ last: { at: new Date('2026-10-10T22:00:00').getTime(), id: '1002', title: 'Una película' } });
+  await c.w.refresh();
+  await c.w.playLast();
+  assert.deepEqual(c.seen.pop(), { id: '1001', title: 'La serie de prueba' });
+});
+
+test('reposo: si el lector lleva más de 48 h sin leer, no se enseñan progresos viejos', async () => {
+  let t = 1e12;
+  const { w } = rig({ now: () => t });
+  await w.refresh();
+  assert.equal(w.forIdle().length, 2);
+  t += 49 * 3600e3;
+  assert.deepEqual(w.forIdle(), []);
 });
 
 test('órdenes: «seguir viendo» e historial no son para invitados', async () => {

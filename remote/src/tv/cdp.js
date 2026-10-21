@@ -212,7 +212,8 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
       try {
         const { sessionId } = await this.call('Target.attachToTarget', { targetId, flatten: true }, true);
         const on = (m, p) => this.call(m, p, sessionId);
-        await on('Page.addScriptToEvaluateOnNewDocument', { source: 'document.addEventListener("play",e=>{try{e.target.muted=true;e.target.pause()}catch(_){}},true)' });
+        // muda: todo vídeo o audio sale silenciado antes de sonar, y se pausa en cuanto arranca
+        await on('Page.addScriptToEvaluateOnNewDocument', { source: 'const P=HTMLMediaElement.prototype,p=P.play;P.play=function(){this.muted=true;return p.apply(this,arguments)};document.addEventListener("play",e=>{try{e.target.muted=true;e.target.pause()}catch(_){}},true)' });
         await on('Emulation.setFocusEmulationEnabled', { enabled: true });
         /** @param {Function} fn @param {...any} args */
         const ev = async (fn, ...args) => {

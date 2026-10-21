@@ -169,7 +169,7 @@ const fmtMin = sec => { const m = Math.max(1, Math.round(sec / 60)); return m >=
 /**
  * @param {{
  *   cdp: { ready: boolean, bgTab: () => Promise<any> },
- *   netflix: { isActive: () => boolean, profileInfo: () => { name: string, guid: string | null, tabGuid: string | null }, learn: (ps: Record<string, string>) => void, play: (m: any) => Promise<any> },
+ *   netflix: { isActive: () => boolean, profileInfo: () => { name: string, guid: string | null, tabGuid: string | null }, learn: (ps: Record<string, string>) => void, play: (m: any) => Promise<any>, last?: () => any },
  *   store: { load: () => any, save: (v: any) => void },
  *   log?: (s: string) => void, onChange?: () => void, now?: () => number, read?: typeof readAll, fetch?: typeof fetch,
  * }} deps   read: el lector (para las pruebas)
@@ -213,6 +213,7 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
   // ───────── para el reposo: lo justo, con las imágenes por nuestra ruta (la tele no habla con Netflix desde ahí)
   const img = u => (u && NFX_IMG.test(u) ? '/idle/nfx?u=' + encodeURIComponent(u) : null);
   function forIdle() {
+    if (now() - data.at > 48 * 3600e3) return [];        // si el lector lleva días sin leer, mejor nada que progresos viejos
     return data.items.map(it => ({
       id: it.id, kind: it.kind, title: it.title, pos: it.pos, dur: it.dur,
       ep: it.ep ? { s: it.ep.s, e: it.ep.e, title: it.ep.title, still: img(it.ep.still) } : null,
@@ -245,13 +246,29 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
     const often = Object.entries(count).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([title, n]) => ({ title, episodes: n }));
     return { at: data.at ? new Date(data.at).toISOString() : null, profile: data.profile, days, often };
   }
-  /** «Ponme la de ayer»: lo último que se vio; si está en «Seguir viendo», se retoma por donde iba. */
+  /**
+   * «Ponme la de ayer»: lo último que se vio; si está en «Seguir viendo», se retoma por donde iba. Lo que se puso en esta
+   * tele (netflix.last) manda si es de ese día o posterior: dentro de un mismo día, el orden del historial no es fiable.
+   */
   async function playLast() {
-    const last = data.history[0];
-    if (!last) return { error: 'no sé qué se vio por última vez (aún no hay historial)' };
-    const it = data.items.find(i => norm(i.title) === norm(last.title));
-    const r = await netflix.play(it ? { id: String(it.id), title: it.title } : { title: last.title });
-    return r.error ? r : { ...r, last: { day: last.day, title: last.title, season: last.season, episode: last.episode } };
+    const h0 = data.history[0];
+    const L = netflix.last ? netflix.last() : null;
+    /** @type {{ id?: string, title: string } | null} */ let target = null;
+    if (L && (!h0 || !h0.day || L.at >= new Date(h0.day + 'T00:00:00').getTime())) {
+      if (L.id) target = { id: String(L.id), title: L.title || '' };
+      else if (L.vid) {
+        const it = data.items.find(i => i.id === L.vid || (i.ep && i.ep.id === L.vid));
+        const h = data.history.find(x => x.id === L.vid);
+        if (it) target = { id: String(it.id), title: it.title }; else if (h) target = { title: h.title };
+      }
+    }
+    if (!target && h0) {
+      const it = data.items.find(i => norm(i.title) === norm(h0.title));
+      target = it ? { id: String(it.id), title: it.title } : { title: h0.title };
+    }
+    if (!target) return { error: 'no sé qué se vio por última vez (aún no hay historial)' };
+    const r = await netflix.play(target);
+    return r.error ? r : { ...r, last: target.title };
   }
 
   // ───────── imágenes para el reposo: solo de Netflix, solo desde la propia tele, con caché en memoria
