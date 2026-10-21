@@ -121,10 +121,12 @@ const netflix = createNetflix({ cdp, cfg: CFG, store: createJsonStore(CFG.FILES.
 const nfxWatch = createWatch({ cdp, netflix, store: createJsonStore(CFG.FILES.watching, { fallback: {} }), log: log.info, onChange: () => idle.nfxChanged(), self: SELF });
 netflix.extend({ ...nfxWatch.ops,
   // «¿qué estoy viendo?»: además de la respuesta para el agente, la lista con sus imágenes en la conversación
-  watching: () => {
-    const card = nfxWatch.media('list'), shown = !!card && talkView.media(card);
-    log.info(`netflix: «qué estoy viendo» (tarjeta en la conversación: ${shown ? 'sí' : card ? 'no, la capa no la admite ahora' : 'no, sin datos'})`);
-    return nfxWatch.watching();
+  watching: m => {
+    // «¿por dónde voy de X?»: la tarjeta grande de esa serie; si no, la lista de lo que está a medias
+    const one = m.title ? nfxWatch.media('play', { title: m.title }) : null;
+    const card = one || nfxWatch.media('list'), shown = !!card && talkView.media(card);
+    log.info(`netflix: «qué estoy viendo»${m.title ? ' de «' + m.title + '»' : ''} (tarjeta en la conversación: ${shown ? 'sí' : card ? 'no, la capa no la admite ahora' : 'no, sin datos'})`);
+    return nfxWatch.watching(m.title);
   },
   // «¿qué he visto últimamente?»: además de los días, las últimas series con sus imágenes en la conversación
   history: () => {

@@ -87,8 +87,12 @@ async function pgArt(items) {
   await Promise.all(items.map(async it => {
     try {
       const a = await gql('VideoDetailModalCachedArtworkQuery', qArt, { unifiedEntityId: 'Video:' + it.id });
-      const story = imgs(a && a.data).filter(i => /^StoryArt/i.test(i.key || '')).sort((x, y) => y.width - x.width)[0];
+      const all = imgs(a && a.data);
+      const story = all.filter(i => /^StoryArt/i.test(i.key || '')).sort((x, y) => y.width - x.width)[0];
       if (story) it.story = story.url;
+      // sin tarjeta (lo del historial que ya no está en «seguir viendo»): la de la serie, con su logo (sdp, ≤ 700 de ancho)
+      const card = !it.card && all.filter(i => /^sdp/i.test(i.key || '') && i.width <= 700).sort((x, y) => y.width - x.width)[0];
+      if (card) it.card = card.url;
     } catch {}
     if (!it.ep || !it.ep.seasonId) return;
     try {
@@ -158,6 +162,19 @@ async function readAll(tab, { name = '', guid = null, learn = () => {}, canSwitc
   await tab.go(ORIGIN + '/viewingactivity');
   const raw = await tab.until(pgHistory, v => Array.isArray(v) && v.length > 0, 10000);
   const history = (raw || []).map(h => ({ ...h, day: isoDate(h.date) }));
+  // imágenes de las series del historial que ya no están en «seguir viendo» (las 6 primeras; Netflix las da por el capítulo)
+  const inCw = new Set(art.items.map(i => norm(i.title))), extra = [];
+  for (const h of history) {
+    if (!h.id || inCw.has(norm(h.title)) || extra.some(x => norm(x.title) === norm(h.title))) continue;
+    extra.push({ id: h.id, title: h.title, ep: null });
+    if (extra.length >= 6) break;
+  }
+  if (extra.length) {
+    try {
+      const got = (await tab.ev(pgArt, extra)).items;
+      for (const g of got) for (const h of history) if (norm(h.title) === norm(g.title)) { h.card = g.card || null; h.story = g.story || null; }
+    } catch {}
+  }
   return { profile: p.cur, items: art.items, history, warn: [...(art.ids.art ? [] : ['sin consulta de ambiente']), ...(art.ids.eps ? [] : ['sin consulta de episodios']), ...(raw && raw.length ? [] : ['sin historial'])] };
 }
 
@@ -250,7 +267,7 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
         seen.add(k);
         const it = find({ title: h.title });
         items.push(it ? { title: it.title, sub: it.ep ? sub(it) : 'Película', left: left(it), frac: frac(it), img: abs(it.card || it.story) }
-          : { title: h.title, sub: h.season ? `${h.season} · ${h.episode}` : 'Película', left: '', frac: 0, img: '' });
+          : { title: h.title, sub: h.season ? `${h.season} · ${h.episode}` : 'Película', left: '', frac: 0, img: abs(h.card || h.story) });
         if (items.length >= 4) break;
       }
       return items.length ? { key: 'nfx-recent-' + data.at, kind: 'list', items } : null;
@@ -266,10 +283,14 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
 
   // ───────── para el agente
   const epTxt = it => (it.ep ? `T${it.ep.s || '?'} E${it.ep.e || '?'}${it.ep.title ? ' «' + it.ep.title + '»' : ''}` : 'película');
-  function watching() {
+  /** Lo que está a medias; con `title`, solo esa serie («¿por dónde voy de X?»). @param {string} [title] */
+  function watching(title) {
+    const k = norm(title);
+    const list = k ? data.items.filter(it => norm(it.title).includes(k) || k.includes(norm(it.title))) : data.items;
     return {
       at: data.at ? new Date(data.at).toISOString() : null, profile: data.profile,
-      items: data.items.map(it => ({
+      ...(k && !list.length ? { note: 'No está en «seguir viendo»: mira history' } : {}),
+      items: list.map(it => ({
         title: it.title, id: it.id, kind: it.kind, where: epTxt(it),
         progress: it.dur ? Math.round(100 * it.pos / it.dur) + ' %' : null,
         left: it.dur && it.pos >= 30 ? 'quedan ' + fmtMin(it.dur - it.pos) : it.dur ? 'sin empezar (' + fmtMin(it.dur) + ')' : null,

@@ -69,7 +69,7 @@ tool('tv_open_app', 'Open a streaming app on the TV, optionally searching inside
   });
 
 tool('tv_netflix', 'Netflix on the TV, fast: open it, or play a title in one call (finds it, opens it and resumes where the profile left off; ~2-3 s). Prefer this over tv_open_app + clicks. Profile: the default one unless the user names another (e.g. "en el perfil de Carmen"). If the result has candidates, the title was not an exact match: tell the user what is playing and offer the others (play them with id). ' +
-  'What the user is watching (default profile, also from other devices): watching = series and films in progress, with episode and how much is left; history = what was watched, by day, and the most watched; ' +
+  'What the user is watching (default profile, also from other devices): watching = series and films in progress, with episode and how much is left (with title: only that one, for "¿por dónde voy de X?"); history = what was watched, by day, and the most watched; ' +
   'last = answers "¿qué es lo último que estaba viendo?" (only tells; shows its card on the TV; plays NOTHING); ' +
   'play_last = PLAYS it, only when the user asks to put it on ("ponme lo último", "sigue con lo de ayer"). A question is never a request to play. ' +
   'refresh = read it again now (~10 s; it is also read on its own every few hours and after watching Netflix).',

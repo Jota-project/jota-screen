@@ -12,7 +12,7 @@ La tele es un Chrome en modo kiosco en el servidor de jota-screen. Se maneja con
 - «Pon Netflix» → `action: open`.
 - «Ponme X» → `action: play` con `title`. Busca, abre y retoma por donde se dejó. Si devuelve `candidates`, no había un título exacto: di qué se está poniendo y ofrece las otras (se ponen con `id`).
 - «… en el perfil de Carmen» → añade `profile`. Sin él, usa el perfil por defecto. Para cambiar el de por defecto: `set_default_profile`. `profiles` lista los que hay.
-- «¿Qué series estoy viendo?», «¿por dónde voy de X?» → `action: watching` (lo que está a medias, con capítulo y lo que queda).
+- «¿Qué series estoy viendo?» → `action: watching` (lo que está a medias, con capítulo y lo que queda). «¿Por dónde voy de X?» → `watching` con `title: X` (solo esa, y su tarjeta).
 - «¿Qué he visto esta semana?», «¿qué veo más?» → `action: history` (por días y lo más visto).
 - «¿Qué es lo último que estaba viendo?» → `action: last`: solo contesta (y enseña su tarjeta en la tele). **Una pregunta nunca pone nada**: si quiere verla, que lo pida.
 - «Ponme la de ayer», «sigue con lo último», «ponla» → `action: play_last` (la pone por donde iba).

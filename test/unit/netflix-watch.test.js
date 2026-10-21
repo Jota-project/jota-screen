@@ -189,3 +189,14 @@ test('tarjeta de «qué he visto»: las últimas series del historial, sin repet
   assert.deepEqual(R.items.map(i => i.title), ['La serie de prueba', 'Una película'], 'una vez cada una, en orden');
   assert.ok(R.items[0].img.startsWith('http://127.0.0.1:8787/idle/nfx?u='));
 });
+
+test('«¿por dónde voy de X?»: solo esa serie; lo del historial sin «seguir viendo» lleva sus imágenes', async () => {
+  const hist = HISTORY.map(h => (h.title === 'Una película' ? { ...h, card: IMG('hc') } : h));
+  const { w } = rig({ read: async () => ({ profile: 'GA', items: [ITEMS[0]], history: hist, warn: [] }) });
+  await w.refresh();
+  assert.deepEqual(w.watching('la serie').items.map(i => i.title), ['La serie de prueba']);
+  assert.match(w.watching('otra cosa').note, /history/);
+  const R = w.media('recent');
+  assert.equal(R.items[1].title, 'Una película');
+  assert.equal(R.items[1].img, 'http://127.0.0.1:8787/idle/nfx?u=' + encodeURIComponent(IMG('hc')), 'imagen sacada por el capítulo del historial');
+});
