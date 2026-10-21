@@ -158,15 +158,20 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
     return { ok: 1, p };
   }
 
-  /** Abrir Netflix (opcionalmente en una dirección suya: búsqueda, ficha, reproducción). */
+  /**
+   * Abrir Netflix (opcionalmente en una dirección suya: búsqueda, ficha, reproducción). Su portada (el botón del mando)
+   * trae la pestaña tal como estaba; con Netflix ya delante, lleva al inicio (salir de una serie en pausa: otra pulsación).
+   */
   async function open(m = {}) {
+    const wasFront = isActive();
     const f = await front(m.profile);
     if (f.error) return f;
     if (m.url) {
       let path = '/';
       try { const u = new URL(m.url); path = u.pathname + u.search; } catch {}
       let here = ''; try { const u = new URL(f.p.u); here = u.pathname + u.search; } catch {}
-      if (!/^\/(browse)?$/.test(path) && path !== here) await go(path);
+      const home = /^\/(browse)?$/.test(path);
+      if (home ? wasFront && !/^\/browse\/?$/.test(here) : path !== here) await go(home ? '/browse' : path);
     }
     return { ok: 1, profile: nameOf(f.p.cur) };
   }
