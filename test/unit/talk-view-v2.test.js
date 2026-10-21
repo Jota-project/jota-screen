@@ -924,3 +924,24 @@ test('reset({ tab, from }): pregunta a la pestaña que se deja qué palabras ens
   const f = arg(q.cdp.exprs[k]);
   assert.deepEqual([f.tab, 'shown' in f], [true, false]);
 });
+
+test('tarjeta de contenido (Netflix): solo en v2, con el panel y un turno abierto; el ▶ cambia su estado', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const card = { key: 'nfx-play-1', kind: 'play', items: [{ title: 'La serie', sub: 'T1 · E2 · Uno', frac: 0.5, img: 'http://127.0.0.1:8787/idle/nfx?u=x', still: 'javascript:alert(1)' }] };
+  const { cdp, v } = make();
+  assert.equal(v.media(card), false, 'sin turno abierto, nada');
+  v.turn('panel', { voice: true });
+  assert.equal(v.media({ kind: 'raro', items: [{ title: 'x' }] }), false, 'lo que no es una tarjeta, no');
+  assert.equal(v.media(card), true);
+  await step(t);
+  assert.deepEqual(last(cdp).turns.at(-1).media, { key: 'nfx-play-1', kind: 'play', state: 'idle',
+    items: [{ title: 'La serie', sub: 'T1 · E2 · Uno', left: '', frac: 0.5, img: 'http://127.0.0.1:8787/idle/nfx?u=x', still: '' }] }, 'saneada: sin direcciones raras');
+  v.mediaState('press');
+  await step(t);
+  assert.equal(last(cdp).turns.at(-1).media.state, 'press');
+  // con la píldora (se ve contenido) o con el diseño viejo no se pone: no hay sitio, y quien la pone no espera
+  const pill = make(); pill.v.turn('island', { voice: true });
+  assert.equal(pill.v.media(card), false);
+  const old = make({ design: 'v1' }); old.v.turn('panel', { voice: true });
+  assert.equal(old.v.media(card), false);
+});

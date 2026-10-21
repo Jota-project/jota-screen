@@ -142,7 +142,13 @@ const hideOnly = d => `try{window.${LAYERS[d].global}&&window.${LAYERS[d].global
 
 /** @typedef {'listen' | 'think' | 'talk' | 'error' | 'done'} State */
 /** @typedef {{ id: string, kind: string, title: string, detail: string, status: 'run' | 'ok' | 'fail' }} Tool */
-/** @typedef {{ id: number, you: string, youFinal: boolean, jota: string, tools: Tool[], error: boolean, hint: string }} Turn */
+/** @typedef {{ id: number, you: string, youFinal: boolean, jota: string, tools: Tool[], error: boolean, hint: string, media?: Media | null }} Turn */
+/**
+ * Tarjeta de contenido del turno (la pone el servidor, no el Gateway): Netflix, por ahora. `list`: lo que se está viendo;
+ * `play`: el título que se va a poner, con su ▶ (`state`: 'idle' → 'press' al pulsarlo). Imágenes por URL absoluta.
+ * @typedef {{ title: string, sub: string, frac: number, img: string, still?: string, left?: string }} MediaItem
+ * @typedef {{ key: string, kind: 'list' | 'play', state: 'idle' | 'press', items: MediaItem[] }} Media
+ */
 /** playback: hay una reproducción de verdad (page-poll); null si context() no lo dice. page: la página de la tele
  * (`url`, `stage` = tipo de escenario o null, `idle` = el reposo) para decidir el formato; null si context() no la trae
  * (y sin playback ni página, manda el modo de talk.js)
@@ -205,9 +211,23 @@ function within(p, ms) {
 }
 
 /** @param {number} id @returns {Turn} */
-const newTurn = id => ({ id, you: '', youFinal: false, jota: '', tools: [], error: false, hint: '' });
+const newTurn = id => ({ id, you: '', youFinal: false, jota: '', tools: [], error: false, hint: '' }); // media: solo si la hay
+
+const MEDIA_MAX = 4;
+/** Tarjeta saneada (viene de otra capacidad del servidor; la capa la vuelve a sanear). @param {any} m @returns {Media | null} */
+function cleanMedia(m) {
+  if (!m || typeof m !== 'object' || (m.kind !== 'list' && m.kind !== 'play')) return null;
+  const str = (x, n = 160) => (typeof x === 'string' ? x.slice(0, n) : '');
+  const url = x => (typeof x === 'string' && /^https?:\/\/[^\s"'<>]+$/.test(x) && x.length < 2048 ? x : '');
+  const items = (Array.isArray(m.items) ? m.items : []).slice(0, MEDIA_MAX).filter(i => i && typeof i === 'object' && i.title).map(i => ({
+    title: str(i.title, 120), sub: str(i.sub), left: str(i.left, 60), frac: Math.min(1, Math.max(0, Number(i.frac) || 0)),
+    img: url(i.img), still: url(i.still),
+  }));
+  if (!items.length) return null;
+  return { key: str(m.key, 80) || m.kind, kind: m.kind, state: m.state === 'press' ? 'press' : 'idle', items };
+}
 /** Un turno que algo dijo o hizo (uno cancelado sin nada no se guarda). @param {Turn} t */
-const said = t => !!(t.you || t.jota || t.tools.length);
+const said = t => !!(t.you || t.jota || t.tools.length || t.media);
 /** El turno salió mal: error en la respuesta o un fallo de herramienta sin despejar (la pista lo marca). @param {Turn} t */
 const failed = t => t.error || !!t.hint;
 /** Las fichas que siguen girando al cerrar o archivar el turno pasan a SETTLED_STATUS (no cuentan como fallo). @param {Turn} t */
@@ -589,6 +609,27 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
       const i = cur.tools.findIndex(x => x.id === t.id);
       if (i >= 0) cur.tools[i] = t; else cur.tools.push(t);
       advance('think');
+      schedule();
+    },
+    /**
+     * Tarjeta de contenido en el turno en curso (diseño nuevo y con el panel a la vista: en la píldora no cabe y no se pone).
+     * Devuelve si se puso: quien la pone puede esperar a que se vea antes de seguir (el ▶ antes de abrir Netflix).
+     * @param {any} m ver Media
+     */
+    media(m) {
+      const c = cleanMedia(m), l = look();
+      if (!c || !open || muted || formNow() !== 'panel' || l.design !== 'v2') return false;
+      // las imágenes solo sobre una página nuestra (el reposo): la CSP de una web ajena las bloquearía (y ensuciaría su
+      // consola); allí la tarjeta va sin ellas, con su texto y su progreso
+      if (!(l.ctx === 'idle' || l.ctx === 'music' || (l.page && l.page.idle))) for (const it of c.items) { it.img = ''; it.still = ''; }
+      cur.media = c;
+      schedule();
+      return true;
+    },
+    /** Estado de la tarjeta del turno ('press': se pulsa su ▶). @param {'idle' | 'press'} st */
+    mediaState(st) {
+      if (!cur.media || (st !== 'idle' && st !== 'press')) return;
+      cur.media = { ...cur.media, state: st };
       schedule();
     },
     /** Fin de una herramienta con ficha; si falló, pista de reintento y orbe en error. @param {{ id: string, ok: boolean }} e */

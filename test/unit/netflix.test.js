@@ -168,3 +168,17 @@ test('control: las direcciones de Netflix van a su pestaña y el resto vuelve a 
   await c.nav('youtube.com');
   assert.deepEqual(seen, ['open https://www.netflix.com', 'leave', 'Page.navigate https://youtube.com']);
 });
+
+test('Netflix: antes de traerlo al frente avisa de lo que va a poner (la conversación enseña su tarjeta y su ▶)', async () => {
+  const { cdp, log } = fakeTv();
+  const seen = [];
+  const n = createNetflix({ cdp, cfg: { NETFLIX_PROFILE: 'Alfonso' }, store: memStore({ profiles: PROFILES, titles: { dark: { id: '80100172', title: 'Dark' } } }), ...fast,
+    beforePlay: async t => { seen.push({ ...t, before: log.length }); } });
+  await n.play({ title: 'Dark' });
+  assert.deepEqual(seen, [{ id: '80100172', title: 'Dark', before: 0 }], 'con el id ya sabido y antes de tocar nada en la tele');
+  await n.play({ id: '81398721' });
+  assert.equal(seen[1].id, '81398721');
+  // si quien escucha falla, se pone igual
+  const m = createNetflix({ cdp: fakeTv().cdp, cfg: { NETFLIX_PROFILE: 'Alfonso' }, store: memStore({ profiles: PROFILES }), ...fast, beforePlay: async () => { throw new Error('sin capa'); } });
+  assert.equal((await m.play({ title: 'Dark' })).ok, 1);
+});

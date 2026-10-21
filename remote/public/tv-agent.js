@@ -72,6 +72,9 @@
     ink: '#14101a',                // tinta del «!» sobre ámbar (ficha y orbe): ≥ 3:1 en todo el degradado
     orb: ['#7c6aae', '#6e8cc4'],   // malva y cielo, sin carátula
     orbLight: '#efe9fb',           // brillo del orbe
+    media: {                       // tarjeta de contenido (Netflix): su rojo y la tinta del degradado de lectura sobre la imagen
+      red: '#e50914', redOn: '#ff2a35', shade: '16,12,22', fade: [0.95, 0.78], play: 0.45,
+    },
   };
   // @look:fin
 
@@ -298,6 +301,52 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
 .w[data-night] .ic svg,.w[data-night] .ss svg{stroke:var(--t-main)}
 .w[data-night] .spin{border-top-color:var(--t-main)}
 
+/* tarjeta de contenido (Netflix): brota del borde de abajo, como las fichas. Las imágenes nunca más grandes que su tamaño
+   real en la tele (ambiente 848, fotograma 342, tarjeta 665): el panel mide 640, así que se ven nítidas */
+.md:empty{display:none}
+.tn:not(:last-child) .md,.w[data-form=pill] .md{display:none}
+.mp{position:relative;border-radius:${u(30)};overflow:hidden;aspect-ratio:4/3;background:color-mix(in srgb,${LOOK.card.fill} ${LOOK.card.alpha * 100}%,transparent);
+  box-shadow:inset 0 0 0 .5px rgba(255,255,255,.1),0 ${u(18)} ${u(44)} rgba(0,0,0,.35);animation:bud .9s var(--tv-ease) backwards} /* filo fino, ver .body */
+.mpi{position:absolute;inset:0}
+.mpi img,.ms img,.mli-i img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .8s var(--tv-ease)}
+:is(.mpi,.ms,.mli-i) img[data-on]{opacity:1}
+.mp::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(to top,rgba(${LOOK.media.shade},${LOOK.media.fade[0]}) 0%,rgba(${LOOK.media.shade},${LOOK.media.fade[1]}) 38%,rgba(${LOOK.media.shade},0) 72%)}
+.mpc{position:absolute;z-index:1;left:${u(30)};right:${u(30)};bottom:${u(26)};display:flex;flex-direction:column;gap:${u(12)}}
+.mk{display:flex;align-items:center;gap:${u(10)};font:600 ${u(20)}/1 var(--tv-sans);letter-spacing:.14em;text-transform:uppercase;color:var(--t-soft)}
+.mk i{width:${u(10)};height:${u(10)};border-radius:50%;background:${LOOK.media.red};box-shadow:0 0 ${u(12)} ${LOOK.media.red}}
+.mt{font:420 ${u(44)}/1.05 var(--tv-serif);font-variation-settings:'opsz' 144;color:var(--t-main);letter-spacing:-.01em;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
+.mr{display:flex;align-items:center;gap:${u(18)};min-width:0}
+.ms{position:relative;flex:none;width:${u(168)};aspect-ratio:16/9;border-radius:${u(12)};overflow:hidden;
+  background:color-mix(in srgb,var(--t-you) 14%,transparent);box-shadow:0 0 0 .5px rgba(255,255,255,.12)} /* filo fino, ver .body */
+.mx{min-width:0;display:flex;flex-direction:column;gap:${u(6)}}
+.msub{font:500 ${u(26)}/1.2 var(--tv-sans);color:var(--t-main);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mleft{font:400 ${u(24)}/1.2 var(--tv-sans);color:var(--t-soft);white-space:nowrap}
+.msub:empty,.mleft:empty{display:none}
+.mbar{display:block;height:${u(5)};border-radius:${u(3)};background:rgba(246,243,240,.2);overflow:hidden}
+.mbar i{display:block;height:100%;background:${LOOK.media.red};transform-origin:left;transition:transform .8s var(--tv-ease)}
+/* el ▶: en el centro de la imagen; al pulsarlo se hunde, se enciende y suelta una onda */
+.mplay{position:absolute;z-index:1;left:50%;top:25%;width:${u(96)};height:${u(96)};margin:${u(-48)} 0 0 ${u(-48)};border-radius:50%;
+  background:rgba(${LOOK.media.shade},${LOOK.media.play});box-shadow:0 0 0 ${u(2.5)} rgba(246,243,240,.9);backdrop-filter:blur(${u(8)});
+  transition:transform .35s var(--tv-ease),background .35s var(--tv-ease)}
+.mplay i{position:absolute;left:54%;top:50%;transform:translate(-50%,-50%);border-style:solid;border-color:transparent transparent transparent #f6f3f0;
+  border-width:${u(17)} 0 ${u(17)} ${u(28)}}
+.mplay::after{content:"";position:absolute;inset:0;border-radius:50%;box-shadow:0 0 0 ${u(2)} rgba(246,243,240,.8);opacity:0}
+.md[data-press] .mplay{transform:scale(.9);background:${LOOK.media.red}}
+.md[data-press] .mplay::after{animation:ripple .9s var(--tv-ease) forwards}
+@keyframes ripple{from{opacity:.9;transform:scale(1)}to{opacity:0;transform:scale(1.9)}}
+.md[data-press] .mbar i{background:${LOOK.media.redOn}}
+/* lista: lo que se está viendo, con la tarjeta de cada serie */
+.ml{display:flex;flex-direction:column;gap:${u(16)}}
+.mli{display:grid;grid-template-columns:${u(220)} minmax(0,1fr);gap:${u(20)};align-items:center;animation:bud .9s var(--tv-ease) backwards}
+.mli-i{position:relative;aspect-ratio:16/9;border-radius:${u(14)};overflow:hidden;background:color-mix(in srgb,var(--t-you) 14%,transparent);
+  box-shadow:0 0 0 .5px rgba(255,255,255,.12),0 ${u(10)} ${u(26)} rgba(0,0,0,.3)} /* filo fino, ver .body */
+.mli .mt{font-size:${u(32)};-webkit-line-clamp:1}
+.mli .msub{font-weight:400;font-size:${u(24)};color:var(--t-soft)}
+.mli .mbar{margin-top:${u(4)}}
+.w[data-calm] .md[data-press] .mplay::after{animation:none}
+
 /* calma (o noche): nada ondula ni gira deprisa; las palabras entran sin desenfoque */
 .w[data-calm] .orbe,.w[data-calm] .orbe::after{animation:none}
 .w[data-calm][data-state=think] .orbe::after{opacity:0}
@@ -371,6 +420,16 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
   const hasBackdrop = () => { try { return window.CSS.supports('backdrop-filter', 'blur(1px)') || window.CSS.supports('-webkit-backdrop-filter', 'blur(1px)'); } catch { return false; } };
 
   // ── Foto: se sanea todo lo que llega (viene del servidor, pero la capa no debe romperse con un dato raro)
+  // tarjeta de contenido del turno (Netflix): `list` (lo que se está viendo) o `play` (lo que se va a poner, con su ▶)
+  function cleanMedia(m) {
+    if (!m || typeof m !== 'object' || (m.kind !== 'list' && m.kind !== 'play')) return null;
+    const str = (x, n) => (typeof x === 'string' ? x.slice(0, n) : '');
+    const url = x => (typeof x === 'string' && /^https?:\/\/[^\s"'<>]+$/.test(x) ? x : '');
+    const items = (Array.isArray(m.items) ? m.items : []).slice(0, 4).filter(i => i && typeof i === 'object' && typeof i.title === 'string' && i.title).map(i => ({
+      title: str(i.title, 120), sub: str(i.sub, 160), left: str(i.left, 60), frac: Math.min(1, Math.max(0, Number(i.frac) || 0)), img: url(i.img), still: url(i.still),
+    }));
+    return items.length ? { key: str(m.key, 80) || m.kind, kind: m.kind, state: m.state === 'press' ? 'press' : 'idle', items } : null;
+  }
   function clean(o) {
     const s = o && typeof o === 'object' ? o : {};
     const str = x => (typeof x === 'string' ? x : '');
@@ -388,6 +447,7 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
           id: String(x.id), kind: str(x.kind), title: str(x.title), detail: str(x.detail),
           status: x.status === 'ok' || x.status === 'fail' ? x.status : 'run',
         })),
+        media: cleanMedia(t.media),
       })),
       icons: s.icons && typeof s.icons === 'object' ? s.icons : {},
       enter: ENTERS.includes(s.enter) ? s.enter : 'open',
@@ -577,6 +637,7 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
       v.jota.el.classList.toggle('sm', small(v, t, current, s.live));
       if (v.hint.textContent !== t.hint) v.hint.textContent = t.hint;
       syncTools(v, t.tools, s.icons);
+      syncMedia(v, s.form === 'panel' ? t.media : null);   // en la píldora no se ve: ni se construye (ni pide sus imágenes)
       // un turno que ya no es el actual se enseña entero; al restaurar, también el actual (lo ya dicho no se revela otra vez),
       // o, si viene de otra pestaña (`shown`), lo que allí ya se veía (el resto se revela como siempre)
       if (!current) flushLine(v.you), flushLine(v.jota);
@@ -597,9 +658,9 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
   }
   function makeTurn() {
     const e = el('div', 'tn');
-    const you = line('p', 'u'), tcs = el('div', 'tcs'), jota = line('p', 'j'), hint = el('p', 'hint');
-    e.append(you.el, tcs, jota.el, hint);
-    return { el: e, you, jota, tcs, hint, tools: new Map(), said: { you: false, jota: false, fails: new Set() }, sm: null };
+    const you = line('p', 'u'), tcs = el('div', 'tcs'), jota = line('p', 'j'), hint = el('p', 'hint'), md = el('div', 'md');
+    e.append(you.el, tcs, jota.el, hint, md);
+    return { el: e, you, jota, tcs, hint, md, media: '', tools: new Map(), said: { you: false, jota: false, fails: new Set() }, sm: null };
   }
   // un turno que llega ya como anterior (p. ej. al reabrir la capa) se anunció cuando era el actual: no se repite. Al
   // restaurar tras navegar, el actual tampoco (salvo lo que aún no era final: la respuesta en directo)
@@ -690,6 +751,64 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
       setFlag(c.el, 'data-d', !!x.detail);
       if (c.status !== x.status) setStatus(c, x.status);
     }
+  }
+  // ── Tarjeta de contenido (Netflix). Se rehace solo si cambia su clave o su contenido; el ▶ (state 'press') solo cambia
+  // un atributo, así su animación no reinicia la tarjeta. Una imagen que no carga (la CSP de una web la bloquea) se quita
+  // y la tarjeta sigue, sin ella.
+  function picture(cls, src) {
+    const box = el('div', cls);
+    if (src) {
+      const im = el('img');
+      im.alt = ''; im.decoding = 'async'; im.referrerPolicy = 'no-referrer';
+      im.addEventListener('load', () => { im.dataset.on = ''; kick(PULSE.event); });
+      im.addEventListener('error', () => { im.remove(); box.dataset.empty = ''; });
+      im.src = src;
+      box.appendChild(im);
+    } else box.dataset.empty = '';
+    return box;
+  }
+  function bar(frac) {
+    const b = el('span', 'mbar'), f = el('i');
+    f.style.transform = `scaleX(${frac.toFixed(3)})`;
+    b.appendChild(f);
+    return b;
+  }
+  function syncMedia(v, m) {
+    const sig = m ? JSON.stringify([m.key, m.kind, m.items]) : '';
+    if (sig !== v.media) {
+      v.media = sig;
+      v.md.replaceChildren();
+      if (m && m.kind === 'play') {
+        const it = m.items[0];
+        const card = el('div', restoring ? 'mp sd' : 'mp');
+        const art = picture('mpi', it.img);
+        const cap = el('div', 'mpc');
+        const k = el('div', 'mk'); k.append(el('i'), el('span', '', 'Netflix'));
+        cap.append(k, el('div', 'mt', it.title));
+        const row = el('div', 'mr');
+        if (it.still) row.appendChild(picture('ms', it.still));
+        const tx = el('div', 'mx');
+        tx.append(el('div', 'msub', it.sub), el('div', 'mleft', it.left));
+        row.append(tx);
+        cap.append(row, bar(it.frac));
+        const play = el('div', 'mplay'); play.appendChild(el('i'));
+        card.append(art, cap, play);
+        v.md.appendChild(card);
+      } else if (m) {
+        const list = el('div', restoring ? 'ml sd' : 'ml');
+        m.items.forEach((it, i) => {
+          const r = el('div', 'mli');
+          r.style.animationDelay = (restoring ? 0 : 120 * i) + 'ms';
+          const tx = el('div', 'mx');
+          tx.append(el('div', 'mt', it.title), el('div', 'msub', [it.sub, it.left].filter(Boolean).join(' · ')), bar(it.frac));
+          r.append(picture('mli-i', it.img), tx);
+          list.appendChild(r);
+        });
+        v.md.appendChild(list);
+      }
+      if (m) kick(PULSE.event);
+    }
+    setFlag(v.md, 'data-press', !!(m && m.state === 'press'));
   }
   function makeCard(x, icons) {
     const e = el('div', restoring ? 'tc sd' : 'tc'), ic = el('div', 'ic'), tx = el('div', 'tx'), tt = el('div', 'tt'), tb = el('div', 'tb'), ss = el('div', 'ss');

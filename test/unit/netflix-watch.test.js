@@ -51,7 +51,7 @@ function rig({ active = false, tabGuid = null, read, last = null, now } = {}) {
   const cdp = { ready: true, bgTab: async () => { seen.push('bgTab'); return { close: async () => seen.push('close') }; } };
   const store = memStore();
   const changed = [];
-  const w = W.createWatch({ cdp, netflix, store, onChange: () => changed.push(1), ...(now ? { now } : {}), read: read || (async (tab, o) => { seen.push('read:' + o.guid + ':' + o.canSwitch); return { profile: 'GA', items: ITEMS, history: HISTORY, warn: [] }; }) });
+  const w = W.createWatch({ cdp, netflix, store, self: 'http://127.0.0.1:8787', onChange: () => changed.push(1), ...(now ? { now } : {}), read: read || (async (tab, o) => { seen.push('read:' + o.guid + ':' + o.canSwitch); return { profile: 'GA', items: ITEMS, history: HISTORY, warn: [] }; }) });
   return { w, seen, store, changed };
 }
 
@@ -144,4 +144,20 @@ test('órdenes: «seguir viendo» e historial no son para invitados', async () =
   const guest = { role: 'guest' }, member = { role: 'member' };
   for (const op of ['watching', 'history', 'play_last', 'refresh']) assert.match((await cmds.dispatch({ t: 'netflix', op }, { dev: guest })).error, /privado/, op);
   assert.ok((await cmds.dispatch({ t: 'netflix', op: 'watching' }, { dev: member })).items);
+});
+
+test('tarjetas para la conversación: la lista de lo que se ve y la del título que se va a poner, con direcciones enteras', async () => {
+  const { w } = rig();
+  assert.equal(w.media('list'), null, 'sin datos, nada');
+  await w.refresh();
+  const L = w.media('list');
+  assert.equal(L.kind, 'list');
+  assert.deepEqual(L.items[0], { title: 'La serie de prueba', sub: 'T2 · E4 · Capítulo: con dos puntos', left: 'quedan 30 min', frac: 0.25,
+    img: 'http://127.0.0.1:8787/idle/nfx?u=' + encodeURIComponent(IMG('c1')) });
+  assert.equal(L.items[1].sub, 'Película');
+  const P = w.media('play', { title: 'la serie de prueba' });
+  assert.equal(P.items[0].img, 'http://127.0.0.1:8787/idle/nfx?u=' + encodeURIComponent(IMG('a1')), 'la imagen de ambiente');
+  assert.equal(P.items[0].still, 'http://127.0.0.1:8787/idle/nfx?u=' + encodeURIComponent(IMG('s1')), 'y el fotograma del capítulo');
+  assert.equal(w.media('play', { id: 2001 }).key, 'nfx-play-1001', 'también por el id del capítulo');
+  assert.equal(w.media('play', { title: 'otra cosa' }), null, 'lo que no está en «seguir viendo», sin tarjeta');
 });

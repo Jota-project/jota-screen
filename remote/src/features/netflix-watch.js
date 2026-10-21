@@ -172,9 +172,11 @@ const fmtMin = sec => { const m = Math.max(1, Math.round(sec / 60)); return m >=
  *   netflix: { isActive: () => boolean, profileInfo: () => { name: string, guid: string | null, tabGuid: string | null }, learn: (ps: Record<string, string>) => void, play: (m: any) => Promise<any>, last?: () => any },
  *   store: { load: () => any, save: (v: any) => void },
  *   log?: (s: string) => void, onChange?: () => void, now?: () => number, read?: typeof readAll, fetch?: typeof fetch,
- * }} deps   read: el lector (para las pruebas)
+ *   self?: string,
+ * }} deps   read: el lector (para las pruebas). self: dirección del servidor para la tele (las tarjetas de la conversación
+ *   se pintan encima de cualquier web: sus imágenes necesitan la dirección entera, no la ruta)
  */
-function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {}, now = Date.now, read = readAll, fetch: get = fetch }) {
+function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {}, now = Date.now, read = readAll, fetch: get = fetch, self = '' }) {
   /** @type {{ at: number, profile: string | null, items: any[], history: any[] }} */
   let data = { at: 0, profile: null, items: [], history: [], ...(store.load() || {}) };
   /** @type {Promise<any> | null} */ let busy = null;
@@ -219,6 +221,31 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
       ep: it.ep ? { s: it.ep.s, e: it.ep.e, title: it.ep.title, still: img(it.ep.still) } : null,
       card: img(it.card), story: img(it.story),
     }));
+  }
+
+  // ───────── tarjetas para la conversación con Jota en la tele (talk-view.js: media)
+  const abs = u => { const p = img(u); return p ? self + p : ''; };
+  const sub = it => (it.ep ? [it.ep.s && 'T' + it.ep.s, it.ep.e && 'E' + it.ep.e, it.ep.title].filter(Boolean).join(' · ') : 'Película');
+  const left = it => (it.dur ? (it.pos >= 30 ? 'quedan ' + fmtMin(it.dur - it.pos) : (it.ep ? 'siguiente · ' : '') + fmtMin(it.dur)) : '');
+  const frac = it => (it.dur ? Math.min(1, it.pos / it.dur) : 0);
+  /** Un título de «seguir viendo» por id (de la serie o del capítulo) o por nombre. @param {{ id?: any, title?: string }} q */
+  function find(q) {
+    const id = Number(q && q.id) || null;
+    return data.items.find(i => id && (i.id === id || (i.ep && i.ep.id === id))) || data.items.find(i => q && q.title && norm(i.title) === norm(q.title)) || null;
+  }
+  /**
+   * `list`: lo que se está viendo (hasta 4). `play`: el título q, con su imagen de ambiente y el fotograma del capítulo.
+   * null si no hay datos (o no se conoce ese título). @param {'list' | 'play'} kind @param {{ id?: any, title?: string }} [q]
+   */
+  function media(kind, q) {
+    if (now() - data.at > 48 * 3600e3) return null;
+    if (kind === 'list') {
+      const items = data.items.slice(0, 4).map(it => ({ title: it.title, sub: it.ep ? sub(it) : 'Película', left: left(it), frac: frac(it), img: abs(it.card || it.story) }));
+      return items.length ? { key: 'nfx-list-' + data.at, kind, items } : null;
+    }
+    const it = find(q || {});
+    if (!it) return null;
+    return { key: 'nfx-play-' + it.id, kind, items: [{ title: it.title, sub: sub(it), left: left(it), frac: frac(it), img: abs(it.story || it.card), still: it.ep ? abs(it.ep.still) : '' }] };
   }
 
   // ───────── para el agente
@@ -298,7 +325,7 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
   /** órdenes para `netflix` (src/features/netflix.js: extend) */
   const ops = { watching: () => watching(), history: () => history(), play_last: () => playLast(), refresh: () => refresh('a petición') };
 
-  return { refresh, soon, start, forIdle, watching, history, playLast, serveImg, routes, ops, data: () => data };
+  return { refresh, soon, start, forIdle, watching, history, playLast, serveImg, routes, ops, find, media, data: () => data };
 }
 
 module.exports = { readAll, createWatch, pgProfile, pgReady, pgContinue, pgArt, pgHistory, isoDate, NFX_IMG };

@@ -75,6 +75,12 @@ const srv = http.createServer((q, r) => {
   const u = q.url.split('?')[0];
   if (PAGES[u]) { r.writeHead(200, { 'content-type': TYPES['.html'], 'content-security-policy': PAGES[u].csp }); return r.end(PAGES[u].html); }
   if (u.startsWith('/idle/art')) { r.writeHead(200, { 'content-type': 'image/svg+xml' }); return r.end(ART); }
+  // imágenes de las tarjetas de Netflix: inventadas; con NFX_IMG_DIR=carpeta, las de esa carpeta (nunca en git)
+  if (u.startsWith('/idle/nfx')) {
+    const f = process.env.NFX_IMG_DIR && path.join(process.env.NFX_IMG_DIR, path.basename(new URLSearchParams(q.url.split('?')[1]).get('u') || ''));
+    if (f && fs.existsSync(f)) { r.writeHead(200, { 'content-type': 'image/webp' }); return r.end(fs.readFileSync(f)); }
+    r.writeHead(200, { 'content-type': 'image/svg+xml' }); return r.end(ART);
+  }
   const f = path.join(PUB, u === '/' ? 'idle.html' : u);
   if (!f.startsWith(PUB) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { r.writeHead(404); return r.end(); }
   r.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream', ...(IDLE_CSP && f.endsWith('.html') ? { 'content-security-policy': IDLE_CSP } : {}) });
@@ -88,6 +94,15 @@ const JOTA = 'Ahí va. Jazz tranquilo en el salón, empezando por Miles Davis.';
 const LONG = 'Mañana, sol y veinticuatro grados en Elche. Por la tarde se levanta algo de viento de levante y por la noche refresca bastante, así que mejor llevar una chaqueta si sales a cenar.';
 const tool = (id, kind, title, detail, status) => ({ id, kind, title, detail, status });
 const turn = (id, o) => ({ id, you: YOU, youFinal: true, jota: '', tools: [], error: false, hint: '', ...o });
+// tarjetas de Netflix (las imágenes, del servidor de aquí: la dirección entera, como las manda el de verdad)
+const nimg = n => `${base()}/idle/nfx?u=${n}`;
+const NFX_LIST = () => ({ key: 'nfx-list', kind: 'list', state: 'idle', items: [
+  { title: 'Aquí no hay quien viva', sub: 'T5 · E5 · Érase un banco en la acera', left: 'quedan 1 h 21 min', frac: 0.02, img: nimg('0-card.webp') },
+  { title: 'Solar Opposites', sub: 'T4 · E7 · El buzón secreto de cartón', left: 'quedan 13 min', frac: 0.4, img: nimg('1-card.webp') },
+  { title: 'Espíritus del Inframundo', sub: 'T1 · E10 · Tenaga y Ashinaga', left: 'quedan 7 min', frac: 0.71, img: nimg('2-card.webp') },
+] });
+const NFX_PLAY = state => () => ({ key: 'nfx-play', kind: 'play', state, items: [
+  { title: 'Aquí no hay quien viva', sub: 'T5 · E5 · Érase un banco en la acera', left: 'quedan 1 h 21 min', frac: 0.02, img: nimg('0-story.webp'), still: nimg('0-still.webp') }] });
 const SCENES = [
   { n: 'escucha', state: 'listen', live: true, turns: [turn(1, { you: 'Pon algo tranquilo de', youFinal: false })] },
   { n: 'pensando', state: 'think', live: true, turns: [turn(1)] },
@@ -107,6 +122,12 @@ const SCENES = [
     turn(1, { you: '¿Qué tiempo hace mañana?', jota: LONG, tools: [tool('w', 'web', 'Consultar el tiempo', 'Elche · mañana', 'ok')] }),
     turn(2, { you: '¿Y el fin de semana? ¿Lloverá en la sierra?', jota: LONG + ' ' + LONG,
       tools: [tool('x', 'web', 'Consultar el tiempo', 'Elche · sábado y domingo', 'ok'), tool('y', 'web', 'Consultar el tiempo', 'Sierra de Aitana', 'ok')] })] },
+  // Netflix: «¿qué series estoy viendo?» y «pon Aquí no hay quien viva por donde iba» (la tarjeta y, al pulsar, su ▶)
+  { n: 'netflix-lista', state: 'talk', live: false, turns: [turn(1, { you: '¿Qué series estoy viendo?', jota: 'Tienes tres a medias. La que más, Aquí no hay quien viva.', media: NFX_LIST })] },
+  { n: 'netflix-poner', state: 'think', live: true, turns: [turn(1, { you: 'Pon Aquí no hay quien viva por donde iba.', jota: '',
+    tools: [tool('n', 'video', 'Poner en Netflix', 'Aquí no hay quien viva', 'run')], media: NFX_PLAY('idle') })] },
+  { n: 'netflix-pulsa', state: 'think', live: true, turns: [turn(1, { you: 'Pon Aquí no hay quien viva por donde iba.', jota: '',
+    tools: [tool('n', 'video', 'Poner en Netflix', 'Aquí no hay quien viva', 'run')], media: NFX_PLAY('press') })] },
 ];
 const CONTEXTS = [
   { n: 'reposo', url: '/', ctx: 'idle' },
@@ -117,7 +138,13 @@ const CONTEXTS = [
 const icons = turns => Object.fromEntries([...new Set(turns.flatMap(t => t.tools.map(x => x.kind)))].filter(k => KINDS[k]).map(k => [k, KINDS[k].icon]));
 function snapFor(sc, c) {
   return { form: c.ctx === 'video' ? 'pill' : 'panel', ctx: c.ctx, state: sc.state, live: sc.live, night: !!sc.night, calm: !!sc.calm,
-    glass: sc.glass || 'A', colors: c.colors || null, turns: sc.turns, icons: icons(sc.turns) };
+    glass: sc.glass || 'A', colors: c.colors || null, icons: icons(sc.turns),
+    // como el servidor (talk-view.js: media): las imágenes de la tarjeta solo sobre el reposo (una web ajena las bloquearía)
+    turns: sc.turns.map(t => {
+      if (typeof t.media !== 'function') return t;
+      const m = t.media();
+      return { ...t, media: c.ctx === 'idle' || c.ctx === 'music' ? m : { ...m, items: m.items.map(i => ({ ...i, img: '', still: '' })) } };
+    }) };
 }
 
 // datos del reposo (como reposo-solapes.js): hora fija, con o sin música

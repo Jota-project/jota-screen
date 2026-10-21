@@ -86,7 +86,8 @@ const BUILDERS = {
   },
   // Netflix va en su propia pestaña (src/features/netflix.js): abrirlo o poner un título lleva a la píldora
   tv_netflix: a => (a.action === 'open' ? { kind: 'video', title: 'Abrir en la tele', detail: 'Netflix' }
-    : a.action === 'play' ? { kind: 'video', title: 'Poner en Netflix', detail: clip(a.title) || 'Netflix' } : null),
+    : a.action === 'play' ? { kind: 'video', title: 'Poner en Netflix', detail: clip(a.title) || 'Netflix' }
+      : a.action === 'play_last' ? { kind: 'video', title: 'Poner en Netflix', detail: 'Lo último que viste' } : null),
   tv_spotify: a => (SPOTIFY_TITLES[a.action] ? { kind: 'music', title: SPOTIFY_TITLES[a.action], detail: 'Spotify' } : null),
   tv_activity: a => {
     const op = a.op || 'set';

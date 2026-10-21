@@ -189,9 +189,17 @@ talk.js ── mismo filtro de turnId/fantasma que los tokens, rearma el plazo (
    ▼
 talk-view.js ── foto completa cada ≤ 100 ms: TVAgent.render(SNAP)
       {form pill|panel, ctx idle|music|web|video, state listen|think|talk|error|done, live, night, calm, glass, colors,
-       turns: [{id, you, youFinal, jota, tools:[{id, kind, title, detail, status run|ok|fail}], error, hint}], icons,
+       turns: [{id, you, youFinal, jota, tools:[{id, kind, title, detail, status run|ok|fail}], error, hint, media?}], icons,
        enter open|restore, tab? (solo la foto del cambio de pestaña), shown? {turnId: [tú, Jota]} (con tab)}
+      media? = tarjeta de contenido del turno (la pone el servidor, no el Gateway; hoy, Netflix):
+       {key, kind list|play, state idle|press, items:[{title, sub, left, frac 0–1, img, still}]}
 ```
+
+- `media`: `view.media(m)` la pone en el turno en curso solo en v2 y con el panel delante (devuelve si la puso), y
+  `view.mediaState('press')` pulsa su ▶. Las imágenes van por dirección entera (`/idle/nfx` del servidor) y solo cuando
+  la capa está sobre el reposo: la CSP de una web ajena las bloquearía; allí la tarjeta va sin ellas. En la píldora no
+  se ve ni se construye. La usa Netflix (`server.js`): «¿qué estoy viendo?» pone la lista; al poner un título de «seguir
+  viendo», antes de traer Netflix al frente, su tarjeta, 1,1 s para verla y el ▶ (0,45 s); luego la píldora.
 
 - Los valores que admite la foto, los nombres de las fuentes y el del binding viven en `src/tv/agent-contract.js`;
   `tv-agent.js` lleva su copia y `tv-agent-static.test.js` comprueba que coinciden.

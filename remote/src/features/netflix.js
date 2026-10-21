@@ -42,9 +42,12 @@ const PRIVATE = new Set(['watching', 'history', 'play_last', 'refresh']);
  *   wait?: (ms: number) => Promise<void>,
  *   now?: () => number,
  *   onLeave?: () => void,
- * }} deps   onLeave: Netflix ha pasado a segundo plano (src/features/netflix-watch.js vuelve a leer al rato)
+ *   beforePlay?: (t: { id: string, title: string }) => any,
+ * }} deps   onLeave: Netflix ha pasado a segundo plano (src/features/netflix-watch.js vuelve a leer al rato).
+ *   beforePlay: va a ponerse un título, antes de traer Netflix al frente (la conversación enseña su tarjeta y su ▶);
+ *   se espera a que acabe
  */
-module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait = ms => new Promise(r => setTimeout(r, ms)), now = Date.now, onLeave = () => {} }) {
+module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait = ms => new Promise(r => setTimeout(r, ms)), now = Date.now, onLeave = () => {}, beforePlay = () => {} }) {
   /** @type {Data} */
   const data = { profiles: {}, titles: {}, ...(store.load() || {}) };
   const save = () => { try { store.save(data); } catch (e) { log('netflix: no se pudo guardar: ' + e.message); } };
@@ -172,6 +175,8 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
     const id = m.id === undefined ? '' : String(m.id);
     if (id && !/^\d{4,12}$/.test(id)) return { error: 'id no válido' };
     if (!title && !id) return { error: 'falta el título' };
+    const known = id || (data.titles && data.titles[norm(title)] && data.titles[norm(title)].id) || '';
+    try { await beforePlay({ id: known, title }); } catch (e) { log('netflix: ' + e.message); }
     const f = await front(m.profile);
     if (f.error) return f;
     /** @type {{ id: string, title: string } | undefined} */

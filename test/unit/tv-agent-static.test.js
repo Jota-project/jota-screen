@@ -829,3 +829,27 @@ test('restaurada, una foto que llega antes de su primer frame espera a ese frame
   assert.equal(w.dataset.ctx, 'web', 'tras el primer frame (ya en su caja), la foto nueva');
   for (let i = 0; i < 20; i++) { p.advance(16); assert.ok(pending <= 1, `un solo rAF del motor pendiente (frame ${i}: ${pending})`); }
 });
+
+test('tarjeta de Netflix: lista o «poner» con su ▶; pulsarlo no rehace la tarjeta', () => {
+  const p = loadPage();
+  const A = p.win.TVAgent;
+  const play = { key: 'nfx-play-1', kind: 'play', state: 'idle', items: [{ title: 'La serie', sub: 'T1 · E2', left: 'quedan 20 min', frac: 0.3, img: 'http://127.0.0.1:8787/idle/nfx?u=a', still: 'http://127.0.0.1:8787/idle/nfx?u=b' }] };
+  const t1 = { id: 1, you: 'Pon la serie', youFinal: true, jota: 'Vale. ', tools: [], error: false, hint: '', media: play };
+  A.render(snap({ turns: [t1] }));
+  const root = p.host().shadowRoot;
+  const find = (n, cls) => { if (n.className && n.className.split(' ').includes(cls)) return n; for (const c of n.childNodes || []) { const r = find(c, cls); if (r) return r; } return null; };
+  const md = find(root, 'md'), card = find(root, 'mp');
+  assert.ok(card && find(card, 'mplay') && find(card, 'ms'), 'imagen, fotograma del capítulo y ▶');
+  assert.equal(find(card, 'mt').textContent, 'La serie');
+  A.render(snap({ turns: [{ ...t1, media: { ...play, state: 'press' } }] }));
+  assert.equal(find(root, 'mp'), card, 'el ▶ no rehace la tarjeta');
+  assert.ok(md.attrs.has('data-press') || md.hasAttribute?.('data-press'), 'se pulsa');
+  // lista: una fila por título
+  const list = { key: 'nfx-list-1', kind: 'list', state: 'idle', items: [1, 2, 3].map(i => ({ title: 'Serie ' + i, sub: 'T1 · E' + i, frac: 0.1 * i, img: '' }))};
+  A.render(snap({ turns: [{ ...t1, id: 2, media: list }] }));
+  const ml = find(root, 'ml');
+  assert.equal(ml.childNodes.length, 3);
+  // sin tarjeta, nada
+  A.render(snap({ turns: [{ ...t1, id: 3, media: null }] }));
+  assert.equal(find(root, 'mp'), null); assert.equal(find(root, 'ml'), null);
+});

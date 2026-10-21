@@ -109,10 +109,19 @@ const limiter = createRateLimiter({ max: 5, ms: 60_000 }); // 5 fallos -> 60 s b
 // ───────────────────────── capacidades
 const keyboard = createKeyboard({ cdp, log, clients: ws.clients, devOf });
 const stage = createStage({ cdp, state, cfg: CFG, nav: u => control.nav(u) });
-const netflix = createNetflix({ cdp, cfg: CFG, store: createJsonStore(CFG.FILES.netflix, { fallback: {} }), log: log.info, onLeave: () => nfxWatch.soon() });
+const pause = ms => new Promise(r => setTimeout(r, ms));
+const netflix = createNetflix({ cdp, cfg: CFG, store: createJsonStore(CFG.FILES.netflix, { fallback: {} }), log: log.info, onLeave: () => nfxWatch.soon(),
+  // con la conversación en el panel: la tarjeta de la serie, un respiro para verla y su ▶; luego Netflix al frente
+  beforePlay: async t => {
+    const card = nfxWatch.media('play', t);
+    if (!card || !talkView.media(card)) return;
+    await pause(1100); talkView.mediaState('press'); await pause(450);
+  } });
 // «Seguir viendo» e historial de Netflix: lo lee una pestaña oculta de vez en cuando; lo usan el reposo y el agente
-const nfxWatch = createWatch({ cdp, netflix, store: createJsonStore(CFG.FILES.watching, { fallback: {} }), log: log.info, onChange: () => idle.nfxChanged() });
-netflix.extend(nfxWatch.ops);
+const nfxWatch = createWatch({ cdp, netflix, store: createJsonStore(CFG.FILES.watching, { fallback: {} }), log: log.info, onChange: () => idle.nfxChanged(), self: SELF });
+netflix.extend({ ...nfxWatch.ops,
+  // «¿qué estoy viendo?»: además de la respuesta para el agente, la lista con sus imágenes en la conversación
+  watching: () => { const card = nfxWatch.media('list'); if (card) talkView.media(card); return nfxWatch.watching(); } });
 // tv_open / tv_open_app con `layout`: Jota elige el formato de la conversación para la página que abre. Abrir la misma
 // URL (o recargar) es un documento nuevo sin cambio de URL: onPage no lo ve y se avisa desde aquí
 const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave(), netflix,
