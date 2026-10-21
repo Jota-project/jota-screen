@@ -6,10 +6,14 @@ import { reconnect, rpc } from '../core/api.js';
 import { ROLE_N, left } from '../core/perms.js';
 import { buzz } from '../ui/haptics.js';
 import { pill } from '../ui/pill.js';
+import { segOn, segPaint } from '../ui/seg.js';
 import { adminGo } from './pair.js';
 
 const ago = ms => { const s = (Date.now() - ms) / 1000; return s < 90 ? 'ahora' : s < 5400 ? 'hace ' + Math.round(s / 60) + ' min' : s < 129600 ? 'hace ' + Math.round(s / 3600) + ' h' : 'hace ' + Math.round(s / 86400) + ' d'; };
-let acWho = 'guest';
+let acWho = 'guest', devN = 0, devGuests = 0;
+/** Resúmenes de la portada de Ajustes ('' hasta que lleguen los datos). */
+export const devSum = () => devN ? devN + ' con acceso' + (devGuests ? ' · ' + devGuests + (devGuests > 1 ? ' invitados' : ' invitado') : '') : '';
+export const permSum = () => state.acc ? 'Los invitados entran ' + (state.acc.guestHours ? state.acc.guestHours + ' h' : 'sin límite') : '';
 export async function refreshDevs() {
   if (!state.me || state.me.role !== 'admin') return;
   const r = await rpc({ t: 'devices' }); paintDevs(r);
@@ -17,6 +21,7 @@ export async function refreshDevs() {
 function paintDevs(r) {
   if (r.access) { state.acc = r.access; paintAccess(); }
   const box = $('#devs'); box.textContent = '';
+  devN = (r.devices || []).length; devGuests = (r.devices || []).filter(d => d.role === 'guest').length;
   for (const d of r.devices || []) {
     const row = document.createElement('div'); row.className = 'fld';
     const sp = document.createElement('span'); sp.textContent = d.name + (d.id === state.me.id ? ' (este)' : '');
@@ -44,16 +49,19 @@ function paintDevs(r) {
 function paintAccess() {
   if (!state.acc) return;
   const P = state.acc[acWho];
-  $('#acWho').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.w === acWho));
-  $('#acHrs').hidden = acWho !== 'guest'; $('#acHours').value = String(state.acc.guestHours);
+  segPaint($('#acWho'), 'w', acWho);
+  $('#acHrs').hidden = acWho !== 'guest';
+  const hs = $('#acHours'), h = String(state.acc.guestHours);   // un valor puesto fuera del mando sale como opción más
+  if (![...hs.options].some(o => o.value === h)) hs.add(new Option(h + ' h', h));
+  hs.value = h;
   $('#acWeb').setAttribute('aria-pressed', !!P.web); $('#acLib').setAttribute('aria-pressed', !!P.library); $('#acStage').setAttribute('aria-pressed', !!P.stage);
-  $('#acAgent').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === P.agent));
-  $('#acMusic').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.v === P.music));
+  segPaint($('#acAgent'), 'v', P.agent);
+  segPaint($('#acMusic'), 'v', P.music);
   $('#acVol').value = P.volMax; $('#acVolV').textContent = P.volMax + ' %';
 }
 let acT = 0;
 function accSave() { clearTimeout(acT); acT = setTimeout(async () => { const r = await rpc({ t: 'access', op: 'set', cfg: state.acc }); if (r.access) { state.acc = r.access; paintAccess(); } }, 250); }
-const acSet = (k, v) => { if (!state.acc) return; state.acc[acWho][k] = v; paintAccess(); accSave(); };
+const acSet = (k, v) => { if (!state.acc || state.acc[acWho][k] === v) return; buzz(7); state.acc[acWho][k] = v; paintAccess(); accSave(); };
 /* peticiones de acceso que llegan al administrador */
 let reqPid = null;
 function showReq(j) { reqPid = j.pid; $('#reqName').textContent = j.name; $('#req').hidden = false; buzz(30); }
@@ -76,7 +84,7 @@ export const admin = {
       if (r.error) { box.textContent = r.error; return; }
       box.textContent = '';
       const b = document.createElement('b'); b.textContent = r.code;
-      box.append('Código ', b, ` · caduca en ${r.minutes} min y sirve una vez. Ábrelo en el otro dispositivo o escribe el código en «Tengo un código de administrador».`);
+      box.append('Código ', b, ` · caduca en ${r.minutes} min y sirve una vez. Ábrelo en el otro dispositivo o escribe el código en «¿Tienes un código de administrador?» de sus Ajustes.`);
       try { if (navigator.share) await navigator.share({ title: document.title + ' (admin)', url: r.url }); else { await navigator.clipboard.writeText(r.url); pill('Enlace copiado'); } } catch {}
     });
     $('#kickG').addEventListener('click', async () => {
@@ -84,13 +92,13 @@ export const admin = {
       if (!b.classList.contains('sure')) { b.classList.add('sure'); b.textContent = '¿Quitar a todos los invitados?'; setTimeout(() => { b.classList.remove('sure'); b.textContent = 'Quitar a todos los invitados'; }, 3000); return; }
       b.classList.remove('sure'); b.textContent = 'Quitar a todos los invitados'; paintDevs(await rpc({ t: 'kickguests' }));
     });
-    $('#acWho').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; buzz(7); acWho = b.dataset.w; paintAccess(); });
-    $('#acHours').addEventListener('change', e => { if (!state.acc) return; state.acc.guestHours = +e.target.value; accSave(); });
+    segOn($('#acWho'), 'w', w => { if (w === acWho) return; buzz(7); acWho = w; paintAccess(); });
+    $('#acHours').addEventListener('change', e => { if (!state.acc) return; buzz(7); state.acc.guestHours = +e.target.value; accSave(); });
     $('#acWeb').addEventListener('click', () => acSet('web', !state.acc[acWho].web));
     $('#acLib').addEventListener('click', () => acSet('library', !state.acc[acWho].library));
     $('#acStage').addEventListener('click', () => acSet('stage', !state.acc[acWho].stage));
-    $('#acAgent').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { buzz(7); acSet('agent', b.dataset.v); } });
-    $('#acMusic').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { buzz(7); acSet('music', b.dataset.v); } });
+    segOn($('#acAgent'), 'v', v => acSet('agent', v));
+    segOn($('#acMusic'), 'v', v => acSet('music', v));
     $('#acVol').addEventListener('input', e => { $('#acVolV').textContent = e.target.value + ' %'; });
     $('#acVol').addEventListener('change', e => acSet('volMax', +e.target.value));
     $('#req').addEventListener('click', async e => {

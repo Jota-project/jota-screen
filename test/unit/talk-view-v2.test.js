@@ -1,7 +1,6 @@
 'use strict';
-// Diseño nuevo de la conversación en la tele (src/tv/talk-view.js con `context().design === 'v2'`): la foto (SNAP) que
-// recibe TVAgent.render, el estado del orbe derivado aquí, 2 turnos en el panel (1 en la píldora), fichas e iconos,
-// cierre 4000 + 45 × letras, y el cambio de diseño en caliente (reinyecta y quita la capa del otro).
+// Conversación en la tele (src/tv/talk-view.js): la foto (SNAP) que recibe TVAgent.render, el estado del orbe derivado
+// aquí, 2 turnos en el panel (1 en la píldora), fichas e iconos, cierre 4000 + 45 × letras, tandas y ocultación.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -14,11 +13,10 @@ const { createTalkView, snapshot, KEEP_TURNS, CLOSE_BASE_MS, CLOSE_PER_CHAR_MS, 
 const { KINDS } = require(path.join(REMOTE, 'src', 'features', 'agent-ui'));
 const { agentSource } = require(path.join(REMOTE, 'src', 'tv', 'tokens'));
 
-// public/ de prueba: los tokens y tv-talk.js de verdad y un tv-agent.js mínimo (el de verdad lo escribe la página)
-const PUB = fs.mkdtempSync(path.join(os.tmpdir(), 'talk-v2-'));
+// public/ de prueba: los tokens de verdad y un tv-agent.js mínimo (el de verdad lo escribe la página)
+const PUB = fs.mkdtempSync(path.join(os.tmpdir(), 'talk-view-'));
 fs.mkdirSync(path.join(PUB, 'shared'));
 fs.copyFileSync(path.join(REMOTE, 'public', 'shared', 'tokens-tv.css'), path.join(PUB, 'shared', 'tokens-tv.css'));
-fs.copyFileSync(path.join(REMOTE, 'public', 'tv-talk.js'), path.join(PUB, 'tv-talk.js'));
 fs.writeFileSync(path.join(PUB, 'tv-agent.js'), '/* AGENTE-MINIMO */window.TVAgent=window.TVAgent||{render(){return true},hide(){}};\n');
 test.after(() => fs.rmSync(PUB, { recursive: true, force: true }));
 
@@ -38,7 +36,7 @@ function fakeCdp() {
   return c;
 }
 /** Contexto que cada prueba cambia a mano (lo que server.js saca de idle.agentContext() y del estado de la tele). */
-const ctxOf = (o = {}) => ({ design: 'v2', ctx: 'idle', night: false, calm: false, glass: 'auto', colors: null, ...o });
+const ctxOf = (o = {}) => ({ ctx: 'idle', night: false, calm: false, glass: 'auto', colors: null, ...o });
 function make(o) {
   const cdp = fakeCdp(), c = { now: ctxOf(o) };
   const v = createTalkView({ cdp, pub: PUB, context: () => c.now });
@@ -57,14 +55,13 @@ async function step(t, ms = 100) { t.mock.timers.tick(ms); await flushMicro(); }
 // la última expresión que pinta (las de esperar a la pintada de una página nueva no llevan foto)
 const last = cdp => arg(cdp.exprs.filter(e => e.includes('.render(')).at(-1));
 
-test('v2: la primera foto lleva la fuente de tv-agent.js (con tokens) y la foto con las claves exactas del contrato', async t => {
+test('la primera foto lleva la fuente de tv-agent.js (con tokens) y la foto con las claves exactas del contrato', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const { cdp, v } = make();
   v.turn('panel', { voice: true });
   await step(t);
   const e = cdp.exprs[0];
   assert.ok(e.startsWith('(()=>{' + agentSource(PUB) + '\n;'), 'inyecta tv-agent.js con los tokens delante (tokens.agentSource)');
-  assert.ok(!e.includes('TVTalk.render'), 'no pinta el diseño viejo');
   const s = last(cdp);
   assert.deepEqual(Object.keys(s).sort(), ['calm', 'colors', 'ctx', 'enter', 'form', 'glass', 'icons', 'live', 'night', 'state', 'turns']);
   assert.deepEqual(s, { form: 'panel', ctx: 'idle', state: 'listen', live: true, night: false, calm: false, glass: 'auto', colors: null,
@@ -229,7 +226,6 @@ test('cierre: 4000 + 45 × letras de la respuesta tras done (y no antes)', async
   await step(t, 1);
   assert.equal(hides(), 1);
   assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(1)'), 'la isla de actividades vuelve a 1');
-  assert.ok(!cdp.exprs.at(-1).includes('TVTalk'), 'quita la capa del diseño nuevo, no la vieja');
 });
 
 test('contexto (ronda 2): ctx sigue a la página en cada foto, igual que noche, calma, cristal y colores', async t => {
@@ -246,53 +242,25 @@ test('contexto (ronda 2): ctx sigue a la página en cada foto, igual que noche, 
   assert.equal(s.form, 'panel', 'la forma sí sigue fijada');
 });
 
-test('contexto saneado: valores raros caen en los de por defecto; si context() lanza, diseño viejo', async t => {
+test('contexto saneado: valores raros caen en los de por defecto; sin context() o si lanza, también', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { cdp, v, c } = make({ ctx: 'raro', glass: 'Z', night: 'sí', colors: ['red";alert(1)//', 'blue'] });
+  const { cdp, v } = make({ ctx: 'raro', glass: 'Z', night: 'sí', colors: ['red";alert(1)//', 'blue'] });
   v.turn('island'); v.you('hola', true);
   await step(t);
   const s = last(cdp);
   assert.deepEqual([s.ctx, s.glass, s.night, s.colors], ['video', 'auto', false, null], 'ctx sin valor válido: por el formato');
-  c.now = { design: 'v9' };
-  v.jota('x'); await step(t);
-  assert.ok(cdp.exprs.at(-1).includes('window.TVTalk.render('), 'un diseño desconocido es el viejo');
   const logs = [];
   const cdp2 = fakeCdp();
   const w = createTalkView({ cdp: cdp2, pub: PUB, log: m => logs.push(m), context: () => { throw new Error('reposo sin crear'); } });
   w.turn('panel'); await step(t);
-  assert.ok(cdp2.exprs[0].includes('window.TVTalk.render('));
+  assert.deepEqual([last(cdp2).form, last(cdp2).ctx, last(cdp2).glass], ['panel', 'web', 'auto']);
   assert.ok(logs.some(l => l.includes('reposo sin crear')));
+  const cdp3 = fakeCdp();
+  createTalkView({ cdp: cdp3, pub: PUB }).turn('island'); await step(t);
+  assert.deepEqual([last(cdp3).form, last(cdp3).ctx], ['pill', 'video'], 'sin context(): el formato de talk.js');
 });
 
-test('cambio de diseño en caliente: se reinyecta el otro y se quita la capa anterior en la misma llamada', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { cdp, v, c } = make({ design: 'v1' });
-  v.turn('panel'); v.you('uno', true);
-  await step(t);
-  assert.ok(cdp.exprs[0].includes('attachShadow') && cdp.exprs[0].includes('window.TVTalk.render('), 'v1: tv-talk.js');
-  assert.ok(!cdp.exprs[0].includes('TVAgent'), 'sin cambio no se toca la otra capa');
-  c.now = ctxOf({ design: 'v2' });
-  v.jota('dos');
-  await step(t);
-  let e = cdp.exprs.at(-1);
-  assert.equal(cdp.exprs.length, 2, 'una sola llamada');
-  assert.ok(e.includes('AGENTE-MINIMO') && e.includes('window.TVTalk.hide()') && e.includes('window.TVAgent.render('));
-  assert.deepEqual(last(cdp).turns.at(-1).jota, 'dos', 'el turno sigue en el diseño nuevo');
-  v.jota('tres'); await step(t);
-  assert.ok(!cdp.exprs.at(-1).includes('TVTalk'), 'ya no hace falta quitarla otra vez');
-  v.hide(); await flushMicro();
-  assert.ok(cdp.exprs.at(-1).includes('TVAgent.hide()'), 'hide() quita la capa que hay');
-  // y de vuelta al viejo
-  c.now = ctxOf({ design: 'v1' });
-  v.turn('panel'); v.you('cuatro', true);
-  await step(t);
-  e = cdp.exprs.at(-1);
-  assert.ok(e.includes('attachShadow') && e.includes('window.TVAgent.hide()') && e.includes('window.TVTalk.render('));
-  v.done(); await step(t, 5000);
-  assert.ok(cdp.exprs.at(-1).includes('window.TVTalk.hide()'), 'v1 vuelve a cerrar a los 5 s');
-});
-
-test('v2: reset() y una página sin TVAgent reinyectan la fuente como en v1', async t => {
+test('reset() y una página sin TVAgent reinyectan la fuente', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const { cdp, v } = make();
   const injects = () => cdp.exprs.filter(e => e.includes('AGENTE-MINIMO')).length;
@@ -308,7 +276,7 @@ test('v2: reset() y una página sin TVAgent reinyectan la fuente como en v1', as
 
 test('snapshot(): copia los turnos (la foto no cambia si luego cambia el turno) e ignora iconos de tipos desconocidos', () => {
   const turn = { id: 1, you: 'a', youFinal: true, jota: '', tools: [{ id: 't', kind: 'web', title: 'W', detail: '', status: 'run' }], error: false, hint: '' };
-  const look = { design: 'v2', ctx: 'web', night: false, calm: false, glass: 'auto', colors: null };
+  const look = { ctx: 'web', night: false, calm: false, glass: 'auto', colors: null };
   const s = snapshot({ form: 'panel', ctx: 'web', state: 'think', live: true, look, turns: [turn] });
   turn.tools[0].status = 'ok'; turn.you = 'b';
   assert.equal(s.turns[0].tools[0].status, 'run');
@@ -326,7 +294,7 @@ const removed = cdp => cdp.calls.filter(x => x.method === 'Page.removeScriptToEv
 const snapOf = src => JSON.parse(src.slice(src.indexOf('var s=') + 6, src.indexOf(`;window.${RESTORE_GLOBAL}=s`)));
 const settle = async () => { for (let i = 0; i < 6; i++) await flushMicro(); };
 
-test('script por documento: con la capa v2 a la vista, la fuente (una vez) y la última foto en modo restore; se quitan al cerrar', async t => {
+test('script por documento: con la capa a la vista, la fuente (una vez) y la última foto en modo restore; se quitan al cerrar', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const { cdp, v } = make();
   v.turn('panel', { voice: true }); v.you('hola', true);
@@ -352,9 +320,9 @@ test('script por documento: con la capa v2 a la vista, la fuente (una vez) y la 
   assert.deepEqual(removed(cdp).sort(), ['1', '2', '3'], 'al cerrar se quitan la foto y la fuente');
 });
 
-test('script por documento: otra pestaña (sesión CDP) vuelve a registrar; pasar al diseño viejo los quita', async t => {
+test('script por documento: otra pestaña (sesión CDP) vuelve a registrar', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { cdp, v, c } = make();
+  const { cdp, v } = make();
   v.turn('panel'); v.you('uno', true);
   await step(t); await settle();
   assert.equal(scripts(cdp).length, 2);
@@ -362,17 +330,6 @@ test('script por documento: otra pestaña (sesión CDP) vuelve a registrar; pasa
   await step(t); await settle();
   assert.equal(scripts(cdp).length, 4, 'en la sesión nueva, fuente y foto otra vez');
   assert.deepEqual(removed(cdp), [], 'los de la sesión vieja se fueron con ella: no se piden quitar');
-  c.now = ctxOf({ design: 'v1' });
-  v.you('dos', true); await step(t); await settle();
-  assert.deepEqual(removed(cdp).sort(), ['3', '4']);
-});
-
-test('v1 no registra scripts de documento nuevo ni hace llamadas nuevas', async t => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { cdp, v } = make({ design: 'v1' });
-  v.turn('panel'); v.you('hola', true); v.jota('x'); v.done();
-  await step(t); await step(t, 6000); await settle();
-  assert.deepEqual(cdp.calls, []);
 });
 
 test('reset() con la capa a la vista: la foto siguiente va en modo restore (y la otra ya no)', async t => {
@@ -411,7 +368,7 @@ async function go(t, m, page) { m.c.now = { ...m.c.now, page }; m.v.reset(); awa
 /** Reproducción como page-poll: state.playback (context) y luego playback(on). */
 const play = (m, on) => { m.c.now = { ...m.c.now, playback: on }; m.v.playback(on); };
 
-test('formato al empezar en v2: lo decide la página (contenido → píldora; reposo y web → panel); sin página ni playback, el de talk.js', async t => {
+test('formato al empezar: lo decide la página (contenido → píldora; reposo y web → panel); sin página ni playback, el de talk.js', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   for (const [page, pb, want] of [[IDLE, false, 'panel'], [WEB, false, 'panel'], [NETFLIX, false, 'pill'], [WEB, true, 'pill'],
     [{ url: 'http://127.0.0.1:8787/stage/p1.html', stage: 'html', idle: false }, false, 'pill']]) {
@@ -455,7 +412,7 @@ test('web normal: sigue el panel; un vídeo grande que avanza la pasa a píldora
   m.v.turn('panel'); m.v.you('abre la receta', true); await step(t);
   await go(t, m, WEB); await step(t, MORPH_DELAY_MS + 200);
   assert.equal(last(m.cdp).form, 'panel');
-  assert.equal(m.v.watching(), true, 'capa v2 a la vista: page-poll vigila');
+  assert.equal(m.v.watching(), true, 'capa a la vista: page-poll vigila');
   play(m, true); await step(t, MORPH_DELAY_MS); await step(t);
   assert.equal(last(m.cdp).form, 'pill');
   play(m, false); m.v.jota('Listo.'); await step(t);
@@ -630,7 +587,7 @@ test('fromPage (binding del arrastre): solo pill|panel, con la capa a la vista y
   assert.equal(last(m.cdp).form, 'pill');
 });
 
-test('el binding del arrastre se pone una vez por sesión CDP (Runtime.addBinding) con la capa v2 a la vista', async t => {
+test('el binding del arrastre se pone una vez por sesión CDP (Runtime.addBinding) con la capa a la vista', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const m = make({ page: IDLE });
   m.v.turn('panel'); m.v.you('x', true); await step(t); await settle();
@@ -774,19 +731,18 @@ test('sonda de pintada: la pestaña en blanco (about:blank) contesta PAINT_BLANK
   assert.ok(tv.BLANK_RE.test('about:blank') && !tv.BLANK_RE.test('https://www.netflix.com/browse'));
 });
 
-test('otra pestaña con la conversación ya cerrada (Netflix va en la suya): al llegar a ella se quitan las capas que queden', async t => {
+test('otra pestaña con la conversación ya cerrada (Netflix va en la suya): al llegar a ella se quita la capa que quede', async t => {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   const m = make({ page: IDLE, playback: false });
-  const stale = () => m.cdp.exprs.filter(e => e.includes('TVAgent.hide()') && e.includes('TVTalk.hide()')).length;
   m.v.reset();
-  assert.equal(stale(), 0, 'sin haber pintado nunca, nada que quitar');
+  assert.equal(m.cdp.exprs.length, 0, 'sin haber pintado nunca, nada que quitar');
   m.v.turn('panel'); m.v.you('hola', true); m.v.jota('Hola.'); m.v.done();
   await step(t);
   m.v.hide(); await step(t);
   await step(t, 60_000);                             // mucho después del cierre
   const before = m.cdp.exprs.length;
   m.v.reset();                                       // onAttached: vuelve la pestaña de siempre, con su panel aún pintado
-  assert.equal(stale(), 1, 'quita las dos capas (TVAgent y TVTalk)');
+  assert.equal(m.cdp.exprs.slice(before).filter(e => e.includes('TVAgent.hide()')).length, 1, 'la quita');
   assert.ok(!m.cdp.exprs.slice(before).some(e => e.includes('.render(')), 'y no la vuelve a pintar');
 });
 
@@ -818,7 +774,7 @@ test('reset({ tab }) con la capa a la vista: pinta ya (sin batchMs) la última f
   assert.equal(q.cdp.exprs.length, 0);
 });
 
-test('leave(): la capa v2 de la pestaña que se deja se quita en seco (hide(true)); sin capa v2 pintada, nada', async t => {
+test('leave(): la capa de la pestaña que se deja se quita en seco (hide(true)); sin capa pintada, nada', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const m = make();
   const sent = [];
@@ -828,9 +784,6 @@ test('leave(): la capa v2 de la pestaña que se deja se quita en seco (hide(true
   await m.v.leave(call);
   assert.equal(sent.length, 1);
   assert.ok(sent[0].includes('TVAgent.hide(true)') && sent[0].includes('TVIsland.dim(1)'));
-  const v1 = make({ design: 'v1' });
-  v1.v.turn('panel'); v1.v.you('hola', true); await step(t);
-  assert.equal(v1.v.leave(call), undefined, 'el diseño viejo sigue igual');
 });
 
 test('pestaña en blanco (about:blank mientras carga la de verdad): ni se sondea ni cuenta como pintada; la espera sigue hasta la página real', async t => {
@@ -925,7 +878,7 @@ test('reset({ tab, from }): pregunta a la pestaña que se deja qué palabras ens
   assert.deepEqual([f.tab, 'shown' in f], [true, false]);
 });
 
-test('tarjeta de contenido (Netflix): solo en v2, con el panel y un turno abierto; el ▶ cambia su estado', async t => {
+test('tarjeta de contenido (Netflix): solo con el panel y un turno abierto; el ▶ cambia su estado', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const card = { key: 'nfx-play-1', kind: 'play', items: [{ title: 'La serie', sub: 'T1 · E2 · Uno', frac: 0.5, img: 'http://127.0.0.1:8787/idle/nfx?u=x', still: 'javascript:alert(1)' }] };
   const { cdp, v } = make();
@@ -939,11 +892,9 @@ test('tarjeta de contenido (Netflix): solo en v2, con el panel y un turno abiert
   v.mediaState('press');
   await step(t);
   assert.equal(last(cdp).turns.at(-1).media.state, 'press');
-  // con la píldora (se ve contenido) o con el diseño viejo no se pone: no hay sitio, y quien la pone no espera
+  // con la píldora (se ve contenido) no se pone: no hay sitio, y quien la pone no espera
   const pill = make(); pill.v.turn('island', { voice: true });
   assert.equal(pill.v.media(card), false);
-  const old = make({ design: 'v1' }); old.v.turn('panel', { voice: true });
-  assert.equal(old.v.media(card), false);
 });
 
 test('asked(): lo preguntado en el turno en curso (y nada sin turno)', () => {
@@ -951,4 +902,87 @@ test('asked(): lo preguntado en el turno en curso (y nada sin turno)', () => {
   assert.equal(v.asked(), '');
   v.turn('panel', { voice: true }); v.you('¿Por dónde voy de Suits?', true);
   assert.equal(v.asked(), '¿Por dónde voy de Suits?');
+});
+
+// ── tandas y ocultación
+test('20 tokens en 50 ms producen una sola llamada a render', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { cdp, v } = make();
+  v.turn('island'); v.you('¿qué tiempo hace?', true);
+  await step(t);
+  const n = cdp.exprs.length;
+  let reply = '';
+  for (let i = 0; i < 20; i++) { reply += 'pal' + i + ' '; v.jota(reply); t.mock.timers.tick(2.5); }
+  await step(t);
+  assert.equal(cdp.exprs.length - n, 1);
+  assert.equal(last(cdp).turns.at(-1).jota, reply);
+});
+
+test('durante el turno se atenúa la isla de actividades (dim(0)); hide() la quita ya, avisa a onHide y descarta lo pendiente', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { cdp, v } = make();
+  let told = 0;
+  v.onHide(() => told++);
+  v.turn('panel'); v.you('hola', true); v.jota('buenas'); v.done();
+  await step(t);
+  assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(0)'));
+  v.hide(); await flushMicro();
+  assert.equal(hidesOf(cdp), 1);
+  assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(1)'));
+  assert.equal(told, 1);
+  await step(t, 60_000);
+  assert.deepEqual([hidesOf(cdp), told], [1, 1], 'el cierre por tiempo ya no oculta otra vez');
+  // con un render pendiente: hide lo descarta
+  v.turn('island'); v.you('x', true);
+  v.hide(); await step(t, 200);
+  assert.ok(cdp.exprs.at(-1).includes('TVAgent.hide()'), 'no se repinta tras ocultar');
+  assert.equal(told, 2);
+});
+
+test('tras hide(), un done o error tardío del mismo turno no vuelve a sacar la capa', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { cdp, v } = make();
+  v.turn('panel'); v.you('hola', true); v.jota('buenas');
+  await step(t);
+  v.hide(); await settle();
+  const n = cdp.exprs.length;
+  v.done(); v.jota('más'); v.error('x');
+  await step(t, 60_000);
+  assert.equal(cdp.exprs.length, n, 'nada más en la tele');
+  v.turn('panel'); v.you('nueva', true);
+  await step(t);
+  assert.equal(cdp.exprs.length, n + 1, 'el turno siguiente pinta normal');
+});
+
+test('sin sesión de CDP no se llama a nada y hide() avisa igual a onHide', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { cdp, v } = make(); cdp.session = null;
+  let told = 0;
+  v.onHide(() => told++);
+  v.turn('panel'); v.you('hola', true); v.done();
+  await step(t, 60_000); await settle();
+  assert.deepEqual([cdp.exprs.length, cdp.calls.length], [0, 0]);
+  assert.equal(told, 1);
+  v.hide();
+  assert.equal(told, 2);
+});
+
+test('una página donde TVAgent no llega a existir recibe la fuente como mucho una vez más (hasta reset)', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { cdp, v } = make();
+  const injects = () => cdp.exprs.filter(e => e.includes('AGENTE-MINIMO')).length;
+  v.turn('panel'); v.you('a', true);
+  await step(t);
+  cdp.has = false;
+  for (let i = 0; i < 5; i++) { v.you('a' + i, true); await step(t); await flushMicro(); }
+  assert.equal(injects(), 2, 'la primera y un solo reintento');
+  v.reset(); await step(t); await flushMicro();
+  assert.equal(injects(), 3, 'tras reset se vuelve a intentar');
+});
+
+test('ocultar devuelve la isla de actividades a 1 aunque TVAgent.hide falle', () => {
+  let dim = null;
+  const window = { TVAgent: { hide() { throw new Error('x'); } }, TVIsland: { dim(x) { dim = x; } } };
+  assert.throws(() => new Function('window', tv.HIDE)(window));
+  assert.equal(dim, 1);
 });

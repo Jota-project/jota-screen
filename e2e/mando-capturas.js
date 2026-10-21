@@ -196,7 +196,9 @@ const tap = async (page, name, ms = 400) => { await btn(page, name).tap(); await
 const inject = (page, o) => page.evaluate(m => window.__wsInject(m), o);
 const shade = async page => { await page.touchscreen.tap(195, 30); await page.waitForTimeout(400); };
 const focusTv = async o => { cdp.event('Runtime.bindingCalled', { name: '__tvFocus', payload: JSON.stringify(o) }, SID); await wait(150); };
-const scrollTo = (page, text) => page.getByText(text, { exact: true }).evaluate(e => e.scrollIntoView({ block: 'start' }));
+// hoja de ajustes: entrar en una página desde la portada (data-go) y volver
+const goSet = async (page, id, ms = 600) => { await page.locator(`#setS [data-go="${id}"]`).tap(); await page.waitForTimeout(ms); };
+const backSet = async (page, ms = 300) => { await page.locator('#setS .sp:not([hidden]) [data-back]').tap(); await page.waitForTimeout(ms); };
 const pairInfo = async () => (await (await srv.post('/pair/info', {})).json());
 async function noAdminOnline() { for (let i = 0; i < 50 && (await pairInfo()).adminOnline; i++) await wait(100); }
 
@@ -276,9 +278,11 @@ async function adminScenes(theme, admin) {
   });
   await run('ajustes', async p => {
     await tap(p, 'Ajustes', 1000); await shot(p, T('ajustes'));
-    await scrollTo(p, 'Pantalla en reposo'); await shot(p, T('ajustes-reposo'));
-    await scrollTo(p, 'Personas con acceso'); await shot(p, T('ajustes-acceso'));
-    await scrollTo(p, 'Qué pueden hacer'); await shot(p, T('ajustes-permisos'));
+    await goSet(p, 'movil'); await shot(p, T('ajustes-movil')); await backSet(p);
+    await goSet(p, 'reposo'); await shot(p, T('ajustes-reposo')); await backSet(p);
+    await goSet(p, 'jota'); await shot(p, T('ajustes-jota')); await backSet(p);
+    await goSet(p, 'personas', 900); await shot(p, T('ajustes-acceso')); await backSet(p);
+    await goSet(p, 'permisos'); await shot(p, T('ajustes-permisos'));
   });
 }
 
@@ -364,9 +368,9 @@ async function walk(admin) {
     await takeLog(p, 'recorrido: agente');
     await tap(p, 'Ajustes', 1000);
     await tap(p, 'Recargar', 300);
-    await tap(p, 'Desplazamiento natural', 300); await tap(p, 'Desplazamiento natural', 300);
-    await scrollTo(p, 'Pantalla en reposo'); await tap(p, 'Noche', 700);
-    await scrollTo(p, 'Qué pueden hacer'); await tap(p, 'Miembros', 300); await tap(p, 'Presentaciones', 700); await tap(p, 'Presentaciones', 700);
+    await goSet(p, 'movil'); await tap(p, 'Desplazamiento natural', 300); await tap(p, 'Desplazamiento natural', 300); await backSet(p);
+    await goSet(p, 'reposo'); await p.getByRole('radio', { name: 'Noche' }).tap(); await p.waitForTimeout(700); await backSet(p);
+    await goSet(p, 'permisos'); await p.getByRole('radio', { name: 'Miembros' }).tap(); await p.waitForTimeout(300); await tap(p, 'Presentaciones', 700); await tap(p, 'Presentaciones', 700);
     await shade(p);
     await takeLog(p, 'recorrido: ajustes');
   } finally { await takeLog(p, 'recorrido: final'); await p.context().close(); }
@@ -439,7 +443,7 @@ async function extraScenes(admin) {
   const codes = [];
   await run('extra-ajustes-admin', async p => {
     await tap(p, 'Ajustes', 1000);
-    await scrollTo(p, 'Personas con acceso');
+    await goSet(p, 'personas', 900);
     await p.getByRole('combobox', { name: 'Rol de Tablet de la cocina' }).selectOption('guest'); await p.waitForTimeout(700);
     await shot(p, 'extra-ajustes-rol');
     await p.getByRole('combobox', { name: 'Rol de Tablet de la cocina' }).selectOption('member'); await p.waitForTimeout(700);
@@ -448,10 +452,11 @@ async function extraScenes(admin) {
     await shot(p, 'extra-ajustes-seguro');
     await p.locator('#devs .fld').filter({ hasText: 'Móvil de Ana' }).getByRole('button', { name: '¿Seguro?' }).tap(); await p.waitForTimeout(800);
     await shot(p, 'extra-ajustes-quitado');
-    await scrollTo(p, 'Pantalla en reposo');
+    await backSet(p); await goSet(p, 'reposo');
     await tap(p, 'Horario por día', 600); await shot(p, 'extra-ajustes-dias');
     await p.getByLabel('Mié acostarse', { exact: true }).fill('23:15'); await p.waitForTimeout(700);
     await tap(p, 'Horario por día', 700);
+    await backSet(p); await goSet(p, 'personas', 900);
     for (let i = 0; i < 2; i++) {
       await tap(p, 'Hacer administrador a otro dispositivo', 800);
       codes.push(await p.locator('#alBox b').textContent());

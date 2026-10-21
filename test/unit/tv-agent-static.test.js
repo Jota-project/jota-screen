@@ -1,5 +1,5 @@
 'use strict';
-// Capa de conversación del diseño nuevo (remote/public/tv-agent.js), sin navegador:
+// Capa de conversación (remote/public/tv-agent.js), sin navegador:
 // - reglas del fuente: nada de innerHTML y compañía (Trusted Types/CSP), medidas solo en calc(N * var(--u)) y los valores
 //   de aspecto solo en el objeto LOOK (los vigila agent-contrast.test.js);
 // - se evalúa en un vm con un DOM falso mínimo y se comprueba la interfaz (render/hide/_debug), que repetir la misma foto
@@ -439,7 +439,7 @@ test('una foto real de snapshot() se pinta entera: turnos, fichas de cada tipo e
   const tools = kinds.map((k, i) => ({ id: 't' + i, kind: k, title: KINDS[k].title, detail: 'x', status: 'ok' }));
   const t = id => ({ id, you: 'hola', youFinal: true, jota: 'vale. ', tools: id === 2 ? tools : [], error: false, hint: '' });
   const s = view.snapshot({ form: 'panel', ctx: 'web', state: 'done', live: false,
-    look: { design: 'v2', ctx: 'web', night: false, calm: false, glass: 'B', colors: ['#2f7f8a', 'rgb(201, 138, 92)'] }, turns: [t(1), t(2)] });
+    look: { ctx: 'web', night: false, calm: false, glass: 'B', colors: ['#2f7f8a', 'rgb(201, 138, 92)'] }, turns: [t(1), t(2)] });
   const p = loadPage();
   p.win.TVAgent.render(s);
   const all = p.host().shadowRoot.all();

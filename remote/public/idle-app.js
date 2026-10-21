@@ -3,7 +3,7 @@
 const $ = id => document.getElementById(id);
 const B = document.body, BG = $('bg'), G = $('grid');
 const W = { hora: $('wHora'), ctx: $('wCtx'), mus: $('wMus'), nfx: $('wNfx') };
-let D = { profile: 'day', weather: null, music: null, acts: [], cfg: { dimMin: 20, layout: 'rotar', rearrangeMin: 18, calm: false } }, off = 0, lastEvent = Date.now();
+let D = { profile: 'day', weather: null, music: null, acts: [], cfg: { dimMin: 20, layout: 'rotar', rearrangeMin: 20, calm: false } }, off = 0, lastEvent = Date.now();
 
 // ── distribuciones: cada escena coloca los widgets en la rejilla (fila-inicio / col-inicio / fila-fin / col-fin), sin que
 // dos áreas se pisen: cada widget tiene su sitio reservado. A 1920×1080 caben la hora (3 filas × 7 columnas: «00:00» mide

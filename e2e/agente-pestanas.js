@@ -71,7 +71,7 @@ const SZ = { w: 1280, h: 720 };
 // ya no cabe (y se ve como un parpadeo de la capa).
 const TAB_GAP_MAX_MS = 50;
 // Lo que se quedó pintado en la pestaña a la que se vuelve (panel viejo o estado viejo), quieto, hasta que llegue lo de
-// ahora (reset → STALE_HIDE, o la foto nueva, que empieza su paso o su fundido): el mismo camino que el hueco (enganche +
+// ahora (reset → HIDE, o la foto nueva, que empieza su paso o su fundido): el mismo camino que el hueco (enganche +
 // batchMs + evaluate). 300 ms: una foto vieja más tiempo ya se lee. Después, el fundido de salida (≤ FADE_MAX_MS).
 const STALE_MAX_MS = 300;
 const FADE_MAX_MS = 600;
@@ -234,7 +234,7 @@ const r0 = n => Math.round(n);
     // como server.js: state.url con la pestaña activa; la página decide el formato
     const state = { media: -1, scroll: null, url: '', path: '/' };
     const setUrl = u => { state.url = u; try { state.path = new URL(u).pathname; } catch { state.path = ''; } };
-    const context = () => ({ design: 'v2', ctx: state.playback ? 'video' : state.path === '/' && state.url.startsWith(base()) ? 'idle' : 'web', playback: state.playback === true,
+    const context = () => ({ ctx: state.playback ? 'video' : state.path === '/' && state.url.startsWith(base()) ? 'idle' : 'web', playback: state.playback === true,
       page: { url: state.url, stage: null, idle: state.path === '/' && state.url.startsWith(base()) },
       night: false, calm: false, glass: 'A', colors: null });
     /** @type {any} */ let view = null, poll = null;

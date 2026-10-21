@@ -2,7 +2,7 @@
 // @ts-check
 // Sondeo de la página: multimedia (reproduciendo / pausa), posición de scroll y reproducción de verdad (`playback`).
 // Con algún mando conectado, cada 1,5 s; durante 2 s tras cada scroll del mando, cada 250 ms. Mientras la capa del agente
-// (diseño nuevo) está en pantalla, cada 250 ms aunque no haya mandos: de ahí sale el paso del panel a la píldora.
+// está en pantalla, cada 250 ms aunque no haya mandos: de ahí sale el paso del panel a la píldora.
 // Nunca dos lecturas a la vez por CDP.
 const { PAGE_PROBE, parseProbe, parsePlayback, createPlaybackWatch } = require('./devices');
 

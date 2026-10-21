@@ -110,7 +110,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   const tell = (ws, o) => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'talk', ...o })); };
 
   if (typeof view.onHide === 'function') view.onHide(() => tell(viewWs, { ev: 'hidden' }));
-  // formato de la capa en la tele (diseño nuevo): el móvil pinta con esto su control de ampliar / hacer píldora
+  // formato de la capa en la tele: el móvil pinta con esto su control de ampliar / hacer píldora
   if (typeof view.onForm === 'function') view.onForm((form, canSwitch) => tell(viewWs, { ev: 'form', form, canSwitch }));
   if (idleAware) /** @type {any} */ (speaker).onIdle(() => { if (play && play.out === 'tv' && play.ending) playEnded(); });
 
@@ -449,7 +449,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
       { t: 'stop', perm: 'agent', run: (_m, { ws, P }) => { if (!may(ws, P.agent)) return { error: BUSY }; halt(); v('hide'); return { ok: 1 }; } },
       // Quitar de la tele: solo la vista
       { t: 'hide', perm: 'agent', run: () => { v('hide'); return { ok: 1 }; } },
-      // Ampliar en la tele / hacer píldora (diseño nuevo): quien puede parar (el móvil que preguntó, también reconectado, o
+      // Ampliar en la tele / hacer píldora: quien puede parar (el móvil que preguntó, también reconectado, o
       // el agente completo). El evento `form` (que pinta el control) va al móvil del intercambio, como `hidden`
       { t: 'talkform', perm: 'agent', run: (m, { ws, P }) => {
         if (!may(ws, P.agent)) return { error: BUSY };

@@ -21,7 +21,7 @@ function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalM
   const view = Object.fromEntries(['turn', 'you', 'jota', 'done', 'error', 'tool', 'toolEnd'].map(k => [k, (...a) => views.push([k, ...a])]));
   view.hide = () => { views.push(['hide']); onHide(); };
   view.onHide = fn => { onHide = fn; };
-  // formato (diseño nuevo): la vista falsa acepta lo que se le pida y avisa cuando la prueba llama a form()
+  // formato: la vista falsa acepta lo que se le pida y avisa cuando la prueba llama a form()
   let onForm = () => {};
   view.userForm = f => { views.push(['userForm', f]); return f === 'pill' || f === 'panel' ? { ok: 1, form: f } : { error: 'formato no válido' }; };
   view.agentLayout = (l, u) => views.push(['agentLayout', l, u]);

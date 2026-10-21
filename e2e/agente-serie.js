@@ -244,7 +244,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     const t0 = Date.now();
     const mark = (k, v) => ev.push({ at: Date.now() - t0, k, v });
     // como server.js: la página (URL, sin escenario, ¿reposo?) decide el formato; playback de page-poll, la reserva
-    const context = () => ({ design: 'v2', ctx: state.playback ? 'video' : state.path === '/' ? 'idle' : 'web', playback: state.playback === true,
+    const context = () => ({ ctx: state.playback ? 'video' : state.path === '/' ? 'idle' : 'web', playback: state.playback === true,
       page: { url: state.url, stage: null, idle: state.path === '/' && state.url.startsWith(base()) },
       night: false, calm: false, glass: 'A', colors: null });
     const view = createTalkView({ cdp, pub: PUB, context, log: m => errs.push('servidor: ' + m), contentHosts: [...CONTENT_HOSTS, CONTENT_HOST] });

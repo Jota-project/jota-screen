@@ -97,7 +97,7 @@ cdp = createCdp({ port: CDP_PORT, log, hooks: {
 } });
 const pointer = createPointer({ script: path.join(ROOT, 'pointer.py'), display: CFG.DISPLAY, disabled: NO_POINTER, log });
 const audio = createAudio({ runtimeDir: CFG.XDG_RUNTIME_DIR });
-// con la capa del agente (diseño nuevo) a la vista sondea también sin mandos: de ahí sale el paso del panel a la píldora
+// con la capa del agente a la vista sondea también sin mandos: de ahí sale el paso del panel a la píldora
 const pagePoll = createPagePoll({ cdp, state, broadcast, watched: () => ws.clients().size > 0,
   active: () => talkView.watching(), onPlayback: on => talkView.playback(on) });
 
@@ -161,14 +161,13 @@ const gw = CFG.GATEWAY_URL
   ? createGatewayClient({ url: CFG.GATEWAY_URL, key: CFG.GATEWAY_KEY, agent: CFG.AGENT, log })
   : { ensure: async () => false, send() {}, on: () => () => {}, audio() {}, end() {}, isReady: () => false, close() {} };
 const speaker = createSpeaker({ runtimeDir: CFG.XDG_RUNTIME_DIR, cmd: CFG.SPEAKER_CMD, log });
-// la conversación en la tele: isla con vídeo, panel sin él (se inyecta una vez por página). `context` se lee en cada
-// pintada: el diseño (v1 tv-talk.js, v2 tv-agent.js, interruptor `agentDesign` del reposo) y el contexto de la página.
-// v2: `page` (URL, escenario, reposo) decide el formato (src/tv/agent-form.js: app de contenido → píldora) y `playback`
+// la conversación en la tele (public/tv-agent.js, se inyecta una vez por página). `context` se lee en cada pintada:
+// `page` (URL, escenario, reposo) decide el formato (src/tv/agent-form.js: app de contenido → píldora) y `playback`
 // (vídeo grande que avanza, de page-poll; no `media`, que salta con un tráiler) es la reserva y el tinte. El escenario
 // sale de la URL (stageOf), no de stage.kind: se sale de él también sin control.nav («atrás», un clic)
 const agentCtx = () => {
   const a = idle.agentContext(), pb = state.playback === true;
-  return { design: a.design, ctx: pb ? 'video' : a.idle ? (a.music ? 'music' : 'idle') : 'web', playback: pb,
+  return { ctx: pb ? 'video' : a.idle ? (a.music ? 'music' : 'idle') : 'web', playback: pb,
     page: { url: state.url || '', stage: stageOf(state.url, SELF), idle: a.idle },
     night: a.night, calm: a.calm, glass: a.glass, colors: a.colors };
 };

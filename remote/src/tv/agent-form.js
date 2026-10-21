@@ -1,6 +1,6 @@
 'use strict';
 // @ts-check
-// Qué formato lleva la capa del agente (diseño nuevo): `pill` (arriba, pequeña: lo que se ve manda) o `panel` (columna a
+// Qué formato lleva la capa del agente: `pill` (arriba, pequeña: lo que se ve manda) o `panel` (columna a
 // la derecha con la conversación). Función pura: talk-view.js la consulta al empezar el turno, al acabar de pintarse una
 // página nueva, cuando cambia la reproducción y cuando el usuario o Jota piden otro formato. Orden:
 //   1. `override` del usuario (arrastre en la tele o en el mando) para el contenido actual

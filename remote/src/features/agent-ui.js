@@ -1,6 +1,6 @@
 'use strict';
 // @ts-check
-// Fichas de herramientas del agente en la tele (diseño nuevo, public/tv-agent.js): qué herramienta del Gateway merece
+// Fichas de herramientas del agente en la tele (public/tv-agent.js): qué herramienta del Gateway merece
 // ficha y qué pone. Lista cerrada (`CARD_TOOLS` y las de casa que cambian algo, por palabras genéricas del nombre); el
 // resto, sin ficha (las de lectura: tv_state, tv_links, tv_screenshot, tv_events, hass…get_state…). El nombre se compara por sufijo porque OpenClaw puede prefijarlo
 // (`tv-canvas__tv_open`). El `detail` sale de los argumentos, corto y saneado: nunca el resultado ni args en crudo.

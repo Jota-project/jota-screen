@@ -70,8 +70,8 @@ module.exports = [
     languageOptions: { sourceType: 'module' },
   },
   {
-    // tv-island.js y tv-talk.js leen los colores que src/tv/tokens.js pone delante al inyectarlas en la página
-    files: ['remote/public/tv-island.js', 'remote/public/tv-talk.js'],
+    // tv-island.js lee los colores que src/tv/tokens.js pone delante al inyectarla en la página
+    files: ['remote/public/tv-island.js'],
     languageOptions: { globals: { __TV_TOKENS: 'readonly' } },
   },
 ];

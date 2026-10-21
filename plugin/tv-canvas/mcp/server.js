@@ -196,8 +196,7 @@ tool('tv_idle',
   'dimMin (at night, minutes until only a faint clock remains), music (show Spotify), city/lat/lon/tz (weather location; lat/lon null = no weather), ' +
   'layout (rotar|margen|zonas|apilada: how clock, weather and music are arranged; rotar cycles them), rearrangeMin (minutes between rearrangements, 0 = never), calm (reduced motion), ' +
   'netflix (on|off: a big "Seguir viendo" widget with the Netflix series in progress, with their images), ' +
-  'agentDesign (v1|v2: how the conversation with Jota is drawn on the TV; v2 = live glass panels with tool cards), ' +
-  'glass (auto|A|B|C: glass level of the v2 panels; auto picks it by how smooth the TV runs, A full, B light, C opaque).',
+  'glass (auto|A|B|C: glass level of the live panels where the conversation with Jota is drawn on the TV; auto picks it by how smooth the TV runs, A full, B light, C opaque).',
   { op: z.enum(['show', 'get', 'set']), cfg: z.record(z.any()).optional() },
   async ({ op, cfg }) => out(await cmd({ t: 'idle', op, cfg })));
 

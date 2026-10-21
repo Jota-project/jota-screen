@@ -2,7 +2,7 @@
 // @ts-check
 // Tokens de Jota Dusk para la tele (public/shared/tokens-tv.css). El reposo los enlaza como CSS; la isla de Live Activities
 // no puede: se inyecta por CDP en webs ajenas (con su propia CSP, sin acceso a nuestra red y sin tiempo para cargar nada),
-// así que el servidor le pasa el cuerpo del bloque :root como texto, delante de tv-island.js (y de las capas de conversación).
+// así que el servidor le pasa el cuerpo del bloque :root como texto, delante de tv-island.js (y de la capa del agente).
 // La capa del agente lleva además sus fuentes (public/fonts/, OFL) como bytes: así se ve igual en el reposo y en una web
 // con `font-src 'none'` (FontFace desde un ArrayBuffer no pide nada a la red).
 const fs = require('node:fs');
@@ -11,7 +11,6 @@ const { FONT_SERIF, FONT_SANS } = require('./agent-contract');
 
 const TOKENS = path.join('shared', 'tokens-tv.css');
 const ISLAND = 'tv-island.js';
-const TALK = 'tv-talk.js';
 const AGENT = 'tv-agent.js';
 // fuentes de la capa del agente: la que falte en public/ no se manda (y la capa usa su pila de reserva). Inter no está
 // vendorizada aún: se pone aquí con su OFL y entra sola (la capa ya la pide con FONT_SANS)
@@ -48,16 +47,7 @@ function islandSource(pubDir) {
 }
 
 /**
- * Fuente de la capa de conversación (tv-talk.js), con los tokens delante como la isla.
- * @param {string} pubDir carpeta public/
- * @returns {string}
- */
-function talkSource(pubDir) {
-  return withTokens(pubDir, TALK);
-}
-
-/**
- * Fuente de la capa del agente (diseño nuevo, tv-agent.js), con los tokens delante como la isla.
+ * Fuente de la capa del agente (tv-agent.js), con los tokens delante como la isla.
  * @param {string} pubDir carpeta public/
  * @returns {string}
  */
@@ -90,4 +80,4 @@ function withTokens(pubDir, file) {
   return 'var __TV_TOKENS=' + JSON.stringify(readTokens(pubDir)) + ';\n' + fs.readFileSync(path.join(pubDir, file), 'utf8');
 }
 
-module.exports = { readTokens, islandSource, talkSource, agentSource, agentFonts, AGENT_FONTS };
+module.exports = { readTokens, islandSource, agentSource, agentFonts, AGENT_FONTS };

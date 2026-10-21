@@ -23,6 +23,7 @@
 <link rel="modulepreload" href="/mando/ui/theme.js">
 <link rel="modulepreload" href="/mando/ui/status.js">
 <link rel="modulepreload" href="/mando/ui/sheets.js">
+<link rel="modulepreload" href="/mando/ui/seg.js">
 <link rel="modulepreload" href="/mando/ui/actions.js">
 <link rel="modulepreload" href="/mando/ui/gestures.js">
 <link rel="modulepreload" href="/mando/features/ambient.js">
@@ -83,6 +84,11 @@
 <symbol id="i-next" viewBox="0 0 24 24"><path d="M17.5 5.5v13M6 6v12l9-6z" fill="currentColor"/></symbol>
 <symbol id="i-spark" viewBox="0 0 24 24"><path d="M12 3.5l1.9 5.1 5.1 1.9-5.1 1.9L12 17.5l-1.9-5.1L5 10.5l5.1-1.9zM18.5 15.5l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z"/></symbol>
 <symbol id="i-set" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+<symbol id="i-phone" viewBox="0 0 24 24"><rect x="6.5" y="3" width="11" height="18" rx="2.5"/><path d="M11 17.5h2"/></symbol>
+<symbol id="i-moon" viewBox="0 0 24 24"><path d="M19.5 14.5A8 8 0 0 1 9.5 4.5a8 8 0 1 0 10 10z"/></symbol>
+<symbol id="i-film" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M10 9l5 3-5 3z"/></symbol>
+<symbol id="i-people" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20a6.5 6.5 0 0 1 13 0M16 4.7a3.5 3.5 0 0 1 0 6.6M18.5 14a6 6 0 0 1 3 6"/></symbol>
+<symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 3l7.5 3v5.5c0 4.5-3.2 8-7.5 9.5-4.3-1.5-7.5-5-7.5-9.5V6zM9 12l2 2 4-4"/></symbol>
 </defs></svg>
 
 <!-- ambiente: dos luces en órbita con el color de lo que hay en la tele (features/ambient.js) -->
@@ -301,74 +307,117 @@
   <div class="vzC" id="agC"><button class="b2" type="button" data-ask="Pausa">Pausa</button><button class="b2" type="button" data-ask="Pon Spotify">Pon Spotify</button><button class="b2" type="button" data-ask="Más bajo">Más bajo</button></div>
 </div>
 
-<!-- ajustes -->
+<!-- ajustes: portada por alcance (este móvil, la tele, personas) y una página por tema (TVC Diseño - Ajustes del mando) -->
 <div class="sheet" id="setS" role="dialog" aria-label="Ajustes">
   <div class="grab"></div>
-  <div class="acts">
-    <button class="bt" data-a="reload"><svg><use href="#i-reload"/></svg>Recargar</button>
-    <button class="bt" data-a="fwd"><svg><use href="#i-fwd"/></svg>Adelante</button>
+  <div class="sp" data-p="home">
+    <header class="stH">
+      <div class="stR"><span class="stO" aria-hidden="true"></span><div><h2 class="stT">Ajustes</h2><div class="me" id="meBox"></div></div></div>
+      <div class="stC"><span class="dot ok" id="footDot" aria-hidden="true"></span><span id="foot">—</span></div>
+      <div class="stK" id="clBox" hidden><label for="clCode">¿Tienes un código de administrador?</label>
+        <div class="tms"><input class="in" id="clCode" placeholder="XXXXX-XXXXX" maxlength="11" autocapitalize="characters" spellcheck="false"><button class="bt big dv" id="clGo" type="button">Canjear</button></div></div>
+    </header>
+    <div class="sh">Este móvil</div>
+    <button class="nv" type="button" data-go="movil"><span class="nvI"><svg><use href="#i-phone"/></svg></span><span class="nvT">Mando<small id="sumMovil"></small></span><svg class="nvC"><use href="#i-fwd"/></svg></button>
+    <div class="sh" id="teleSh">La tele</div>
+    <button class="nv adm" type="button" data-go="reposo" hidden><span class="nvI"><svg><use href="#i-moon"/></svg></span><span class="nvT">Pantalla en reposo<small id="sumReposo"></small></span><svg class="nvC"><use href="#i-fwd"/></svg></button>
+    <button class="nv adm" type="button" data-go="jota" hidden><span class="nvI"><svg><use href="#i-spark"/></svg></span><span class="nvT">Jota en la tele<small id="sumJota"></small></span><svg class="nvC"><use href="#i-fwd"/></svg></button>
+    <button class="nv" type="button" data-go="netflix" id="nfBox" hidden><span class="nvI"><svg><use href="#i-film"/></svg></span><span class="nvT">Netflix<small id="sumNetflix"></small></span><svg class="nvC"><use href="#i-fwd"/></svg></button>
+    <div class="adm" hidden>
+      <div class="sh">Personas</div>
+      <button class="nv" type="button" data-go="personas"><span class="nvI"><svg><use href="#i-people"/></svg></span><span class="nvT">Dispositivos<small id="sumDevs"></small></span><svg class="nvC"><use href="#i-fwd"/></svg></button>
+      <button class="nv" type="button" data-go="permisos"><span class="nvI"><svg><use href="#i-shield"/></svg></span><span class="nvT">Qué pueden hacer<small id="sumPerms"></small></span><svg class="nvC"><use href="#i-fwd"/></svg></button>
+    </div>
+    <div class="sh">Atajos de la tele</div>
+    <div class="ata">
+      <button class="bt" data-a="reload"><svg><use href="#i-reload"/></svg>Recargar</button>
+      <button class="bt" data-a="fwd"><svg><use href="#i-fwd"/></svg>Adelante</button>
+    </div>
   </div>
-  <div class="sh">Mando</div>
-  <div class="fld"><span>Modo oscuro<small>Activado por defecto</small></span><button class="sw" id="swDark" aria-pressed="true" aria-label="Modo oscuro"></button></div>
-  <div class="fld"><span>Al pulsar el orbe mientras Jota habla</span><div class="seg" id="segIntr"><button data-v="1">Interrumpir</button><button data-v="0">Esperar</button></div></div>
-  <div class="sh">Puntero</div>
-  <div class="fld"><span>Velocidad</span><span id="vSpeed">1.6×</span><input type="range" id="rSpeed" min="0.6" max="3.2" step="0.1"></div>
-  <div class="fld"><span>Desplazamiento</span><span id="vScroll">1.0×</span><input type="range" id="rScroll" min="0.4" max="2.6" step="0.1"></div>
-  <div class="fld"><span>Desplazamiento natural<small>El contenido sigue a tus dedos</small></span><button class="sw" id="swNat" aria-pressed="true" aria-label="Desplazamiento natural"></button></div>
-  <div class="fld"><span>Vibración al tocar</span><button class="sw" id="swHap" aria-pressed="true" aria-label="Vibración"></button></div>
-  <div class="fld" id="fsRow"><span>Mando a pantalla completa</span><button class="sw" id="swFs" aria-pressed="false" aria-label="Pantalla completa"></button></div>
-  <div id="nfBox" hidden>
-  <div class="sh">Netflix</div>
-  <div class="fld"><span>Perfil<small>En el que se abre y se pone lo que pidas</small></span><select class="sel" id="nfProf" aria-label="Perfil de Netflix"></select></div>
+
+  <div class="sp" data-p="movil" hidden>
+    <div class="pgH"><button class="pgB" type="button" data-back aria-label="Volver a Ajustes"><svg><use href="#i-back"/></svg></button><div><span class="pgS">Este móvil</span><h2 class="pgT">Mando</h2></div></div>
+    <div class="sh">Aspecto</div>
+    <div class="fld flush"><div class="seg" id="segTheme" role="radiogroup" aria-label="Tema del mando"><button role="radio" data-v="oscuro">Oscuro</button><button role="radio" data-v="claro">Claro</button></div></div>
+    <div class="fld" id="fsRow"><span>Mando a pantalla completa</span><button class="sw" id="swFs" aria-pressed="false" aria-label="Pantalla completa"></button></div>
+    <div class="sh">Puntero y tacto</div>
+    <div class="fld"><span>Velocidad</span><span id="vSpeed">1.6×</span><input type="range" id="rSpeed" min="0.6" max="3.2" step="0.1" aria-label="Velocidad del puntero"></div>
+    <div class="fld"><span>Desplazamiento</span><span id="vScroll">1.0×</span><input type="range" id="rScroll" min="0.4" max="2.6" step="0.1" aria-label="Velocidad del desplazamiento"></div>
+    <div class="fld"><span>Desplazamiento natural<small>El contenido sigue a tus dedos</small></span><button class="sw" id="swNat" aria-pressed="true" aria-label="Desplazamiento natural"></button></div>
+    <div class="fld"><span>Vibración al tocar</span><button class="sw" id="swHap" aria-pressed="true" aria-label="Vibración"></button></div>
+    <div class="sh">Voz</div>
+    <div class="fld"><span>Si pulsas el orbe mientras Jota habla</span><div class="seg" id="segIntr" role="radiogroup" aria-label="Si pulsas el orbe mientras Jota habla"><button role="radio" data-v="1">Interrumpe</button><button role="radio" data-v="0">Espera a que acabe</button></div></div>
+    <div class="foot u-tl">Esto solo cambia en este móvil.</div>
   </div>
-  <div class="me" id="meBox"></div>
-  <div class="fld" id="clBox" hidden><span>¿Eres el administrador?<small>Escribe el código que te ha dado el agente o otro admin</small></span>
-    <div class="tms"><input class="in" id="clCode" placeholder="XXXXX-XXXXX" maxlength="11" autocapitalize="characters" spellcheck="false" aria-label="Código de administrador"><button class="bt dv" id="clGo" type="button">Canjear</button></div></div>
-  <div id="admBox" hidden>
-  <div class="sh">Pantalla en reposo</div>
-  <div class="fld flush"><div class="seg" id="idMode">
-    <button data-m="auto">Auto</button><button data-m="day">Día</button><button data-m="evening">Tarde</button><button data-m="night">Noche</button><button data-m="cinema">Cine</button>
-  </div></div>
-  <div class="fld"><span>Hora de dormir<small>Acostarse · levantarse. De noche el reposo queda en negro y tenue</small></span>
-    <div class="tms"><input type="time" class="tm" id="idBed" aria-label="Acostarse"><input type="time" class="tm" id="idWake" aria-label="Levantarse"></div></div>
-  <div class="fld"><span>Distinto cada día</span><button class="sw" id="idPer" aria-pressed="false" aria-label="Horario por día"></button></div>
-  <div class="wk" id="idWeek" hidden></div>
-  <div class="fld"><span>Pasar al reposo tras</span><select class="sel" id="idIdle">
-    <option value="0">Nunca</option><option value="2">2 min</option><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
-  <div class="fld"><span>De noche, solo la hora tras</span><select class="sel" id="idDim">
-    <option value="0">Nunca</option><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
-  <div class="fld"><span>Música en el reposo</span><button class="sw" id="idMus" aria-pressed="true" aria-label="Música en el reposo"></button></div>
-  <div class="fld"><span>Seguir viendo de Netflix<small>Las series a medias, con sus imágenes</small></span><button class="sw" id="idNfx" aria-pressed="false" aria-label="Seguir viendo de Netflix"></button></div>
-  <div class="fld"><span>Distribución<small>Cómo se colocan la hora, el tiempo y la música</small></span><div class="seg" id="idLay">
-    <button data-l="rotar">Ir cambiando</button><button data-l="margen">Margen</button><button data-l="zonas">Zonas</button><button data-l="apilada">Apilada</button>
-  </div></div>
-  <div class="fld"><span>Recolocar cada<small>Mover las piezas de sitio cuida la pantalla</small></span><select class="sel" id="idRe">
-    <option value="0">Nunca</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
-  <div class="fld"><span>Menos movimiento<small>Las luces del fondo se quedan quietas</small></span><button class="sw" id="idCalm" aria-pressed="false" aria-label="Menos movimiento"></button></div>
-  <div class="acts one u-mt8"><button class="bt" id="idShow" type="button">Ver el reposo ahora</button></div>
-  <div class="sh">Agente en la tele</div>
-  <div class="fld"><span>Diseño nuevo<small>Las respuestas de Jota en un panel de cristal vivo</small></span><button class="sw t48" id="idAgDes" aria-pressed="false" aria-label="Diseño nuevo del agente"></button></div>
-  <div class="fld"><span>Cristal<small>Solo con el diseño nuevo. Automático lo aligera si la tele va justa</small></span><div class="seg t48" id="idGlass" role="radiogroup" aria-label="Cristal" aria-disabled="true">
-    <button role="radio" aria-checked="true" data-g="auto">Automático</button><button role="radio" aria-checked="false" tabindex="-1" data-g="A">Completo</button><button role="radio" aria-checked="false" tabindex="-1" data-g="B">Ligero</button><button role="radio" aria-checked="false" tabindex="-1" data-g="C">Opaco</button>
-  </div></div>
-  <div class="sh">Personas con acceso</div>
-  <div id="devs"></div>
-  <div class="acts one u-mt8 u-mb6"><button class="bt" id="kickG" type="button">Quitar a todos los invitados</button></div>
-  <div class="acts one u-mt0 u-mb6"><button class="bt" id="alGo" type="button">Hacer administrador a otro dispositivo</button></div>
-  <div class="foot u-tl u-mb10" id="alBox" hidden></div>
-  <div class="foot u-mt2 u-tl">Para invitar a alguien: que abra esta misma dirección. Puede pedirte acceso a ti (te llega aquí) o escribir el código que verá en la tele.</div>
-  <div class="sh">Qué pueden hacer</div>
-  <div class="fld flush"><div class="seg" id="acWho"><button data-w="guest" aria-pressed="true">Invitados</button><button data-w="member" aria-pressed="false">Miembros</button></div></div>
-  <div class="fld" id="acHrs"><span>Duración del acceso<small>Después tendrán que pedirlo otra vez</small></span><select class="sel" id="acHours">
-    <option value="1">1 h</option><option value="3">3 h</option><option value="6">6 h</option><option value="12">12 h</option><option value="24">24 h</option><option value="48">2 días</option><option value="168">7 días</option><option value="0">Sin límite</option></select></div>
-  <div class="fld"><span>Abrir webs y apps</span><button class="sw" id="acWeb" aria-pressed="true" aria-label="Abrir webs y apps"></button></div>
-  <div class="fld"><span>Agente<small>Modo invitado: solo tele y música, sin tus datos</small></span><div class="seg" id="acAgent"><button data-v="off">No</button><button data-v="guest">Invitado</button><button data-v="full">Completo</button></div></div>
-  <div class="fld"><span>Canciones que piden</span><div class="seg" id="acMusic"><button data-v="play">Suenan ya</button><button data-v="queue">A la cola</button><button data-v="off">No</button></div></div>
-  <div class="fld"><span>Tu biblioteca de Spotify<small>Playlists, «Me gusta» y recientes</small></span><button class="sw" id="acLib" aria-pressed="false" aria-label="Biblioteca"></button></div>
-  <div class="fld"><span>Presentaciones y avisos</span><button class="sw" id="acStage" aria-pressed="false" aria-label="Presentaciones"></button></div>
-  <div class="fld"><span>Volumen máximo</span><span id="acVolV">100 %</span><input type="range" id="acVol" min="10" max="100" step="5"></div>
+
+  <div class="sp" data-p="reposo" hidden>
+    <div class="pgH"><button class="pgB" type="button" data-back aria-label="Volver a Ajustes"><svg><use href="#i-back"/></svg></button><div><span class="pgS">La tele</span><h2 class="pgT">Pantalla en reposo</h2></div></div>
+    <div class="acts one u-mt8"><button class="bt" id="idShow" type="button">Ver el reposo en la tele</button></div>
+    <div class="sh">Momento</div>
+    <div class="fld flush"><div class="seg" id="idMode" role="radiogroup" aria-label="Momento del día">
+      <button role="radio" data-m="auto">Auto</button><button role="radio" data-m="day">Día</button><button role="radio" data-m="evening">Tarde</button><button role="radio" data-m="night">Noche</button><button role="radio" data-m="cinema">Cine</button>
+    </div><small class="hint">Automático sigue el sol y tu hora de dormir</small></div>
+    <div class="sh">Distribución</div>
+    <div class="fld flush"><div class="pick" id="idLay" role="radiogroup" aria-label="Distribución">
+      <button role="radio" data-l="rotar"><span class="mini ly-rotar" aria-hidden="true"><i></i><i></i><i></i></span><b>Ir cambiando</b><small>Va pasando por las tres</small></button>
+      <button role="radio" data-l="margen"><span class="mini ly-margen" aria-hidden="true"><i></i><i></i><i></i></span><b>Margen</b><small>Hora abajo, contexto arriba</small></button>
+      <button role="radio" data-l="zonas"><span class="mini ly-zonas" aria-hidden="true"><i></i><i></i><i></i></span><b>Zonas</b><small>Tres columnas</small></button>
+      <button role="radio" data-l="apilada"><span class="mini ly-apilada" aria-hidden="true"><i></i><i></i><i></i></span><b>Apilada</b><small>Todo centrado</small></button>
+    </div></div>
+    <div class="fld"><label for="idRe">Recolocar cada<small>Mover las piezas de sitio cuida la pantalla</small></label><select class="sel" id="idRe">
+      <option value="0">Nunca</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
+    <div class="fld"><span>Menos movimiento<small>Las luces del fondo se quedan quietas</small></span><button class="sw" id="idCalm" aria-pressed="false" aria-label="Menos movimiento"></button></div>
+    <div class="sh">Seguir viendo</div>
+    <div class="fld"><span>Música<small>Lo que suena en Spotify</small></span><button class="sw" id="idMus" aria-pressed="true" aria-label="Música en el reposo"></button></div>
+    <div class="fld"><span>Netflix<small>Las series a medias, con sus imágenes</small></span><button class="sw" id="idNfx" aria-pressed="false" aria-label="Seguir viendo de Netflix"></button></div>
+    <div class="sh">Horario y tiempos</div>
+    <div class="fld wrap"><span>Hora de dormir<small>Acostarse · levantarse. De noche el reposo queda en negro y tenue</small></span>
+      <div class="tms"><input type="time" class="tm" id="idBed" aria-label="Acostarse"><input type="time" class="tm" id="idWake" aria-label="Levantarse"></div></div>
+    <div class="fld"><span>Distinto cada día</span><button class="sw" id="idPer" aria-pressed="false" aria-label="Horario por día"></button></div>
+    <div class="wk" id="idWeek" hidden></div>
+    <div class="fld"><label for="idIdle">Pasar al reposo tras</label><select class="sel" id="idIdle">
+      <option value="0">Nunca</option><option value="2">2 min</option><option value="5">5 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
+    <div class="fld"><label for="idDim">De noche, solo la hora tras</label><select class="sel" id="idDim">
+      <option value="0">Nunca</option><option value="5">5 min</option><option value="10">10 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
   </div>
-  <div class="foot" id="foot">—</div>
+
+  <div class="sp" data-p="jota" hidden>
+    <div class="pgH"><button class="pgB" type="button" data-back aria-label="Volver a Ajustes"><svg><use href="#i-back"/></svg></button><div><span class="pgS">La tele</span><h2 class="pgT">Jota en la tele</h2></div></div>
+    <div class="sh">Cristal del panel</div>
+    <div class="fld flush"><div class="pick" id="idGlass" role="radiogroup" aria-label="Cristal">
+      <button role="radio" data-g="auto"><span class="mini gl gl-A" aria-hidden="true"><i></i></span><b>Automático</b><small>Se aligera solo si la tele va justa</small></button>
+      <button role="radio" data-g="A"><span class="mini gl gl-A" aria-hidden="true"><i></i></span><b>Completo</b><small>Desenfoca lo que hay detrás</small></button>
+      <button role="radio" data-g="B"><span class="mini gl gl-B" aria-hidden="true"><i></i></span><b>Ligero</b><small>Menos desenfoque, más rápido</small></button>
+      <button role="radio" data-g="C"><span class="mini gl gl-C" aria-hidden="true"><i></i></span><b>Opaco</b><small>Sin transparencia</small></button>
+    </div></div>
+  </div>
+
+  <div class="sp" data-p="netflix" hidden>
+    <div class="pgH"><button class="pgB" type="button" data-back aria-label="Volver a Ajustes"><svg><use href="#i-back"/></svg></button><div><span class="pgS">La tele</span><h2 class="pgT">Netflix</h2></div></div>
+    <div class="fld"><label for="nfProf">Perfil<small>En el que se abre y se pone lo que pidas</small></label><select class="sel" id="nfProf"></select></div>
+  </div>
+
+  <div class="sp" data-p="personas" hidden>
+    <div class="pgH"><button class="pgB" type="button" data-back aria-label="Volver a Ajustes"><svg><use href="#i-back"/></svg></button><div><span class="pgS">Personas</span><h2 class="pgT">Dispositivos</h2></div></div>
+    <div id="devs"></div>
+    <div class="acts one u-mt8 u-mb6"><button class="bt" id="kickG" type="button">Quitar a todos los invitados</button></div>
+    <div class="acts one u-mt0 u-mb6"><button class="bt" id="alGo" type="button">Hacer administrador a otro dispositivo</button></div>
+    <div class="foot u-tl u-mb10" id="alBox" hidden></div>
+    <div class="foot u-mt2 u-tl">Para invitar a alguien: que abra esta misma dirección. Puede pedirte acceso a ti (te llega aquí) o escribir el código que verá en la tele.</div>
+  </div>
+
+  <div class="sp" data-p="permisos" hidden>
+    <div class="pgH"><button class="pgB" type="button" data-back aria-label="Volver a Ajustes"><svg><use href="#i-back"/></svg></button><div><span class="pgS">Personas</span><h2 class="pgT">Qué pueden hacer</h2></div></div>
+    <div class="fld flush"><div class="seg" id="acWho" role="radiogroup" aria-label="Para quién"><button role="radio" data-w="guest">Invitados</button><button role="radio" data-w="member">Miembros</button></div></div>
+    <div class="fld" id="acHrs"><label for="acHours">Duración del acceso<small>Después tendrán que pedirlo otra vez</small></label><select class="sel" id="acHours">
+      <option value="1">1 h</option><option value="3">3 h</option><option value="6">6 h</option><option value="12">12 h</option><option value="24">24 h</option><option value="48">2 días</option><option value="168">7 días</option><option value="0">Sin límite</option></select></div>
+    <div class="fld"><span>Abrir webs y apps</span><button class="sw" id="acWeb" aria-pressed="true" aria-label="Abrir webs y apps"></button></div>
+    <div class="fld"><span>Hablar con Jota<small>Invitado: solo tele y música, sin tus datos</small></span><div class="seg" id="acAgent" role="radiogroup" aria-label="Hablar con Jota"><button role="radio" data-v="off">No</button><button role="radio" data-v="guest">Invitado</button><button role="radio" data-v="full">Completo</button></div></div>
+    <div class="fld"><span>Canciones que piden</span><div class="seg" id="acMusic" role="radiogroup" aria-label="Canciones que piden"><button role="radio" data-v="play">Suenan ya</button><button role="radio" data-v="queue">A la cola</button><button role="radio" data-v="off">No</button></div></div>
+    <div class="fld"><span>Tu biblioteca de Spotify<small>Playlists, «Me gusta» y recientes</small></span><button class="sw" id="acLib" aria-pressed="false" aria-label="Biblioteca"></button></div>
+    <div class="fld"><span>Presentaciones y avisos</span><button class="sw" id="acStage" aria-pressed="false" aria-label="Presentaciones"></button></div>
+    <div class="fld"><span>Volumen máximo</span><span id="acVolV">100 %</span><input type="range" id="acVol" min="10" max="100" step="5" aria-label="Volumen máximo"></div>
+  </div>
 </div>
 
 <script type="module" src="/mando/app.js"></script>

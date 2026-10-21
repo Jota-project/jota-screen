@@ -1,4 +1,4 @@
-// Capturas y comprobaciones de la capa de conversación del diseño nuevo (remote/public/tv-agent.js), sin tele ni servidor.
+// Capturas y comprobaciones de la capa de conversación (remote/public/tv-agent.js), sin tele ni servidor.
 // Uso: cd e2e && node agente-capturas.js [carpeta-salida] [--solo escena,escena]   (npm run agente; CHROME=/ruta para
 // otro navegador). --solo limita las escenas (p. ej. --solo desborda,fallo) para una pasada rápida.
 // Sirve remote/public con un servidor mínimo (el reposo con su CSP real) y dos páginas de ejemplo (una web clara con

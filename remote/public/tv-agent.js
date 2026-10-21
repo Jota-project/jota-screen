@@ -1,6 +1,6 @@
-// Conversación con Jota en la tele, diseño nuevo («paneles vivos»): una lámina de cristal que crece con lo que se dice,
+// Conversación con Jota en la tele («paneles vivos»): una lámina de cristal que crece con lo que se dice,
 // encima de cualquier web (también a pantalla completa). La inyecta el servidor por CDP una vez por página
-// (src/tv/talk-view.js, design 'v2') y luego llama a render(SNAP) cada ~100 ms y a hide(). SNAP: ver docs/arquitectura.md.
+// (src/tv/talk-view.js) y luego llama a render(SNAP) cada ~100 ms y a hide(). SNAP: ver docs/arquitectura.md.
 // Dos formatos, los decide el servidor (src/tv/agent-form.js): `panel` (columna a la derecha con los 2 últimos turnos y las
 // fichas de las herramientas) y `pill` (se ve contenido: arriba en el centro, solo el último turno). Si cambia con la capa
 // abierta, aquí se transforma en cualquiera de los dos sentidos (MORPH: el contenido sale, la membrana viaja con sus muelles

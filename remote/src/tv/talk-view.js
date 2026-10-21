@@ -2,17 +2,16 @@
 // @ts-check
 // Capa de la conversación en la tele: lo que dices y lo que contesta Jota, en directo, encima de cualquier página.
 // Dos formatos, fijados al empezar el turno: `island` (hay vídeo: arriba en el centro, solo la frase y la respuesta) y
-// `panel` (columna a la derecha con las últimas `keep` frases). La página recibe public/tv-talk.js una sola vez: la
-// primera llamada lleva la fuente (con los tokens delante, src/tv/tokens.js) y las siguientes solo `TVTalk.render(…)`.
-// Si la página cambia, la llamada corta devuelve false (no hay TVTalk) y se repite al momento con la fuente; server.js
+// `panel` (columna a la derecha). La página recibe public/tv-agent.js («paneles vivos») una sola vez: la primera llamada
+// lleva la fuente (con los tokens delante, src/tv/tokens.js) y las siguientes solo `TVAgent.render(…)`.
+// Si la página cambia, la llamada corta devuelve false (no hay TVAgent) y se repite al momento con la fuente; server.js
 // también avisa con reset() al navegar o al cambiar de pestaña. Ese reintento es uno por página (hasta reset o un render
-// bueno): una web donde TVTalk no llega a existir no recibe la fuente entera cada 100 ms. Se oculta `hideMs` después de done o error,
-// o al momento con hide() (y entonces nada de ese turno la vuelve a sacar hasta el turn() siguiente); onHide avisa de cada ocultación.
+// bueno): una web donde TVAgent no llega a existir no recibe la fuente entera cada 100 ms. Con hide() se quita al momento
+// (y nada de ese turno la vuelve a sacar hasta el turn() siguiente); onHide avisa de cada ocultación.
 //
-// Diseño nuevo (interruptor `design:'v2'` de `context()`, leído en cada flush): la misma conversación va a public/tv-agent.js
-// como una foto completa (`Snap`, ver docs/arquitectura.md) con el estado del orbe derivado aquí, los 2 últimos turnos
-// (también en la píldora, que solo enseña el último), las fichas de herramientas y sus iconos. Al cambiar de diseño se reinyecta y se oculta la
-// capa del otro en la misma llamada. Se cierra `CLOSE_BASE_MS + CLOSE_PER_CHAR_MS × letras de la respuesta` tras el fin.
+// Cada render lleva una foto completa (`Snap`, ver docs/arquitectura.md) con el estado del orbe derivado aquí, los 2 últimos
+// turnos (también en la píldora, que solo enseña el último), las fichas de herramientas y sus iconos.
+// Se cierra `CLOSE_BASE_MS + CLOSE_PER_CHAR_MS × letras de la respuesta` tras el fin.
 // Formato (ronda 3): lo decide agent-form.js (`decideForm`) con la página de context(): override del usuario, lo que pidió
 // Jota (`agentLayout`), app de contenido o escenario → píldora, vídeo grande en marcha → píldora, y si no, panel. Se fija
 // al empezar el turno y se vuelve a mirar cuando una página nueva ya está PINTADA (tras navegar), cuando cambia la
@@ -22,7 +21,7 @@
 // cierra mientras la página nueva no enseñe su contenido (y transformada, si toca): espera como mucho `AWAIT_PAGE_MS`.
 // Navegar mata la capa (documento nuevo): mientras se ve, la fuente y la última foto van también como script de documento
 // nuevo (Page.addScriptToEvaluateOnNewDocument), así la página siguiente la pinta en cuanto existe, en modo `restore`
-// (en su caja, sin animación de entrada). Se quitan al ocultarla o al pasar al diseño viejo.
+// (en su caja, sin animación de entrada). Se quitan al ocultarla.
 // Cambio de pestaña (Netflix va en la suya; cdp.show): reset({ tab: true }) desde onAttached pinta YA (sin batchMs), con la
 // pestaña aún detrás, la última foto que se vio (su tinte, `enter:'restore'` y `tab`: la página retira en seco lo que se
 // quedó pintado en ella y restaura), y devuelve la promesa de esa llamada: cdp.show la espera antes de traerla al frente.
@@ -30,25 +29,22 @@
 // (`shown`): la nueva restaura esas y revela el resto como siempre, así nace igual que se veía (FROM_WAIT_MS como mucho).
 // La foto siguiente ya trae el tinte de la pestaña nueva (los muelles hacen el cambio). La que se deja se quita en seco
 // (leave, con su sesión aún enganchada) tras traer la otra al frente.
-const { talkSource, agentSource } = require('./tokens');
+const { agentSource } = require('./tokens');
 const { KINDS } = require('../features/agent-ui');
 const { CTXS, GLASS, COLOR_RE, FORM_BINDING, HOST_ID } = require('./agent-contract');
 const { CONTENT_HOSTS, AGENT_LAYOUT_TTL_MS, FORCED_SOURCES, cleanForm, contentKey, decideForm } = require('./agent-form');
 
 const DIM_ON = 'window.TVIsland&&window.TVIsland.dim(0)';
 // la isla de actividades vuelve a 1 aunque hide falle
-const HIDE = 'try{window.TVTalk&&window.TVTalk.hide()}finally{window.TVIsland&&window.TVIsland.dim(1)}';
-const HIDE_V2 = 'try{window.TVAgent&&window.TVAgent.hide()}finally{window.TVIsland&&window.TVIsland.dim(1)}';
-/** Quita la capa de cualquiera de los dos diseños que quede en la página (al llegar a ella con la conversación cerrada). */
-const STALE_HIDE = `try{window.TVAgent&&window.TVAgent.hide()}catch(e){}${HIDE}`;
-/** Quita en seco (sin fundido) la capa v2 de la pestaña que se deja: ya no se ve y, al volver, se restaura de cero. */
+const HIDE = 'try{window.TVAgent&&window.TVAgent.hide()}finally{window.TVIsland&&window.TVIsland.dim(1)}';
+/** Quita en seco (sin fundido) la capa de la pestaña que se deja: ya no se ve y, al volver, se restaura de cero. */
 const LEAVE_HIDE = 'try{window.TVAgent&&window.TVAgent.hide(true)}finally{window.TVIsland&&window.TVIsland.dim(1)}';
 /** Palabras que enseña ya cada turno en la pestaña que se deja ({ id: [tú, Jota] }), o null. */
 const REVEALED = '(()=>{try{return window.TVAgent&&typeof window.TVAgent.revealed==="function"?window.TVAgent.revealed():null}catch(e){return null}})()';
 const FROM_WAIT_MS = 100;                    // lo que se espera esa respuesta antes de pintar sin ella
 
-const KEEP_TURNS = 2;                        // turnos en el panel del diseño nuevo (el anterior, atenuado)
-const CLOSE_BASE_MS = 4000;                  // diseño nuevo: se cierra esto tras el fin real…
+const KEEP_TURNS = 2;                        // turnos en el panel (el anterior, atenuado)
+const CLOSE_BASE_MS = 4000;                  // se cierra esto tras el fin real…
 const CLOSE_PER_CHAR_MS = 45;                // …más esto por letra de la respuesta
 const RETRY_HINT = 'Di «otra vez» para reintentar.';   // pista tras un fallo de herramienta (el agente entiende «otra vez»)
 const RECOVER_ON_OK = true;                  // una herramienta posterior que acaba bien despeja el fallo de otra (orbe y pista)
@@ -130,16 +126,6 @@ const PAINT_PROBE = `(${paintProbe})(${JSON.stringify({ wait: PAINT_WAIT_MS, gri
   blank: PAINT_BLANK, blankRe: BLANK_RE.source })})`;
 const RESTORE_GLOBAL = '__tvAgentRestore';   // global de la página con la última foto (la lee la fuente al cargarse)
 
-const DESIGNS = ['v1', 'v2'];
-
-/** Lo que cambia entre diseños: la variable global de la página, su fuente y cómo se oculta. */
-const LAYERS = {
-  v1: { global: 'TVTalk', source: talkSource, hide: HIDE },
-  v2: { global: 'TVAgent', source: agentSource, hide: HIDE_V2 },
-};
-/** Oculta la capa de un diseño sin tocar la isla (al cambiar de diseño, antes de pintar el otro). @param {'v1' | 'v2'} d */
-const hideOnly = d => `try{window.${LAYERS[d].global}&&window.${LAYERS[d].global}.hide()}catch(e){};`;
-
 /** @typedef {'listen' | 'think' | 'talk' | 'error' | 'done'} State */
 /** @typedef {{ id: string, kind: string, title: string, detail: string, status: 'run' | 'ok' | 'fail' }} Tool */
 /** @typedef {{ id: number, you: string, youFinal: boolean, jota: string, tools: Tool[], error: boolean, hint: string, media?: Media | null }} Turn */
@@ -153,10 +139,10 @@ const hideOnly = d => `try{window.${LAYERS[d].global}&&window.${LAYERS[d].global
  * (`url`, `stage` = tipo de escenario o null, `idle` = el reposo) para decidir el formato; null si context() no la trae
  * (y sin playback ni página, manda el modo de talk.js)
  * @typedef {{ url: string, stage: string | null, idle: boolean }} Page
- * @typedef {{ design: 'v1' | 'v2', ctx: string | null, night: boolean, calm: boolean, glass: string, colors: [string, string] | null,
+ * @typedef {{ ctx: string | null, night: boolean, calm: boolean, glass: string, colors: [string, string] | null,
  *   playback: boolean | null, page: Page | null }} Look */
 /**
- * Foto que recibe `TVAgent.render` (diseño nuevo). `enter`: 'open' normal; 'restore' en un documento nuevo (tras navegar)
+ * Foto que recibe `TVAgent.render`. `enter`: 'open' normal; 'restore' en un documento nuevo (tras navegar)
  * o en otra pestaña. `tab` (solo la primera foto tras un cambio de pestaña, con 'restore'): lo que haya pintado en esa
  * pestaña es de antes y se retira en seco. `shown` (con `tab`): palabras de tú y de Jota que ya se veían de cada turno.
  * @typedef {{ form: 'pill' | 'panel', ctx: string, state: State, live: boolean, night: boolean, calm: boolean, glass: string,
@@ -164,8 +150,8 @@ const hideOnly = d => `try{window.${LAYERS[d].global}&&window.${LAYERS[d].global
  *   shown?: Record<string, [number, number]> }} Snap
  */
 
-/** Sin `context()`: el diseño viejo y nada más. @type {Look} */
-const V1_LOOK = Object.freeze({ design: 'v1', ctx: null, night: false, calm: false, glass: 'auto', colors: null, playback: null, page: null });
+/** Sin `context()` (o si lanza): los valores por defecto. @type {Look} */
+const DEFAULT_LOOK = Object.freeze({ ctx: null, night: false, calm: false, glass: 'auto', colors: null, playback: null, page: null });
 const URL_MAX = 2000;                        // caracteres de la URL de context().page
 const STAGE_MAX = 40;                        // caracteres del tipo de escenario
 
@@ -183,9 +169,8 @@ function cleanColors(c) {
 }
 /** Lo que devuelve `context()`, saneado (cualquier valor desconocido cae en el de por defecto). @param {any} c @returns {Look} */
 function cleanLook(c) {
-  if (!c || typeof c !== 'object') return V1_LOOK;
+  if (!c || typeof c !== 'object') return DEFAULT_LOOK;
   return {
-    design: DESIGNS.includes(c.design) ? c.design : 'v1',
     ctx: CTXS.includes(c.ctx) ? c.ctx : null,
     night: c.night === true, calm: c.calm === true,
     glass: GLASS.includes(c.glass) ? c.glass : 'auto',
@@ -234,7 +219,7 @@ const failed = t => t.error || !!t.hint;
 function settleTools(t) { for (const x of t.tools) if (x.status === 'run') x.status = SETTLED_STATUS; }
 
 /**
- * Foto del diseño nuevo a partir de los turnos guardados (el último, el actual). Pura: la prueban las pruebas. Lleva los
+ * Foto a partir de los turnos guardados (el último, el actual). Pura: la prueban las pruebas. Lleva los
  * KEEP_TURNS últimos también en la píldora (la página solo enseña el último): así el log no cambia en el mismo frame en
  * que cambia la forma, y el turno anterior se pliega o reaparece con el contenido ya oculto (en el viaje del paso).
  * @param {{ form: 'pill' | 'panel', ctx: string, state: State, live: boolean, look: Look, turns: Turn[], enter?: 'open' | 'restore' }} o
@@ -255,16 +240,16 @@ const snapScript = snap => `(()=>{if(window.top!==window)return;var s=${JSON.str
 
 /**
  * @param {{ cdp: { session?: any, call: (method: string, params: object) => Promise<any> }, pub: string,
- *           batchMs?: number, hideMs?: number, keep?: number, log?: (msg: string) => void, context?: () => any,
+ *           batchMs?: number, log?: (msg: string) => void, context?: () => any,
  *           awaitMs?: number, morphDelayMs?: number, pillBaseMs?: number, afterPaintMs?: number,
  *           contentHosts?: readonly string[], onAsk?: (text: string) => void }} deps
  *   contentHosts: apps de contenido (por defecto CONTENT_HOSTS; las pruebas añaden la suya). onAsk: la pregunta del turno,
  *   ya final (una vez por turno): quien quiera puede poner su tarjeta sin esperar al agente (media)
  */
-function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log = () => {}, context, onAsk,
+function createTalkView({ cdp, pub, batchMs = 100, log = () => {}, context, onAsk,
   awaitMs = AWAIT_PAGE_MS, morphDelayMs = MORPH_DELAY_MS, pillBaseMs = PILL_DWELL_BASE_MS, afterPaintMs = AFTER_PAINT_MIN_MS,
   contentHosts = CONTENT_HOSTS }) {
-  /** Turnos ya cerrados (el panel viejo enseña sus frases; el nuevo, el último). @type {Turn[]} */
+  /** Turnos ya cerrados (el panel enseña el último). @type {Turn[]} */
   let history = [];
   let seq = 0;
   let cur = newTurn(++seq);
@@ -275,10 +260,8 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
   let live = false;
   let open = false;      // hay un intercambio en curso (entre turn y done/error)
   let shown = false;     // la capa está (o va a estar) en pantalla
-  /** @type {'' | 'v1' | 'v2'} */
-  let injected = '';     // diseño cuya capa tiene la página actual (según lo último que sabemos); '' ninguna
-  /** @type {'' | 'v1' | 'v2'} */
-  let painted = '';      // diseño de la última foto mandada (su capa es la que hay que quitar)
+  let injected = false;  // la página actual tiene la capa (según lo último que sabemos)
+  let painted = false;   // se mandó alguna foto (hay capa que quitar)
   let retried = false;   // ya se reenvió la fuente tras un render sin capa (una vez por página: hasta reset o un render bueno)
   let muted = false;     // quitada con hide(): lo que quede de ese turno no se pinta (hasta el turn() siguiente)
   let morphed = false;   // este intercambio pasó solo a píldora (página de contenido o vídeo): al acabar, PILL_DWELL
@@ -287,7 +270,7 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
   let weak = false;      // la última pintada fue el tope de la sonda (PAINT_WAIT_MS), no contenido visto: espera vencida
   let doneAt = 0;        // fin del turno (para contar el cierre normal desde ahí)
   let restoreNext = false; // la próxima foto va a un documento nuevo (tras reset): entra en modo restore
-  /** @type {Snap | null} */ let seen = null; // la última foto v2 mandada (en modo restore): lo que se ve ahora
+  /** @type {Snap | null} */ let seen = null; // la última foto mandada (en modo restore): lo que se ve ahora
   let tabbing = 0;       // navSeq de un cambio de pestaña que pregunta a la que se deja: las tandas esperan a su foto
   let navSeq = 0, paintedSeq = 0; // navegaciones con la capa a la vista / la última ya pintada (distintas: falta pintar)
   let paints = 0;        // páginas nuevas pintadas con la capa encima (whenPainted)
@@ -304,27 +287,19 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
   let batchT = null, hideT = null, morphT = null;
   let bound = /** @type {any} */ (null); // sesión CDP con el binding del arrastre ya puesto
   // scripts de documento nuevo (ids de la sesión CDP que los registró; otra sesión no los tiene y no hay que quitarlos)
-  let across = false;    // deben estar (la capa v2 se ve)
+  let across = false;    // deben estar (la capa se ve)
   let reg = { session: /** @type {any} */ (null), src: '', snap: '', sig: '' };
   let regQ = Promise.resolve();
 
   /** @returns {Look} */
   function look() {
-    if (!context) return V1_LOOK;
-    try { return cleanLook(context()); } catch (e) { log('conversación: ' + e.message); return V1_LOOK; }
+    if (!context) return DEFAULT_LOOK;
+    try { return cleanLook(context()); } catch (e) { log('conversación: ' + e.message); return DEFAULT_LOOK; }
   }
-  /** @param {'v1' | 'v2'} d */
-  const src = d => { try { return LAYERS[d].source(pub); } catch (e) { log('conversación: ' + e.message); return ''; } };
+  const src = () => { try { return agentSource(pub); } catch (e) { log('conversación: ' + e.message); return ''; } };
 
-  function lines() {
-    if (mode === 'island') return [{ who: 'you', text: cur.you }, { who: 'jota', text: cur.jota }].filter(l => l.text);
-    const all = [];
-    for (const x of [...history, cur]) { if (x.you) all.push({ who: 'you', text: x.you }); if (x.jota) all.push({ who: 'jota', text: x.jota }); }
-    return all.slice(-keep);
-  }
-  /** Lo que recibe render según el diseño (en v2 el tinte sigue a la página actual). @param {Look} l @param {'open' | 'restore'} [enter] */
+  /** Lo que recibe render (el tinte sigue a la página actual). @param {Look} l @param {'open' | 'restore'} [enter] */
   function payload(l, enter = 'open') {
-    if (l.design === 'v1') return { mode, lines: lines(), live };
     const form = mode === 'island' ? 'pill' : 'panel';
     return snapshot({ form, ctx: l.ctx || (form === 'pill' ? 'video' : 'web'), state, live, look: l, turns: [...history, cur], enter });
   }
@@ -344,7 +319,7 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
       if (!across || !sid || cdp.session !== sid) return;
       if (reg.session !== sid) reg = { session: sid, src: '', snap: '', sig: '' };   // pestaña nueva: los de la otra se fueron con ella
       if (!reg.src) {
-        const s = src('v2');
+        const s = src();
         if (!s) return;
         await cdp.call('Page.enable', {});            // sin él, los scripts de documento nuevo no se ejecutan
         if (bound !== sid) {                          // el arrastre en la tele avisa por aquí (Runtime.bindingCalled)
@@ -386,33 +361,30 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
     batchT = null;
     if (tabbing && !first) { batchT = setTimeout(flush, batchMs); return Promise.resolve(); }
     if (!cdp.session) return Promise.resolve();
-    const l = look(), d = l.design, g = LAYERS[d].global;
-    const inj = injected !== d || retry === true;
-    const s = inj ? src(d) : '';
+    const l = look();
+    const inj = !injected || retry === true;
+    const s = inj ? src() : '';
     if (inj && !s) return Promise.resolve();
-    const other = painted && painted !== d ? hideOnly(painted) : '';   // la capa del otro diseño se quita en la misma llamada
     const enter = restoreNext || retry === true ? 'restore' : 'open';   // el reintento es por una página nueva sin aviso
-    const snap = d === 'v2' && first ? first : payload(l, enter);
-    const expr = `(()=>{${s ? s + '\n;' : ''}${other}if(!window.${g})return false;window.${g}.render(${JSON.stringify(snap)});${DIM_ON};return true})()`;
-    if (inj) injected = d;
-    painted = d;
+    const snap = first || payload(l, enter);
+    const expr = `(()=>{${s ? s + '\n;' : ''}if(!window.TVAgent)return false;window.TVAgent.render(${JSON.stringify(snap)});${DIM_ON};return true})()`;
+    if (inj) injected = true;
+    painted = true;
     restoreNext = false;
     // el documento siguiente se restaura con lo mismo que se ve ahora (tinte incluido: ni el ancho ni el velo saltan al
     // cambiar de documento); la foto siguiente ya trae el de la página nueva y la membrana va a él con sus muelles
-    if (d === 'v2') {
-      seen = first ? { ...first } : /** @type {Snap} */ (payload(l, 'restore'));
-      delete seen.tab; delete seen.shown;               // lo que se ve; `tab` y `shown` son solo de la llamada del cambio
-      keepAcross(seen);
-    } else { seen = null; dropAcross(); }
+    seen = first ? { ...first } : /** @type {Snap} */ (payload(l, 'restore'));
+    delete seen.tab; delete seen.shown;                 // lo que se ve; `tab` y `shown` son solo de la llamada del cambio
+    keepAcross(seen);
     const nav = navSeq;
     return cdp.call('Runtime.evaluate', { expression: expr, returnByValue: true }).then(r => {
       const v = r?.result?.value;
-      if (v === true && d === 'v2' && nav !== paintedSeq) whenPainted(nav);  // la capa ya está en la página nueva
+      if (v === true && nav !== paintedSeq) whenPainted(nav);  // la capa ya está en la página nueva
       if (v === true && !inj) retried = false;
       if (v !== false || inj || retried) return;
       retried = true; // página nueva sin aviso: se repite ya con la fuente, una sola vez
       if (shown) flush(true);
-    }).catch(() => { injected = ''; });
+    }).catch(() => { injected = false; });
   }
   /**
    * Espera (en la página) a que la página nueva esté pintada; entonces se mira el formato. Una pestaña en blanco
@@ -431,20 +403,20 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
       const v = r?.result?.value;
       if (v === PAINT_BLANK) { if (blanks < BLANK_RETRIES) again(fails, blanks + 1); return; }
       paintedSeq = nav; paints++; weak = v === false;
-      if (visibleV2()) follow(morphDelayMs);                                    // sin paso pendiente y esperando: a cerrar
+      if (visible()) follow(morphDelayMs);                                    // sin paso pendiente y esperando: a cerrar
     }, () => { if (!stale() && fails < PAINT_RETRIES) again(fails + 1, blanks); });
   }
   function hide() {
     hideT = null;
     clearTimeout(batchT); batchT = null;
     clearTimeout(morphT); morphT = null;
-    const wasV2 = painted === 'v2' && shown;
+    const was = painted && shown;
     shown = false; awaiting = false;
     dropAcross();
-    if (wasV2) emitForm(false);
+    if (was) emitForm(false);
     try { hidden(); } catch (e) { log('conversación: ' + e.message); }
     if (!cdp.session) return;
-    cdp.call('Runtime.evaluate', { expression: LAYERS[painted || 'v1'].hide }).catch(() => {});
+    cdp.call('Runtime.evaluate', { expression: HIDE }).catch(() => {});
   }
   /** @param {'island' | 'panel'} m @param {boolean} [voice] */
   function begin(m, voice) {
@@ -452,7 +424,7 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
     clearTimeout(morphT); morphT = null;
     morphed = false; awaiting = false; waited = false; opening = new Set(); openMark = -1; navOpened = false;
     settleTools(cur);                                   // interrumpido sin done: lo archivado no gira
-    if (said(cur)) history = [...history, cur].slice(-Math.max(keep, KEEP_TURNS)); // un turno cancelado sin nada no se guarda
+    if (said(cur)) history = [...history, cur].slice(-KEEP_TURNS); // un turno cancelado sin nada no se guarda
     cur = newTurn(++seq);
     mode = m === 'island' ? 'island' : 'panel';
     state = voice ? 'listen' : 'think';
@@ -465,7 +437,6 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
     if (muted) return;
     schedule();
     clearTimeout(hideT);
-    if (look().design !== 'v2') { hideT = setTimeout(hide, hideMs); return; }
     doneAt = Date.now();
     // abrió algo y la página nueva aún no está pintada (o su paso a píldora está en el respiro): el cierre espera
     const opened = navOpened || cur.tools.some(x => opening.has(x.id) && x.status !== 'fail');
@@ -492,8 +463,8 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
     awaiting = true;
     clearTimeout(hideT); hideT = setTimeout(hide, awaitMs);
   }
-  /** ¿la capa del diseño nuevo está (o va a estar) a la vista? */
-  const visibleV2 = () => shown && !muted && look().design === 'v2';
+  /** ¿la capa está (o va a estar) a la vista? */
+  const visible = () => shown && !muted;
   const formNow = () => /** @type {'pill' | 'panel'} */ (mode === 'island' ? 'pill' : 'panel');
   /** Avisa del formato (talk.js se lo dice al móvil). @param {boolean} canSwitch */
   function emitForm(canSwitch) { try { formFn(formNow(), canSwitch); } catch (e) { log('conversación: ' + e.message); } }
@@ -519,7 +490,7 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
   /** Modo al que hay que ir ahora, o null si nada cambia: lo automático solo va de panel a píldora. */
   function wanted() {
     const l = look();
-    if (l.design !== 'v2' || (!l.page && l.playback === null)) return null;
+    if (!l.page && l.playback === null) return null;
     const d = decide(l), m = d.form === 'pill' ? 'island' : 'panel';
     if (m === mode || (m === 'panel' && !FORCED_SOURCES.includes(d.by))) return null;
     return m;
@@ -531,11 +502,11 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
    *  porque se pausó, no deja la espera colgada hasta AWAIT_PAGE_MS). @param {number} delay */
   function follow(delay) {
     clearTimeout(morphT); morphT = null;
-    if (visibleV2() && wanted()) {
+    if (visible() && wanted()) {
       if (delay <= 0) return reform();
       morphT = setTimeout(() => {
         morphT = null;
-        if (visibleV2()) reform(); else if (awaiting && pageIn()) settleWait();
+        if (visible()) reform(); else if (awaiting && pageIn()) settleWait();
       }, delay);
       return;
     }
@@ -564,13 +535,13 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
 
   /**
    * El usuario pide otro formato (orden talkform del mando o arrastre en la tele): vale para el contenido actual
-   * (OVERRIDE_SCOPE) y se aplica ya, en los dos sentidos. Solo con la capa del diseño nuevo a la vista.
+   * (OVERRIDE_SCOPE) y se aplica ya, en los dos sentidos. Solo con la capa a la vista.
    * @param {any} form 'pill' | 'panel' @returns {{ ok: 1, form: 'pill' | 'panel' } | { error: string }}
    */
   function userForm(form) {
     const f = cleanForm(form);
     if (!f) return { error: 'formato no válido' };
-    if (!visibleV2()) return { error: NO_LAYER };
+    if (!visible()) return { error: NO_LAYER };
     override = { form: f, key: keyOf(look()) };
     follow(0);
     return { ok: 1, form: formNow() };
@@ -578,14 +549,14 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
 
   return {
     /** @param {'island' | 'panel'} m @param {{ voice?: boolean }} [o] por voz empieza escuchando; escrito, pensando.
-     * En v2 el formato lo decide la página (decideForm, sin la regla de un solo sentido: un turno nuevo en el reposo o en
+     * El formato lo decide la página (decideForm, sin la regla de un solo sentido: un turno nuevo en el reposo o en
      * una web vuelve al panel); sin página ni `playback` en context(), el modo de talk.js. */
     turn(m, o) {
       muted = false;
-      const l = look(), v2 = l.design === 'v2', decided = v2 && (l.page || l.playback !== null);
+      const l = look(), decided = l.page || l.playback !== null;
       begin(decided ? (decide(l).form === 'pill' ? 'island' : 'panel') : m, !!(o && o.voice));
       schedule();
-      if (v2) emitForm(true);
+      emitForm(true);
     },
     /** @param {string} text frase acumulada (sustituye a la anterior) @param {boolean} final */
     you(text, final) {
@@ -615,13 +586,13 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
       schedule();
     },
     /**
-     * Tarjeta de contenido en el turno en curso (diseño nuevo y con el panel a la vista: en la píldora no cabe y no se pone).
+     * Tarjeta de contenido en el turno en curso (con el panel a la vista: en la píldora no cabe y no se pone).
      * Devuelve si se puso: quien la pone puede esperar a que se vea antes de seguir (el ▶ antes de abrir Netflix).
      * @param {any} m ver Media
      */
     media(m) {
       const c = cleanMedia(m), l = look();
-      if (!c || !open || muted || formNow() !== 'panel' || l.design !== 'v2') return false;
+      if (!c || !open || muted || formNow() !== 'panel') return false;
       // las imágenes solo sobre una página nuestra (el reposo): la CSP de una web ajena las bloquearía (y ensuciaría su
       // consola); allí la tarjeta va sin ellas, con su texto y su progreso
       if (!(l.ctx === 'idle' || l.ctx === 'music' || (l.page && l.page.idle))) for (const it of c.items) { it.img = ''; it.still = ''; }
@@ -648,10 +619,10 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
     done() { end(); },
     /** @param {string} text va en el hueco de la respuesta (sin turn() abierto, en un intercambio nuevo con el último formato) */
     error(text) { if (!open) begin(mode); cur.jota = String(text || ''); cur.error = true; end(); },
-    /** Quita la capa ya (Parar, Quitar de la tele): sin esperar a hideMs. */
+    /** Quita la capa ya (Parar, Quitar de la tele): sin esperar al cierre. */
     hide() { clearTimeout(hideT); live = false; muted = true; settleTools(cur); hide(); },
     /** Empezó (true) o acabó (false) una reproducción de verdad (page-poll; context().playback ya lo dice). Con la capa
-     * del diseño nuevo a la vista en panel, se vuelve a mirar el formato (reserva: vídeo grande → píldora tras
+     * a la vista en panel, se vuelve a mirar el formato (reserva: vídeo grande → píldora tras
      * MORPH_DELAY_MS); pausar nunca vuelve al panel ni reabre nada, y en el respiro cancela el paso si ya no toca.
      * @param {boolean} on */
     playback(on) {
@@ -678,24 +649,24 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
       const f = cleanForm(layout);
       if (!f) return;
       pick = { form: f, key: contentKey({ url, hosts: contentHosts }), at: Date.now(), reached: false };
-      if (visibleV2()) follow(morphDelayMs);
+      if (visible()) follow(morphDelayMs);
     },
-    /** @param {(form: 'pill' | 'panel', canSwitch: boolean) => void} fn formato de la capa: al empezar el turno (v2),
+    /** @param {(form: 'pill' | 'panel', canSwitch: boolean) => void} fn formato de la capa: al empezar el turno,
      *  en cada cambio y al cerrarse (canSwitch false) */
     onForm(fn) { formFn = fn; },
     /** Formato de la capa ahora y si se puede cambiar (para pruebas y para el mando). */
-    form() { return { form: formNow(), canSwitch: visibleV2() }; },
-    /** ¿Hay que vigilar la reproducción? (la capa del diseño nuevo está a la vista: page-poll sondea aunque no haya mandos) */
-    watching() { return visibleV2(); },
+    form() { return { form: formNow(), canSwitch: visible() }; },
+    /** ¿Hay que vigilar la reproducción? (la capa está a la vista: page-poll sondea aunque no haya mandos) */
+    watching() { return visible(); },
     /** Esperando a que se pinte la página que abrió el turno (para pruebas y registro). */
     awaiting() { return awaiting; },
     /**
-     * cdp.show ya trajo otra pestaña al frente: la capa v2 de la que se deja se quita en seco (sin fundido; ya no se ve y,
+     * cdp.show ya trajo otra pestaña al frente: la capa de la que se deja se quita en seco (sin fundido; ya no se ve y,
      * al volver, se restaura de cero). `call` va a la sesión de esa pestaña, aún enganchada.
      * @param {(method: string, params?: object) => Promise<any>} call
      */
     leave(call) {
-      if (painted !== 'v2') return;
+      if (!painted) return;
       return call('Runtime.evaluate', { expression: LEAVE_HIDE }).catch(() => {});
     },
     /** @param {() => void} fn se llama cada vez que la capa se oculta (por tiempo o con hide) */
@@ -708,14 +679,14 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
      *   pestaña que se deja (cdp.show), para saber qué enseña ya @returns {Promise<void> | undefined}
      */
     reset(o = {}) {
-      injected = ''; retried = false;
+      injected = false; retried = false;
       decide(look());                                 // el override y lo de Jota se olvidan al salir de su contenido
       if (shown && !muted) {
         restoreNext = true; navSeq++;
         rearm();
         if (!o.tab) { schedule(); return; }
         clearTimeout(batchT); batchT = null;
-        if (!seen || look().design !== 'v2') return flush();
+        if (!seen) return flush();
         const base = seen, nav = navSeq;
         /** @param {any} said */
         const go = said => {
@@ -736,11 +707,11 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
       }
       // cerrada: la página a la que se llega puede tener aún una capa pintada. O es un documento nuevo que el script de
       // documento nuevo llegó a restaurar antes de quitarse, o es otra pestaña que se dejó detrás con la capa a la vista
-      // (Netflix va en la suya y se vuelve a la de siempre): se quitan las dos capas, por si acaso
-      if (!shown && painted && cdp.session) cdp.call('Runtime.evaluate', { expression: STALE_HIDE }).catch(() => {});
+      // (Netflix va en la suya y se vuelve a la de siempre): se quita, por si acaso
+      if (!shown && painted && cdp.session) cdp.call('Runtime.evaluate', { expression: HIDE }).catch(() => {});
     },
   };
 }
 
-module.exports = { createTalkView, snapshot, HIDE, HIDE_V2, KEEP_TURNS, CLOSE_BASE_MS, CLOSE_PER_CHAR_MS, RETRY_HINT, RECOVER_ON_OK, SETTLED_STATUS,
+module.exports = { createTalkView, snapshot, HIDE, KEEP_TURNS, CLOSE_BASE_MS, CLOSE_PER_CHAR_MS, RETRY_HINT, RECOVER_ON_OK, SETTLED_STATUS,
   AWAIT_PAGE_MS, AFTER_PAINT_MIN_MS, PAINT_WAIT_MS, PAINT_BLANK, BLANK_RE, LEAVE_HIDE, PAINT_GRID, PAINT_MIN_POINTS, PAINT_EVERY_MS, MORPH_DELAY_MS, BINDING_GAP_MS, NO_LAYER, PAINT_PROBE, paintProbe, PILL_DWELL_BASE_MS, PILL_DWELL_PER_CHAR_MS, RESTORE_GLOBAL };

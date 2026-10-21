@@ -159,70 +159,60 @@ test('mando: el orbe de la voz no deja el gesto al navegador (touch-action:none;
   assert.doesNotMatch(rules, /touch-action:(manipulation|pan|auto)/);
 });
 
-test('mando: ajustes del reposo (features/idle.js): cada #id existe en index.html y «Agente en la tele» es accesible', () => {
+test('mando: hoja de ajustes: cada #id de settings, idle y admin existe, cada fila abre su página y los segmentos son radiogroups', () => {
   const html = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8');
-  const js = fs.readFileSync(path.join(PUB, 'mando', 'features', 'idle.js'), 'utf8');
   const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
-  assert.deepEqual([...new Set([...js.matchAll(/\$\('#([\w-]+)'\)/g)].map(m => m[1]))].filter(id => !ids.has(id)), []);
-  // conmutador del diseño nuevo: mismo patrón que #idCalm (aria-pressed + nombre accesible), zona de 48 px
-  assert.match(html, /<button class="sw t48" id="idAgDes" aria-pressed="false" aria-label="[^"]+">/);
-  // selector «Cristal»: radiogroup con nombre, un radio por nivel del contrato (cfg.glass), en este orden y con estas etiquetas
-  // de partida apagado (aria-disabled="true"): el diseño por defecto es el viejo, y así no parece operable mientras
-  // llegan los ajustes (o si no llegan)
-  const grp = /<div class="seg t48" id="idGlass" role="radiogroup" aria-label="Cristal" aria-disabled="true">([\s\S]*?)<\/div>/.exec(html);
-  assert.ok(grp, 'existe el grupo #idGlass');
-  const radios = [...grp[1].matchAll(/<button role="radio" aria-checked="(true|false)"(?: tabindex="-1")? data-g="([^"]+)">([^<]+)<\/button>/g)];
-  assert.deepEqual(radios.map(m => [m[2], m[3]]), [['auto', 'Automático'], ['A', 'Completo'], ['B', 'Ligero'], ['C', 'Opaco']]);
-  assert.deepEqual(radios.map(m => m[1]), ['true', 'false', 'false', 'false'], 'de partida, Automático');
-  // los radios se pintan con aria-checked (aria-pressed en un radio no es ARIA válido) y comparten el estilo de marcado
+  for (const f of ['settings', 'idle', 'admin']) {
+    const js = fs.readFileSync(path.join(PUB, 'mando', 'features', f + '.js'), 'utf8');
+    assert.deepEqual([...new Set([...js.matchAll(/\$\('#([\w-]+)'\)/g)].map(m => m[1]))].filter(id => !ids.has(id)), [], f);
+  }
+  const sheet = /<div class="sheet" id="setS"[\s\S]*?\n<\/div>\n/.exec(html)[0];
+  const pages = [...sheet.matchAll(/class="sp" data-p="(\w+)"/g)].map(m => m[1]);
+  assert.equal(pages[0], 'home');
+  assert.deepEqual([...new Set([...sheet.matchAll(/data-go="(\w+)"/g)].map(m => m[1]))].sort(), pages.slice(1).sort(), 'una fila por página');
+  assert.equal((sheet.match(/data-back/g) || []).length, pages.length - 1, 'cada página tiene «Volver»');
+  // sin interruptor de versión: la tele solo tiene los paneles vivos
+  assert.doesNotMatch(html, /idAgDes|Diseño nuevo|aria-disabled/);
+  // todos los segmentos: radiogroup con nombre y radios (aria-pressed en un radio no es ARIA válido)
+  const groups = [...sheet.matchAll(/<div class="(?:seg|pick)" id="(\w+)" role="radiogroup" aria-label="[^"]+">([\s\S]*?)<\/div>/g)];   // dentro de un grupo no hay <div>
+  assert.deepEqual(groups.map(g => g[1]).sort(), ['acAgent', 'acMusic', 'acWho', 'idGlass', 'idLay', 'idMode', 'segIntr', 'segTheme']);
+  for (const [, id, body] of groups) {
+    const bs = body.match(/<button[^>]*>/g);
+    assert.ok(bs.every(b => b.includes('role="radio"') && !b.includes('aria-pressed')), id);
+  }
+  const glass = groups.find(g => g[1] === 'idGlass')[2];
+  assert.deepEqual([...glass.matchAll(/data-g="([^"]+)">.*?<b>([^<]+)<\/b>/g)].map(m => [m[1], m[2]]), [['auto', 'Automático'], ['A', 'Completo'], ['B', 'Ligero'], ['C', 'Opaco']]);
   const css = fs.readFileSync(path.join(PUB, 'mando', 'styles', 'mando.css'), 'utf8');
   assert.match(css, /\.seg button\[aria-checked=true\]/);
-  assert.match(css, /\.seg\.t48 button\{height:48px\}/);
-  // con el diseño viejo el grupo se anuncia inoperable (aria-disabled) y se ve apagado
-  assert.match(css, /\.seg\[aria-disabled=true\]\{[^}]*opacity:/);
+  assert.match(css, /\.pick button\[aria-checked=true\]/);
 });
 
-test('mando: «Cristal» solo se puede elegir con el diseño nuevo (glassActive)', async () => {
-  const { glassActive } = await import(pathToFileURL(path.join(PUB, 'mando', 'features', 'idle.js')).href);
-  assert.equal(glassActive({ agentDesign: 'v2' }), true);
-  assert.equal(glassActive({ agentDesign: 'v1' }), false);
-  assert.equal(glassActive({}), false, 'sin agentDesign del servidor, diseño viejo');
-  assert.equal(glassActive(null), false, 'sin ajustes cargados');
-  // y el selector lo respeta: ni el clic ni las flechas guardan otro nivel
-  const js = fs.readFileSync(path.join(PUB, 'mando', 'features', 'idle.js'), 'utf8');
-  assert.match(js, /function setGlass\(g\) \{ if \(!glassActive\(icfg\)/);
-  assert.match(js, /function glassKey\(e\) \{\s*if \(!glassActive\(icfg\)\) return;/);
-});
-
-/** Grupo #idGlass falso: los atributos se guardan como texto (como en el DOM) y cada radio lleva su data-g. */
-function fakeGlassGroup() {
-  const node = () => ({ attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); } });
-  const buttons = ['auto', 'A', 'B', 'C'].map(g => Object.assign(node(), { dataset: { g }, tabIndex: 0 }));
-  return Object.assign(node(), { buttons, querySelectorAll: () => buttons });
+/** Grupo de radios falso: los atributos se guardan como texto (como en el DOM) y cada botón lleva su data-g. */
+function fakeGroup() {
+  const ls = {};
+  const buttons = ['auto', 'A', 'B', 'C'].map(g => ({ attrs: {}, dataset: { g }, tabIndex: 0, setAttribute(k, v) { this.attrs[k] = String(v); }, focus() { grp.focused = this; } }));
+  const grp = { buttons, focused: null, querySelectorAll: () => buttons, contains: () => true, addEventListener: (t, f) => { ls[t] = f; }, fire: (t, e) => ls[t](e) };
+  return grp;
 }
 
-test('mando: «Cristal» con el diseño viejo se pinta apagado pero conserva su nivel (glassPaint)', async () => {
-  const { glassPaint } = await import(pathToFileURL(path.join(PUB, 'mando', 'features', 'idle.js')).href);
-  const saved = Object.getOwnPropertyDescriptor(globalThis, 'document');
-  const grp = fakeGlassGroup();
-  const checked = () => grp.buttons.map(b => [b.dataset.g, b.attrs['aria-checked'], b.tabIndex]);
-  try {
-    Object.defineProperty(globalThis, 'document', { configurable: true, value: { querySelector: s => (s === '#idGlass' ? grp : null) } });
-    // diseño viejo con «Ligero» guardado: inoperable, y «Ligero» sigue marcado y es el que entra con Tab
-    glassPaint({ agentDesign: 'v1', glass: 'B' });
-    assert.equal(grp.attrs['aria-disabled'], 'true');
-    assert.deepEqual(checked(), [['auto', 'false', -1], ['A', 'false', -1], ['B', 'true', 0], ['C', 'false', -1]]);
-    // al pasar al diseño nuevo vuelve a responder con el mismo nivel
-    glassPaint({ agentDesign: 'v2', glass: 'B' });
-    assert.equal(grp.attrs['aria-disabled'], 'false');
-    assert.deepEqual(checked(), [['auto', 'false', -1], ['A', 'false', -1], ['B', 'true', 0], ['C', 'false', -1]]);
-    // sin nivel del servidor, Automático
-    glassPaint({ agentDesign: 'v1' });
-    assert.equal(grp.attrs['aria-disabled'], 'true');
-    assert.deepEqual(checked().map(c => c[1]), ['true', 'false', 'false', 'false']);
-  } finally {
-    if (saved) Object.defineProperty(globalThis, 'document', saved); else delete globalThis.document;
-  }
+test('mando: segmentos (ui/seg.js): aria-checked, foco itinerante y flechas que eligen', async () => {
+  const { segPaint, segOn } = await import(pathToFileURL(path.join(PUB, 'mando', 'ui', 'seg.js')).href);
+  const grp = fakeGroup();
+  const state = () => grp.buttons.map(b => [b.dataset.g, b.attrs['aria-checked'], b.tabIndex]);
+  segPaint(grp, 'g', 'B');
+  assert.deepEqual(state(), [['auto', 'false', -1], ['A', 'false', -1], ['B', 'true', 0], ['C', 'false', -1]]);
+  segPaint(grp, 'g', 'nada');                              // valor desconocido: ninguno marcado, el primero entra con Tab
+  assert.deepEqual(state().map(c => c[2]), [0, -1, -1, -1]);
+  const picked = [];
+  segOn(grp, 'g', v => picked.push(v));
+  const key = (k, i) => { let prevented = false; grp.fire('keydown', { key: k, target: grp.buttons[i], preventDefault: () => { prevented = true; } }); return prevented; };
+  assert.equal(key('ArrowRight', 3), true); assert.equal(key('ArrowLeft', 0), true);
+  key('Home', 2); key('End', 0);
+  assert.equal(key('a', 1), false, 'otras teclas no se tocan');
+  assert.deepEqual(picked, ['auto', 'C', 'auto', 'C']);
+  assert.equal(grp.focused, grp.buttons[3]);
+  grp.fire('click', { target: { closest: () => grp.buttons[1] } });
+  assert.deepEqual(picked.at(-1), 'A');
 });
 
 test('pcm-player: PCM16 LE se pasa a Float32 y el frame sin 0xA1 ni seq no suena', async () => {
