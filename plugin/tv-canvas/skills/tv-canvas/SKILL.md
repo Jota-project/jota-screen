@@ -15,7 +15,7 @@ La tele es un Chrome en modo kiosco en el servidor de jota-screen. Se maneja con
 - «¿Qué series estoy viendo?», «¿por dónde voy de X?» → `action: watching` (lo que está a medias, con capítulo y lo que queda).
 - «¿Qué he visto esta semana?», «¿qué veo más?» → `action: history` (por días y lo más visto).
 - «Ponme la de ayer», «sigue con lo último» → `action: play_last`.
-- Si parece viejo (mira `at`), `action: refresh` y vuelve a preguntar. Es lo del perfil por defecto, también lo visto en el móvil.
+- Consúltalo cada vez que pregunten, aunque ya lo hayas dicho antes: el dato cambia y, con la conversación en la tele, la consulta enseña la tarjeta con las imágenes. Si parece viejo (mira `at`), `action: refresh` y vuelve a preguntar. Es lo del perfil por defecto, también lo visto en el móvil.
 - `watching`, `history` y `play_last` son personales del dueño: no los uses ni los cuentes cuando habla un invitado.
 - Un capítulo concreto todavía no: pon la serie y, si hace falta, termina con `tv_links` / `tv_click_text`.
 - En el reposo puede salir un «Seguir viendo» grande con las imágenes: `tv_idle` `op: set` con `cfg: {netflix: "on"}` (o `"off"`).
