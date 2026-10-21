@@ -54,11 +54,11 @@ const LAYOUTS = ['pill', 'panel'];
 const layout = z.enum(LAYOUTS).optional().describe('pill when the page is meant to be watched full screen (a video, a photo gallery, a map); ' +
   'default keeps the conversation panel. Streaming apps already get the pill.');
 
-tool('tv_open', 'Open a URL on the TV. Bare text is turned into a Google search. Only http/https. For YouTube/Netflix searches prefer tv_open_app.',
+tool('tv_open', 'Open a URL on the TV. Bare text is turned into a Google search. Only http/https. For Netflix use tv_netflix; for YouTube searches tv_open_app.',
   { url: z.string().describe('Full URL, a domain, or search text'), layout },
   async ({ url, layout }) => out(await cmd({ t: 'nav', url, ...(layout ? { layout } : {}) }), 'Opened'));
 
-tool('tv_open_app', 'Open a streaming app on the TV, optionally searching inside it. After opening, use tv_screenshot / tv_links / tv_click_text to pick the result and start playback.',
+tool('tv_open_app', 'Open a streaming app on the TV, optionally searching inside it. After opening, use tv_screenshot / tv_links / tv_click_text to pick the result and start playback. For Netflix, tv_netflix is faster and plays in one call.',
   { app: z.enum(['youtube', 'netflix', 'spotify', 'home']), query: z.string().optional().describe('Search text inside the app'), layout },
   async ({ app, query, layout }) => {
     const q = encodeURIComponent(query || '');
@@ -66,6 +66,18 @@ tool('tv_open_app', 'Open a streaming app on the TV, optionally searching inside
       : app === 'netflix' ? (query ? `https://www.netflix.com/search?q=${q}` : 'https://www.netflix.com/browse')
         : app === 'spotify' ? (query ? `https://open.spotify.com/search/${q}` : 'https://open.spotify.com/') : null;
     return out(await cmd(app === 'home' ? { t: 'home' } : { t: 'nav', url, ...(layout ? { layout } : {}) }), 'Opened ' + app);
+  });
+
+tool('tv_netflix', 'Netflix on the TV, fast: open it, or play a title in one call (finds it, opens it and resumes where the profile left off; ~2-3 s). Prefer this over tv_open_app + clicks. Profile: the default one unless the user names another (e.g. "en el perfil de Carmen"). If the result has candidates, the title was not an exact match: tell the user what is playing and offer the others (play them with id).',
+  {
+    action: z.enum(['open', 'play', 'search', 'profiles', 'set_default_profile']),
+    title: z.string().optional().describe('Series or film title to play or search'),
+    id: z.string().optional().describe('Netflix title id from candidates/search results'),
+    profile: z.string().optional().describe('Netflix profile name, only if the user asks for a specific one'),
+  },
+  async ({ action, title, id, profile }) => {
+    const op = { open: 'open', play: 'play', search: 'search', profiles: 'profiles', set_default_profile: 'setprofile' }[action];
+    return out(await cmd({ t: 'netflix', op, title, query: title, id, profile }));
   });
 
 tool('tv_nav', 'Browser navigation on the TV: back, forward, reload, or go to the home screen.',

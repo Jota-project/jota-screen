@@ -763,3 +763,69 @@ test('el id del host es el de src/tv/agent-contract.js (talk-view.js lo salta al
   p.win.TVAgent.render(snap());
   assert.equal(p.host().id, C.HOST_ID);
 });
+
+// ── Netflix en su pestaña: volver a una pestaña con la capa de antes aún pintada, y dejarla
+test("cambio de pestaña (restore + tab) con una capa vieja montada: se retira en seco y se restaura sin entradas ni revelado", () => {
+  const p = loadPage();
+  const A = p.win.TVAgent;
+  A.render(snap()); p.advance(400);                       // el panel viejo, con palabras aún por salir
+  const old = p.host();
+  const cur = { id: 2, you: 'Pon la serie', youFinal: true, jota: 'Vale, te dejo la serie a medias, vuelvo a lo de antes.', tools: [], error: false, hint: '' };
+  A.render(snap({ form: 'pill', enter: 'restore', tab: true, live: true, turns: [snap().turns[0], cur] }));
+  assert.notEqual(p.host(), old, 'el host viejo se quita');
+  assert.ok(!old.isConnected);
+  assert.equal(p.doc.body.childNodes.filter(n => n.attrs && n.tagName === 'DIV').length, 1, 'una sola capa');
+  assert.deepEqual([A._debug().form, A._debug().morph], ['pill', ''], 'en la forma de ahora, sin paso desde la vieja');
+  const words = byCls(p, 'wd');
+  assert.equal(words.length, 4 + 5 + 3 + 12, 'lo dicho, a la vista de golpe (sin revelado)');
+  assert.ok(words.every(w => cls(w).includes('sd')), 'sin animación de palabra');
+  assert.ok(cls(byCls(p, 'body')[0]).every(c => c !== 'off'), 'el cristal ya está (sin fundido de entrada)');
+  assert.deepEqual(findRole(p, 'log').childNodes.map(n => n.textContent), [], 'no se vuelve a anunciar');
+  // la foto siguiente (ya la de esta pestaña) no la rehace
+  const h = p.host();
+  A.render(snap({ form: 'pill', ctx: 'web', turns: [snap().turns[0], cur] }));
+  assert.equal(p.host(), h);
+});
+
+test('hide(true): la capa se quita en seco (la pestaña que se deja), sin fundido', () => {
+  const p = loadPage();
+  const A = p.win.TVAgent;
+  A.render(snap()); p.advance(300);
+  A.hide(true);
+  assert.equal(p.host(), undefined, 'fuera al momento');
+  assert.equal(A._debug().open, false);
+  assert.equal(p.doc.documentElement.classList.contains('tv-agent-talk'), false);
+  A.render(snap({ enter: 'restore' }));                    // al volver: restaurada de cero
+  assert.ok(byCls(p, 'wd').every(w => cls(w).includes('sd')));
+});
+
+test("cambio de pestaña con `shown`: restaura las palabras que se veían en la otra (sin entrada) y revela el resto como siempre; revealed() las cuenta", () => {
+  const p = loadPage();
+  const A = p.win.TVAgent;
+  assert.equal(A.revealed(), null, 'sin capa');
+  const cur = { id: 2, you: 'Pon la serie', youFinal: true, jota: 'Vale, te dejo la serie a medias. ', tools: [], error: false, hint: '' };
+  A.render(snap({ enter: 'restore', tab: true, live: true, turns: [snap().turns[0], cur], shown: { 2: [3, 2] } }));
+  const words = () => byCls(p, 'wd');
+  assert.equal(words().length, 4 + 5 + 3 + 2, 'el turno anterior entero; del actual, lo que se veía');
+  assert.ok(words().every(w => cls(w).includes('sd')));
+  assert.deepEqual({ ...A.revealed() }, { 1: [4, 5], 2: [3, 2] });
+  p.advance(3000);
+  assert.equal(words().length, 4 + 5 + 3 + 7, 'el resto sale');
+  assert.ok(words().slice(-5).every(w => !cls(w).includes('sd')), 'con su entrada (en esta pestaña son nuevas)');
+});
+
+test('restaurada, una foto que llega antes de su primer frame espera a ese frame (nace en su caja); el motor sigue con un solo rAF', () => {
+  let pending = 0;
+  const p = loadPage(SRC, win => {
+    const raf = win.requestAnimationFrame;
+    win.requestAnimationFrame = f => { pending++; return raf(t => { pending--; f(t); }); };
+  });
+  const A = p.win.TVAgent;
+  A.render(snap({ enter: 'restore', ctx: 'idle', live: false, state: 'done' }));
+  const w = byCls(p, 'w')[0];
+  A.render(snap({ ctx: 'web', live: false, state: 'done' }));   // documento lento: aún no ha corrido ningún frame
+  assert.equal(w.dataset.ctx, 'idle', 'la foto nueva espera al primer frame');
+  p.advance(16);
+  assert.equal(w.dataset.ctx, 'web', 'tras el primer frame (ya en su caja), la foto nueva');
+  for (let i = 0; i < 20; i++) { p.advance(16); assert.ok(pending <= 1, `un solo rAF del motor pendiente (frame ${i}: ${pending})`); }
+});

@@ -80,6 +80,88 @@ test('CDP: engancha la pestaña, avisa por los ganchos y corta las llamadas que 
   await fake.close();
 });
 
+test('CDP: varias pestañas: traer una al frente, abrir otra y un solo enganche aunque se pida dos veces', async () => {
+  const fake = await startFakeCdp({ pages: [{ targetId: 'P1', type: 'page', url: 'http://127.0.0.1:8787/idle.html', title: 'Salón' }] });
+  const seen = [];
+  const cdp = createCdp({ port: fake.port, log: { info() {}, error() {} }, timeoutMs: 500, retryMs: 50, hooks: { onAttached: t => seen.push(t && t.targetId) } });
+  cdp.connect();
+  for (let i = 0; i < 100 && !cdp.session; i++) await new Promise(r => setTimeout(r, 10));
+  const id = await cdp.newTab();
+  assert.equal(id, 'P2');
+  assert.equal(cdp.targetId, 'P2'); assert.equal(cdp.session, 'S-P2');
+  await new Promise(r => setTimeout(r, 30)); // el aviso de pestaña nueva llega después: no debe abrir otra sesión
+  assert.equal(fake.find('Target.attachToTarget').filter(c => c.params.targetId === 'P2').length, 1, 'un solo enganche a la pestaña nueva');
+  await cdp.show('P1');
+  assert.equal(cdp.session, 'S-P1');
+  assert.ok(fake.find('Target.activateTarget').some(c => c.params.targetId === 'P1'), 'se trae al frente en Chrome');
+  assert.ok(fake.find('Target.detachFromTarget').some(c => c.params.sessionId === 'S-P2'), 'la de detrás se suelta');
+  await assert.rejects(cdp.show('NO'), /nopage/);
+  assert.deepEqual(seen, ['P1', 'P2', 'P1']);
+  cdp.stop(); await fake.close();
+});
+
+test('CDP: al conectar con Netflix cargada detrás, se engancha la pestaña que se ve', async () => {
+  const fake = await startFakeCdp({
+    pages: [{ targetId: 'P1', type: 'page', url: 'http://127.0.0.1:8787/idle.html', title: 'Salón' }, { targetId: 'P2', type: 'page', url: 'https://www.netflix.com/browse', title: 'Netflix' }],
+    evaluate: (e, m) => (e === 'document.visibilityState' ? (m.sessionId === 'S-P2' ? 'hidden' : 'visible') : undefined),
+  });
+  const cdp = createCdp({ port: fake.port, log: { info() {}, error() {} }, timeoutMs: 500, retryMs: 50 });
+  try {
+    cdp.connect();
+    await fake.waitFor(m => m.method === 'Target.attachToTarget' && m.params.targetId === 'P2');
+    for (let i = 0; i < 100 && cdp.session !== 'S-P1'; i++) await new Promise(r => setTimeout(r, 10));
+    await new Promise(r => setTimeout(r, 50));
+    assert.equal(cdp.targetId, 'P1'); assert.equal(cdp.session, 'S-P1');
+  } finally { cdp.stop(); await fake.close(); }
+});
+
+test('CDP show: engancha la pestaña detrás, espera a que pinte (onAttached), la trae al frente, avisa a la que deja (onLeft) y la suelta', async () => {
+  const fake = await startFakeCdp({ pages: [{ targetId: 'P1', type: 'page', url: 'http://127.0.0.1:8787/idle.html', title: 'Salón' },
+    { targetId: 'P2', type: 'page', url: 'https://www.netflix.com/browse', title: 'Netflix' }], evaluate: () => 'visible' });
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  /** @type {(from: any) => any} */ let paint = () => undefined;
+  /** @type {any[]} */ const left = [], froms = [];
+  const cdp = createCdp({ port: fake.port, log: { info() {}, error() {} }, timeoutMs: 500, retryMs: 50, frontWaitMs: 150, hooks: {
+    onAttached: (t, from) => { froms.push(from); return paint(from); },
+    onLeft: call => { left.push('left'); return call('Runtime.evaluate', { expression: 'DEJA' }); },
+  } });
+  try {
+    cdp.connect();
+    for (let i = 0; i < 100 && !(cdp.session === 'S-P2' && !cdp.attaching); i++) await sleep(10);
+    assert.equal(cdp.session, 'S-P2');
+    const i0 = fake.calls.length;
+    // pintar en la pestaña nueva tarda: show no la trae al frente hasta que acaba
+    paint = from => from('Runtime.evaluate', { expression: 'MIRA' }).then(() => sleep(60)).then(() => cdp.call('Runtime.evaluate', { expression: 'PINTA' }));
+    await cdp.show('P1');
+    const after = fake.calls.slice(i0), at = (method, f = () => true) => after.findIndex(c => c.method === method && f(c));
+    const attach = at('Target.attachToTarget', c => c.params.targetId === 'P1'), painted = at('Runtime.evaluate', c => c.params.expression === 'PINTA');
+    const front = at('Target.activateTarget'), deja = at('Runtime.evaluate', c => c.params.expression === 'DEJA');
+    const detach = at('Target.detachFromTarget', c => c.params.sessionId === 'S-P2');
+    assert.ok(attach >= 0 && attach < painted && painted < front, `engancha y pinta antes de traerla al frente (${attach}, ${painted}, ${front})`);
+    assert.equal(after[painted].sessionId, 'S-P1', 'pinta en la nueva');
+    const mira = at('Runtime.evaluate', c => c.params.expression === 'MIRA');
+    assert.ok(mira >= 0 && mira < front && after[mira].sessionId === 'S-P2', 'onAttached puede mirar la que se deja (from), aún enganchada');
+    assert.ok(front < deja && deja < detach, `luego avisa a la que deja y la suelta (${front}, ${deja}, ${detach})`);
+    assert.equal(after[deja].sessionId, 'S-P2', 'onLeft va a la sesión de la que se deja');
+    assert.deepEqual([cdp.targetId, cdp.session, left.length], ['P1', 'S-P1', 1]);
+    // quien escucha no contesta nunca: el cambio de pestaña no se cuelga (tope frontWaitMs)
+    paint = () => new Promise(() => {});
+    const t0 = Date.now();
+    await cdp.show('P2');
+    assert.ok(Date.now() - t0 < 150 + 250, `show acaba igual (${Date.now() - t0} ms)`);
+    assert.equal(cdp.session, 'S-P2');
+    // activate a secas (autoActivate, pestaña cerrada) sigue soltando la anterior antes de enganchar
+    paint = () => undefined;
+    const i1 = fake.calls.length;
+    await cdp.activate('P1');
+    const a = fake.calls.slice(i1);
+    const d = a.findIndex(c => c.method === 'Target.detachFromTarget' && c.params.sessionId === 'S-P2');
+    assert.ok(d >= 0 && d < a.findIndex(c => c.method === 'Target.attachToTarget'), 'activate suelta la anterior primero');
+    assert.equal(left.length, 2, 'onLeft solo desde show');
+    assert.equal(froms.at(-1), null, 'sin show no hay from');
+  } finally { cdp.stop(); await fake.close(); }
+});
+
 test('tokens de la tele: la isla los lleva delante y tv-island.js no repite sus colores', () => {
   const fs = require('node:fs');
   const os = require('node:os');

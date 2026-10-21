@@ -84,6 +84,9 @@ const BUILDERS = {
     const [name, kind] = APPS[a.app] || ['', 'screen'];
     return name ? { kind: /** @type {Kind} */ (kind), title: 'Abrir en la tele', detail: name } : null;
   },
+  // Netflix va en su propia pestaña (src/features/netflix.js): abrirlo o poner un título lleva a la píldora
+  tv_netflix: a => (a.action === 'open' ? { kind: 'video', title: 'Abrir en la tele', detail: 'Netflix' }
+    : a.action === 'play' ? { kind: 'video', title: 'Poner en Netflix', detail: clip(a.title) || 'Netflix' } : null),
   tv_spotify: a => (SPOTIFY_TITLES[a.action] ? { kind: 'music', title: SPOTIFY_TITLES[a.action], detail: 'Spotify' } : null),
   tv_activity: a => {
     const op = a.op || 'set';
@@ -166,7 +169,7 @@ function layoutOf(name, args) {
 }
 
 // herramientas que ponen otra página en la tele (navegan): al acabar el turno, la conversación espera a que se pinte
-const OPENS_TOOLS = Object.freeze(['tv_open', 'tv_open_app', 'tv_present', 'tv_show_html', 'tv_idle']);
+const OPENS_TOOLS = Object.freeze(['tv_open', 'tv_open_app', 'tv_netflix', 'tv_present', 'tv_show_html', 'tv_idle']);
 /** ¿Esta llamada pone otra página en la tele? (solo las que tienen ficha: tv_idle, con op=show) @param {any} name @param {any} args */
 function opensPage(name, args) {
   const n = toolName(name);

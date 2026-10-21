@@ -17,6 +17,11 @@
 // Tras una navegación (documento nuevo) el servidor la repinta con `enter:'restore'` desde un script de documento nuevo:
 // en su caja, sin animación de entrada, con lo ya dicho a la vista. Las animaciones de entrada que ya acabaron se marcan
 // (.sd) para que mover el host o sacarlo y volverlo a meter en la capa superior no las repita.
+// Al cambiar de pestaña (Netflix va en la suya) la primera foto trae además `tab`: lo que se quedó pintado en esta pestaña
+// es de antes (otro estado, otra forma, quizá fundiéndose), así que se retira en seco y se restaura igual que tras navegar
+// (sin entradas ni palabras que vuelvan a revelarse). Con `shown` ({ id: [tú, Jota] }, lo que enseñaba la pestaña que se
+// deja, de revealed()) se restauran esas palabras y el resto se revela como siempre: nace igual que se veía allí.
+// hide(true) quita la capa en seco (la pestaña que se deja).
 // Fuentes: las suyas (FontFace desde los bytes de __TV_FONTS, con nombre propio), igual en el reposo que en cualquier web.
 // Reglas de la capa:
 // - Como tv-island.js: shadow DOM, solo createElement/createElementNS/textContent (Trusted Types) y estilos en una hoja
@@ -318,6 +323,9 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
   let resizeObs = null;             // ResizeObserver del contenido: un cambio de caja despierta el rAF parado
   let restoring = false;            // la foto en curso restaura la capa en un documento nuevo (sin entradas)
   let seed = false;                 // la membrana nace ya en la caja del contenido (restore), no desde el centro
+  // foto que llegó con la membrana restaurada pero aún sin su primer frame (documento lento en dar su primer rAF): si se
+  // aplicara ya, la membrana nacería en la caja nueva (otro tinte, otro ancho) y no en la que se veía; espera a ese frame
+  let deferred = null;
   /** @type {any} */ let morph = null; // paso panel → píldora en curso: { phase, timers }
   let traveling = false;            // la membrana viaja a la píldora (muelles SPRING.travel) hasta asentarse
   /** @type {any} */ let waiting = null; // foto que espera a que exista documentElement (script de documento nuevo)
@@ -383,6 +391,8 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
       })),
       icons: s.icons && typeof s.icons === 'object' ? s.icons : {},
       enter: ENTERS.includes(s.enter) ? s.enter : 'open',
+      tab: s.tab === true,
+      shown: s.shown && typeof s.shown === 'object' ? s.shown : null,
     };
   }
   const calmNow = () => !!(last && (last.calm || last.night)) || mq(REDUCED_MOTION_QUERY);
@@ -567,8 +577,14 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
       v.jota.el.classList.toggle('sm', small(v, t, current, s.live));
       if (v.hint.textContent !== t.hint) v.hint.textContent = t.hint;
       syncTools(v, t.tools, s.icons);
-      // un turno que ya no es el actual se enseña entero; al restaurar, también el actual (lo ya dicho no se revela otra vez)
-      if (!current || restoring) flushLine(v.you), flushLine(v.jota);
+      // un turno que ya no es el actual se enseña entero; al restaurar, también el actual (lo ya dicho no se revela otra vez),
+      // o, si viene de otra pestaña (`shown`), lo que allí ya se veía (el resto se revela como siempre)
+      if (!current) flushLine(v.you), flushLine(v.jota);
+      else if (restoring) {
+        const k = s.shown ? s.shown[t.id] : undefined;
+        if (!s.shown) flushLine(v.you), flushLine(v.jota);
+        else if (Array.isArray(k)) showUpTo(v.you, k[0]), showUpTo(v.jota, k[1]);
+      }
       speak(v, t, current && s.live);
     });
   }
@@ -660,6 +676,7 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     markProv(ln);
   }
   function flushLine(ln) { while (ln.spans.length < ln.want.length) showNext(ln); }
+  function showUpTo(ln, n) { const m = Math.min(Number(n) || 0, ln.want.length); while (ln.spans.length < m) showNext(ln); }
   const pendingOf = ln => ln.want.length - ln.spans.length;
 
   function syncTools(v, tools, icons) {
@@ -763,8 +780,11 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     write(m, now / 1000);
     if (settled && !morph) traveling = false;
     if (closing && settled && now - closedAt >= FADE_MS) return finish();
-    if (settled && !closing) { if (++stillFrames >= SETTLE.frames) return; } else stillFrames = 0;
+    if (settled && !closing) { if (++stillFrames >= SETTLE.frames && !deferred) return; } else stillFrames = 0;
     raf = requestAnimationFrame(frame);
+    // ya nació en su caja: ahora la foto que esperaba. Después de pedir el frame siguiente, para que su wake() no pida otro
+    // (dos rAF del motor por frame)
+    if (deferred) { const o = deferred; deferred = null; window.TVAgent.render(o); }
   }
   // LEER: todo lo que fuerza el cálculo de la página, antes de escribir nada
   function read() {
@@ -864,11 +884,16 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     render(o) {
       // script de documento nuevo: aún no hay documentElement; se pinta en cuanto lo haya
       if (!parentNow()) { waitForRoot(o); return true; }
-      last = clean(o);
+      const s = clean(o);
+      if (seed && host && host.isConnected && s.enter !== 'restore') { deferred = o; return true; }
+      deferred = null;
+      // otra pestaña: lo que hay aquí pintado es de antes; fuera en seco y se restaura de cero (sin entradas ni revelado)
+      if (s.enter === 'restore' && s.tab && host) { clearTimeout(revealT); revealT = 0; flushBy = 0; finish(); }
+      last = s;
       // la forma que eligió el usuario arrastrando manda hasta que la foto la confirme (o pase DRAG.hold)
       if (hold && (last.form === hold.form || performance.now() > hold.until)) hold = null;
       if (hold) last.form = hold.form;
-      const sig = JSON.stringify({ ...last, enter: '' }), fresh = !host || !host.isConnected, reopened = closing;
+      const sig = JSON.stringify({ ...last, enter: '', tab: false, shown: null }), fresh = !host || !host.isConnected, reopened = closing;
       restoring = fresh && last.enter === 'restore';
       clearTimeout(removeT); removeT = 0;
       ensure();
@@ -884,8 +909,9 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
       lastSig = sig;
       return true;
     },
-    hide() {
-      clearTimeout(revealT); revealT = 0; flushBy = 0;
+    // dry: en seco, sin fundido (la pestaña que se deja: ya no se ve)
+    hide(dry) {
+      clearTimeout(revealT); revealT = 0; flushBy = 0; deferred = null;
       if (waiting) { waiting.mo.disconnect(); waiting = null; }
       setOpen(false);
       dropDrag();
@@ -893,6 +919,7 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
       endMorph();                 // cerrada ya: la forma pendiente se pone sin paso
       dropPartialTier();
       if (!host) return;
+      if (dry === true) { finish(); return; }
       closing = true; closedAt = performance.now();
       dom.sheet.classList.add('gone');
       dom.halo.classList.add('off'); dom.body.classList.add('off');
@@ -903,6 +930,14 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     // la membrana deja pasar el puntero (on) o vuelve a recibirlo: el servidor la aparta mientras Jota pulsa por
     // coordenadas (tv_click_at), que tiene que llegar a la web aunque caiga debajo del panel o de la píldora
     pass(on) { if (dom) setFlag(dom.w, 'data-pass', !!on); return true; },
+    // palabras que se ven ya de cada turno ({ id: [tú, Jota] }; null sin capa o cerrándose): el servidor se lo pregunta a
+    // la pestaña que se deja para que la nueva nazca igual (`shown`)
+    revealed() {
+      if (!dom || closing) return null;
+      const o = {};
+      for (const [id, v] of turns) o[id] = [v.you.spans.length, v.jota.spans.length];
+      return o;
+    },
     // topLayer: la capa está en la capa superior (se ve encima de un vídeo a pantalla completa); sin popover, false
     // form: la que se ve (durante el paso, la de antes hasta el cambio); morph: fase del paso de forma o ''; drag: se arrastra
     _debug() {

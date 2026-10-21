@@ -24,9 +24,14 @@ test.after(() => fs.rmSync(PUB, { recursive: true, force: true }));
 
 // Runtime.evaluate en `exprs` (lo que pinta); el resto (scripts de documento nuevo, Page.enable) en `calls`
 function fakeCdp() {
-  const c = { session: {}, exprs: [], calls: [], has: true, ids: 0 };
+  const c = { session: {}, exprs: [], calls: [], has: true, ids: 0, probe: /** @type {any} */ (undefined) };
   c.call = async (method, p) => {
-    if (method === 'Runtime.evaluate') { c.exprs.push(p.expression); return { result: { value: c.has } }; }
+    if (method === 'Runtime.evaluate') {
+      c.exprs.push(p.expression);
+      // la sonda de pintada contesta `probe` (valor o función que lo da, quizá una promesa) si la prueba lo pone
+      if (c.probe !== undefined && p.expression.includes('elementsFromPoint')) return { result: { value: await (typeof c.probe === 'function' ? c.probe() : c.probe) } };
+      return { result: { value: c.has } };
+    }
     c.calls.push({ method, ...p });
     return method === 'Page.addScriptToEvaluateOnNewDocument' ? { identifier: String(++c.ids) } : {};
   };
@@ -702,14 +707,14 @@ test('pausar en el respiro con la espera a la página: el paso se cancela y la e
 });
 
 /** Página falsa para la sonda: una rejilla con lo que hay en cada punto (elementsFromPoint) y relojes a mano. */
-function probePage(at) {
+function probePage(at, url = 'https://www.netflix.com/browse') {
   const timers = [], frames = [];
   let now = 0, seq = 0;
   const el = (tag, o = {}) => ({ tagName: tag, id: '', childNodes: [], ...o });
   const html = el('HTML'), body = el('BODY');
   const win = {
     innerWidth: 1000, innerHeight: 500,
-    document: { documentElement: html, body, elementsFromPoint: (x, y) => [...(at(x, y, now) || []), body, html] },
+    document: { URL: url, documentElement: html, body, elementsFromPoint: (x, y) => [...(at(x, y, now) || []), body, html] },
     getComputedStyle: e => ({ backgroundImage: e.bg || 'none' }),
     performance: { getEntriesByType: () => [{ name: 'first-paint' }] },
     setTimeout: (f, ms) => { timers.push({ id: ++seq, at: now + ms, f }); return seq; },
@@ -719,7 +724,7 @@ function probePage(at) {
     requestAnimationFrame: f => { frames.push(f); return ++seq; },
   };
   let state = 'pending';
-  vm.runInNewContext(`(${paintProbe})(o).then(v => done(v))`, { ...win, o: { wait: PAINT_WAIT_MS, grid: PAINT_GRID, min: 2, every: PAINT_EVERY_MS, host: HOST_ID },
+  vm.runInNewContext(`(${paintProbe})(o).then(v => done(v))`, { ...win, o: { wait: PAINT_WAIT_MS, grid: PAINT_GRID, min: 2, every: PAINT_EVERY_MS, host: HOST_ID, blank: tv.PAINT_BLANK, blankRe: tv.BLANK_RE.source },
     done: v => { state = v; }, Promise });
   const advance = async ms => {
     const end = now + ms;
@@ -759,4 +764,163 @@ test('sonda de pintada: un esqueleto («Cargando…», cajas grises, la capa del
   const r = probePage(() => [{ tagName: 'IMG', id: '', childNodes: [], complete: false, naturalWidth: 0 }]);
   await r.advance(1000);
   assert.equal(r.state(), 'pending');
+});
+
+test('sonda de pintada: la pestaña en blanco (about:blank) contesta PAINT_BLANK al momento, aunque tenga «contenido»', async () => {
+  const img = { tagName: 'IMG', id: '', childNodes: [], complete: true, naturalWidth: 640 };
+  const b = probePage(() => [img], 'about:blank');
+  await b.advance(16);
+  assert.equal(b.state(), tv.PAINT_BLANK);
+  assert.ok(tv.BLANK_RE.test('about:blank') && !tv.BLANK_RE.test('https://www.netflix.com/browse'));
+});
+
+test('otra pestaña con la conversación ya cerrada (Netflix va en la suya): al llegar a ella se quitan las capas que queden', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const m = make({ page: IDLE, playback: false });
+  const stale = () => m.cdp.exprs.filter(e => e.includes('TVAgent.hide()') && e.includes('TVTalk.hide()')).length;
+  m.v.reset();
+  assert.equal(stale(), 0, 'sin haber pintado nunca, nada que quitar');
+  m.v.turn('panel'); m.v.you('hola', true); m.v.jota('Hola.'); m.v.done();
+  await step(t);
+  m.v.hide(); await step(t);
+  await step(t, 60_000);                             // mucho después del cierre
+  const before = m.cdp.exprs.length;
+  m.v.reset();                                       // onAttached: vuelve la pestaña de siempre, con su panel aún pintado
+  assert.equal(stale(), 1, 'quita las dos capas (TVAgent y TVTalk)');
+  assert.ok(!m.cdp.exprs.slice(before).some(e => e.includes('.render(')), 'y no la vuelve a pintar');
+});
+
+// ── Netflix en su pestaña (cdp.show): cambio de pestaña, pestaña en blanco y espera que se vuelve a armar
+const probes = cdp => cdp.exprs.filter(e => e.includes('elementsFromPoint')).length;
+
+test('reset({ tab }) con la capa a la vista: pinta ya (sin batchMs) la última foto vista (su tinte, restore, tab) y devuelve la promesa; la siguiente, la de ahora', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const m = make({ ctx: 'idle', page: IDLE, playback: false });
+  m.v.turn('panel'); m.v.you('abre Netflix', true);
+  await step(t); await settle();
+  const n = m.cdp.exprs.length;
+  m.cdp.session = { otra: 1 };                                   // onAttached: otra pestaña enganchada (Netflix, web)
+  m.c.now = { ...m.c.now, ctx: 'web', page: NETFLIX };
+  const p = m.v.reset({ tab: true });
+  assert.equal(m.cdp.exprs.length, n + 1, 'una llamada al momento, sin esperar a batchMs');
+  assert.ok(p && typeof p.then === 'function', 'devuelve la promesa de esa llamada (cdp.show la espera)');
+  await p;
+  const first = arg(m.cdp.exprs[n]);
+  assert.ok(m.cdp.exprs[n].includes('AGENTE-MINIMO'), 'con la fuente (la pestaña nueva no la tiene)');
+  assert.deepEqual([first.ctx, first.form, first.enter, first.tab], ['idle', 'panel', 'restore', true], 'la última que se vio, con su tinte');
+  await step(t); await settle();
+  const next = last(m.cdp);
+  assert.deepEqual([next.ctx, next.enter, 'tab' in next], ['web', 'open', false], 'la siguiente ya con el tinte de esta pestaña');
+  assert.equal(snapOf(scripts(m.cdp).at(-1).source).tab, undefined, 'el script de documento nuevo no lleva `tab`');
+  // sin la capa a la vista, reset({ tab }) no pinta nada
+  const q = make({ page: IDLE, playback: false });
+  assert.equal(q.v.reset({ tab: true }), undefined);
+  assert.equal(q.cdp.exprs.length, 0);
+});
+
+test('leave(): la capa v2 de la pestaña que se deja se quita en seco (hide(true)); sin capa v2 pintada, nada', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const m = make();
+  const sent = [];
+  const call = async (method, p) => { sent.push(p.expression); return {}; };
+  assert.equal(m.v.leave(call), undefined);
+  m.v.turn('panel'); m.v.you('hola', true); await step(t);
+  await m.v.leave(call);
+  assert.equal(sent.length, 1);
+  assert.ok(sent[0].includes('TVAgent.hide(true)') && sent[0].includes('TVIsland.dim(1)'));
+  const v1 = make({ design: 'v1' });
+  v1.v.turn('panel'); v1.v.you('hola', true); await step(t);
+  assert.equal(v1.v.leave(call), undefined, 'el diseño viejo sigue igual');
+});
+
+test('pestaña en blanco (about:blank mientras carga la de verdad): ni se sondea ni cuenta como pintada; la espera sigue hasta la página real', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const BLANK = { url: 'about:blank', stage: null, idle: false };
+  const m = make({ page: NETFLIX, playback: false });            // desde una app: ya en píldora
+  const jota = 'Hecho.';
+  m.v.turn('panel'); m.v.you('pon Netflix', true); await step(t);
+  m.v.navigating();                                               // la orden netflix, sin fichas
+  m.c.now = { ...m.c.now, page: BLANK }; m.v.reset({ tab: true }); // netflix.front: pestaña nueva en blanco al frente
+  await step(t); await settle();
+  assert.equal(probes(m.cdp), 0, 'about:blank no se sondea');
+  m.v.jota(jota); m.v.done(); await step(t); await settle();
+  assert.equal(m.v.awaiting(), true);
+  // Chrome ya dice la URL nueva pero el documento sigue en blanco: la sonda contesta «blank» y no cuenta
+  m.cdp.probe = tv.PAINT_BLANK;
+  m.c.now = { ...m.c.now, page: NETFLIX }; m.v.reset(); await step(t); await settle();
+  await step(t, 500); await settle();
+  assert.ok(probes(m.cdp) > 1, 'se vuelve a mirar');
+  assert.equal(m.v.awaiting(), true, 'la pestaña en blanco no es la página pintada');
+  m.cdp.probe = true;                                             // llega el documento de verdad y se pinta
+  await step(t, 100); await settle();
+  assert.equal(m.v.awaiting(), false);
+  await step(t, AFTER_PAINT_MIN_MS - 300); await settle();
+  assert.equal(hidesOf(m.cdp), 0, 'se ve al menos AFTER_PAINT_MIN_MS encima de la página de verdad');
+  await step(t, CLOSE_BASE_MS); await settle();                  // y lo que quede del cierre normal
+  assert.equal(hidesOf(m.cdp), 1);
+});
+
+test('espera vencida (la sonda llegó a su tope) y luego la página de verdad: la espera se vuelve a armar y el cierre cuenta AFTER_PAINT_MIN_MS desde su pintada', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const m = make({ page: NETFLIX, playback: false });
+  const jota = 'Hecho.', normal = CLOSE_BASE_MS + CLOSE_PER_CHAR_MS * jota.length;
+  m.v.turn('panel'); m.v.you('pon Netflix', true); await step(t);
+  m.v.navigating();
+  m.cdp.probe = false;                                            // sin contenido que se reconozca: vence (cuenta, pero «débil»)
+  m.c.now = { ...m.c.now, page: { ...NETFLIX, url: 'https://www.netflix.com/SwitchProfile' } }; m.v.reset();
+  await step(t); await settle();
+  m.v.jota(jota); m.v.done(); await step(t); await settle();
+  assert.equal(m.v.awaiting(), false, 'ya «pintada» por el tope');
+  await step(t, 1500); await settle();
+  let release;
+  m.cdp.probe = () => new Promise(r => { release = r; });         // la página de verdad tarda en enseñar su contenido
+  m.c.now = { ...m.c.now, page: NETFLIX }; m.v.reset(); await step(t); await settle();
+  assert.equal(m.v.awaiting(), true, 'la navegación vuelve a armar la espera');
+  await step(t, normal); await settle();
+  assert.equal(hidesOf(m.cdp), 0, 'el cierre normal no corre mientras se espera');
+  release(true); await settle();
+  assert.equal(m.v.awaiting(), false);
+  await step(t, AFTER_PAINT_MIN_MS - 300); await settle();
+  assert.equal(hidesOf(m.cdp), 0, 'al menos AFTER_PAINT_MIN_MS encima de la página pintada');
+  await step(t, 400); await settle();
+  assert.equal(hidesOf(m.cdp), 1);
+  // ya pintada de verdad, una navegación dentro de la app (pushState) no alarga el cierre
+  const n = make({ page: NETFLIX, playback: false });
+  n.v.turn('panel'); n.v.you('pon Netflix', true); await step(t);
+  n.v.navigating(); n.c.now = { ...n.c.now, page: { ...NETFLIX, url: 'https://www.netflix.com/browse?x=1' } }; n.v.reset();
+  await step(t); await settle();
+  n.v.jota(jota); n.v.done(); await step(t); await settle();
+  await step(t, 1000);
+  n.c.now = { ...n.c.now, page: { ...NETFLIX, url: 'https://www.netflix.com/title/1' } }; n.v.reset(); await step(t); await settle();
+  assert.equal(n.v.awaiting(), false);
+  await step(t, normal - 1000); await settle();
+  assert.equal(hidesOf(n.cdp), 1, 'se cierra a su hora normal');
+});
+
+test('reset({ tab, from }): pregunta a la pestaña que se deja qué palabras enseña ya y las manda en la foto del cambio (`shown`)', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const m = make({ page: NETFLIX, playback: false });
+  m.v.turn('panel'); m.v.you('vuelve', true); m.v.jota('Vale, te dejo la serie a medias'); await step(t); await settle();
+  const id = last(m.cdp).turns.at(-1).id;
+  const asked = [];
+  const from = async (method, p) => { asked.push(p.expression); return { result: { value: { [id]: [1, 3], x: ['a'] } } }; };
+  const n = m.cdp.exprs.length;
+  m.v.jota('Vale, te dejo la serie a medias y vuelvo');           // una tanda pendiente: espera a la foto del cambio
+  m.cdp.session = { otra: 1 };
+  const p = m.v.reset({ tab: true, from });
+  assert.ok(asked[0].includes('revealed'), 'pregunta a la que se deja');
+  await p;
+  const first = arg(m.cdp.exprs[n]);
+  assert.deepEqual([first.tab, first.enter, first.shown], [true, 'restore', { [id]: [1, 3] }], 'lo que allí se veía, saneado');
+  await step(t); await settle();
+  const next = last(m.cdp);
+  assert.ok(!('shown' in next) && !('tab' in next) && next.turns.at(-1).jota.endsWith('vuelvo'), 'luego, la de ahora');
+  // la que se deja no contesta: no se espera más de FROM_WAIT_MS y se pinta sin `shown`
+  const q = make({ page: NETFLIX, playback: false });
+  q.v.turn('panel'); q.v.you('hola', true); await step(t); await settle();
+  const k = q.cdp.exprs.length;
+  const r = q.v.reset({ tab: true, from: () => new Promise(() => {}) });
+  await step(t, 100); await r;
+  const f = arg(q.cdp.exprs[k]);
+  assert.deepEqual([f.tab, 'shown' in f], [true, false]);
 });

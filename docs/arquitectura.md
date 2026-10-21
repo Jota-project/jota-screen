@@ -190,7 +190,7 @@ talk.js ── mismo filtro de turnId/fantasma que los tokens, rearma el plazo (
 talk-view.js ── foto completa cada ≤ 100 ms: TVAgent.render(SNAP)
       {form pill|panel, ctx idle|music|web|video, state listen|think|talk|error|done, live, night, calm, glass, colors,
        turns: [{id, you, youFinal, jota, tools:[{id, kind, title, detail, status run|ok|fail}], error, hint}], icons,
-       enter open|restore}
+       enter open|restore, tab? (solo la foto del cambio de pestaña), shown? {turnId: [tú, Jota]} (con tab)}
 ```
 
 - Los valores que admite la foto, los nombres de las fuentes y el del binding viven en `src/tv/agent-contract.js`;
@@ -256,6 +256,23 @@ mueve, nunca se recrea, al entrar o salir de pantalla completa: dentro del eleme
 y en body con un `<video>` a pantalla completa (se ve, pero no se puede arrastrar: queda el gesto del mando). Fuentes: Fraunces de `public/fonts/` (OFL) mandada como bytes
 (`FontFace` desde un ArrayBuffer, nombre propio `TV Fraunces`), así se ve igual con `font-src 'none'`; Inter no está
 vendorizada: la de palo seco es la del sistema en todas partes.
+
+### Cambiar de pestaña con la capa abierta (Netflix va en la suya)
+
+`cdp.show(id)` engancha primero la pestaña de destino, aún detrás (la anterior sigue enganchada), y espera la promesa de
+`onAttached` (como mucho `FRONT_WAIT_MS`): `talkView.reset({ tab: true, from })` pinta ya, sin `batchMs`, la última foto
+que se vio (su tinte, `enter:'restore'` y `tab`), con `shown`: lo que la pestaña que se deja enseña de cada turno
+(`TVAgent.revealed()`, preguntado por `from` con `FROM_WAIT_MS` de tope). La página retira en seco lo que se quedó
+pintado en ella y restaura esas palabras sin entradas; el resto se revela como siempre. Luego `Target.activateTarget`
+(se ve ya con la capa), `onLeft` → `talkView.leave()` quita en seco (`TVAgent.hide(true)`) la capa de la que se deja, y
+se suelta su sesión. La foto siguiente trae el tinte de la pestaña nueva (los muelles hacen el cambio de ancho).
+`activate` / `autoActivate` siguen soltando la anterior antes de enganchar.
+
+Pestaña en blanco: `about:blank` (y `chrome://newtab`, `chrome-search:`) no es la página nueva: con esa URL no se sondea,
+y si la sonda ve el documento aún en blanco contesta `blank` y se vuelve a mirar; no cuenta como pintada. Un fallo de la
+sonda tampoco cuenta (se repite si no hubo navegación). Si llega una navegación con la espera en curso o vencida (la
+pintada fue el tope de la sonda), la espera se vuelve a armar y el cierre cuenta `AFTER_PAINT_MIN_MS` desde la pintada
+de verdad.
 
 ### Cambiar el formato: mando y puntero de la tele
 

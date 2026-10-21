@@ -29,6 +29,12 @@ async function startFakeCdp({ pages = [{ targetId: 'P1', type: 'page', url: 'htt
         case 'Page.createIsolatedWorld': result = { executionContextId: 7 }; break;
         case 'Page.getNavigationHistory': result = { currentIndex: 1, entries: [{ id: 11, url: 'https://a/' }, { id: 12, url: 'https://b/' }, { id: 13, url: 'https://c/' }] }; break;
         case 'Runtime.evaluate': result = { result: { value: evaluate(m.params.expression, m) } }; break;
+        case 'Target.createTarget': { // pestaña nueva: como Chrome, avisa de ella antes de responder
+          const t = { targetId: 'P' + (pages.length + 1), type: 'page', url: m.params.url, title: '' };
+          pages.push(t); result = { targetId: t.targetId };
+          event('Target.targetCreated', { targetInfo: t });
+          break;
+        }
       }
       if (m.id) c.send(JSON.stringify({ id: m.id, result }));
     });

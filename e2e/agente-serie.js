@@ -61,7 +61,13 @@ const { IDLE_CSP } = require(path.join(ROOT, 'remote', 'src', 'transport', 'stat
 // ── umbrales (todos revisables)
 const CONTENT_HOST = 'netflix-e2e.test'; // «app de contenido» de la prueba (solo aquí: --host-resolver-rules y contentHosts)
 const GAP_MAX_MS = 20;         // ms entre la primera pintada del documento nuevo y el cristal pintado (≈ 1 frame; 0 lo esperado)
-const MAX_STEP = 0.05;         // salto máximo de un borde de la membrana por frame de 60 Hz, en fracción del ancho
+// Saltos de la membrana. El muelle de crecer (K 230 / C 21) llega en su punto más rápido a unos 95-115 px por frame en un
+// viaje de ~700 px a 1920 (5-6 % del ancho): eso es velocidad, no un salto. Un salto es un frame mucho más largo que el
+// anterior (la membrana se teletransporta) o un paso por encima del tope absoluto.
+const MAX_STEP = 0.08;         // tope absoluto de un borde por frame de 60 Hz, en fracción del ancho
+const JUMP_RATIO = 2.5;        // un frame más largo que esto por el anterior (si el anterior ya se movía) es un salto
+const MOVING_PX = 2;           // un frame que mueve menos que esto no cuenta como «ya se movía»
+const JUMP_MIN = 0.02;         // por debajo de esto (fracción del ancho) un frame no cuenta como salto aunque acelere
 const FRAME_MS = 1000 / 60;
 const MORPH_MAX_MS = 2200;     // desde que el contenido empieza a salir hasta la membrana asentada en su forma nueva
 const PAINT_SLACK_MS = 60;     // el paso no empieza antes de pintada + MORPH_DELAY_MS (menos esto: relojes de dos procesos)
@@ -156,16 +162,23 @@ function probe(max) {
   const box = e => { const b = e.getBoundingClientRect(); return { l: b.left, t: b.top, r: b.right, b: b.bottom }; };
   window.__samples = [];
   let prev = 0;
+  // cuándo se escribió la geometría que se lee: este rAF puede correr antes o después del de la capa en el mismo frame
+  // (va antes: lee lo que la capa escribió en el frame anterior), así que su `dt` no es el del paso que mide. Un
+  // MutationObserver del style del cristal (microtarea tras el rAF que escribe) apunta el instante de ese frame (wt)
+  let bodyEl = null, wt = 0;
+  const wmo = new MutationObserver(() => { wt = document.timeline.currentTime; });
   const tick = now => {
     P.frames++;
     const h = document.getElementById('__tvagent');
     if (h && h.shadowRoot && window.TVAgent && window.__samples.length < max) {
-      const r = h.shadowRoot, b = r.querySelector('.body').getBoundingClientRect(), s = r.querySelector('.sheet').getBoundingClientRect();
+      const r = h.shadowRoot, body = r.querySelector('.body');
+      if (body !== bodyEl) { wmo.disconnect(); wmo.observe(body, { attributes: true, attributeFilter: ['style'] }); bodyEl = body; wt = 0; }
+      const b = body.getBoundingClientRect(), s = r.querySelector('.sheet').getBoundingClientRect();
       const d = window.TVAgent._debug();
       const tns = [...r.querySelectorAll('.tn')].filter(x => x.getClientRects().length);   // turnos que se ven
       window.__samples.push({ t: now, dt: prev ? now - prev : 1000 / 60, l: b.left, tp: b.top, r: b.right, b: b.bottom,
         sl: s.left, st: s.top, sr: s.right, sb: s.bottom, form: d.form, morph: d.morph, drag: d.drag, vw: innerWidth, vh: innerHeight,
-        tn: tns.length });
+        tn: tns.length, wt });
     }
     prev = now;
     requestAnimationFrame(tick);
@@ -311,6 +324,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     notes.push(`${tag}: paso a ${form} en ${m.ms.toFixed(0)} ms (${m.frames} frames, ${m.slow} lentos); salto máximo ${m.step.toFixed(1)} px/frame (${(m.step / sz.w * 100).toFixed(1)} % del ancho); fuera del área segura ${m.out.toFixed(1)} px`);
     if (!m.started) bad.push(`no se vio el paso a ${form} (sin fase out en las muestras)`);
     if (m.step > MAX_STEP * sz.w) bad.push(`la membrana salta ${m.step.toFixed(1)} px en un frame (máx. ${(MAX_STEP * sz.w).toFixed(0)})`);
+    if (m.jump) bad.push(`la membrana salta ${m.jump.toFixed(1)} px en un frame, más de ${JUMP_RATIO}× el anterior: ${JSON.stringify(m.jumpAt)}`);
     if (!(m.ms < MORPH_MAX_MS)) bad.push(`el paso tarda ${m.ms.toFixed(0)} ms (máx. ${MORPH_MAX_MS})`);
     if (m.out > 1) bad.push(`la membrana sale ${m.out.toFixed(1)} px del área segura`);
     if (m.logJump) bad.push(`el log cambia mientras sale el contenido (antes del viaje): ${m.logJump}`);
@@ -655,13 +669,14 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /**
  * Del muestreo por rAF: desde el primer frame con el contenido saliendo hasta que la membrana abraza el contenido quieto
- * en la forma `form`. step: salto máximo de un borde por frame de 60 Hz (un frame lento cuenta como varios); out: lo que
+ * en la forma `form`. step: paso máximo de un borde por frame de 60 Hz (un frame lento cuenta como varios); jump: el mayor
+ * frame que es más de JUMP_RATIO veces el anterior (un salto, no velocidad); out: lo que
  * más sale del área segura (también arrastrando: la goma no la saca); logJump: cambiaron los turnos que se ven mientras
  * el contenido salía, antes del viaje (se vería un corte, no un pliegue).
  */
 function morphStats(S, form) {
   const i0 = S.findIndex(x => x.morph === 'out');
-  const res = { started: i0 >= 0, ms: Infinity, frames: 0, slow: 0, step: 0, out: 0, hugs: false, logJump: '' };
+  const res = { started: i0 >= 0, ms: Infinity, frames: 0, slow: 0, step: 0, jump: 0, out: 0, hugs: false, logJump: '' };
   for (const x of S) {                                 // arrastrando, antes del paso
     if (!x.drag) continue;
     const safe = { l: x.vw * SAFE.x, t: x.vh * SAFE.y, r: x.vw * (1 - SAFE.x), b: x.vh * (1 - SAFE.y) };
@@ -674,14 +689,22 @@ function morphStats(S, form) {
   for (let i = i0; base && i < S.length && S[i].morph === 'out'; i++) {
     if (S[i].tn !== base.tn) { res.logJump = `${base.tn}→${S[i].tn} turnos a la vista a los ${Math.round(S[i].t - S[i0].t)} ms de empezar`; break; }
   }
-  let still = 0, end = -1;
+  let still = 0, end = -1, prevSt = 0, prev2 = 0;
   for (let i = i0; i < S.length; i++) {
     const a = S[i - 1], x = S[i];
     if (a && i > i0) {
-      const k = Math.max(1, x.dt / FRAME_MS);
+      // el paso se reparte en el tiempo entre las dos escrituras que se leen (wt), no en el del muestreo: con frames de
+      // 33 y 17 ms alternos, el dt del muestreo va un frame desfasado y un paso normal de 33 ms parece un salto en 17
+      const wdt = x.wt && a.wt && x.wt > a.wt ? x.wt - a.wt : x.dt;
+      const k = Math.max(1, wdt / FRAME_MS);
       if (x.dt > FRAME_MS * 1.5) res.slow++;
       const st = Math.max(...['l', 'tp', 'r', 'b'].map(p => Math.abs(x[p] - a[p]) / k));
-      if (st > res.step) { res.step = st; res.at = [a, x].map(y => [y.t - S[i0].t, y.l, y.tp, y.r, y.b, y.morph].map(v => (typeof v === 'number' ? Math.round(v) : v))); }
+      const at = () => [a, x].map(y => [y.t - S[i0].t, y.l, y.tp, y.r, y.b, y.morph].map(v => (typeof v === 'number' ? Math.round(v) : v)));
+      if (st > res.step) { res.step = st; res.at = at(); }
+      // salto: mucho más que el frame anterior, y no un arranque desde parado (los DOS primeros frames con movimiento: con
+      // frames de 17 y 33 ms alternos, el segundo del arranque de un muelle sale hasta ~2,9× el primero; ver agente-pestanas.js)
+      if (prevSt > MOVING_PX && prev2 > MOVING_PX && st > JUMP_RATIO * prevSt && st > JUMP_MIN * x.vw && st > res.jump) { res.jump = st; res.jumpAt = at(); }
+      prev2 = prevSt; prevSt = st;
     }
     const safe = { l: x.vw * SAFE.x, t: x.vh * SAFE.y, r: x.vw * (1 - SAFE.x), b: x.vh * (1 - SAFE.y) };
     res.out = Math.max(res.out, safe.l - x.l, safe.t - x.tp, x.r - safe.r, x.b - safe.b);

@@ -59,6 +59,7 @@ function loadConfig(env = process.env, { hostname = os.hostname() } = {}) {
     ADMIN_URL: adminUrl(env, PORT, hostname),
     SPOTIFY_BANNER: !!env.TV_SPOTIFY_BANNER,
     SP_DEVICE: (env.TV_SPOTIFY_DEVICE || '').trim() || NAME,
+    NETFLIX_PROFILE: (env.TV_NETFLIX_PROFILE || '').trim(),    // perfil de Netflix por defecto (el mando puede cambiarlo)
     PUBLIC_URL: noSlash(env.TV_PUBLIC_URL || SELF),
     DISPLAY: env.DISPLAY || ':0',
     XDG_RUNTIME_DIR: env.XDG_RUNTIME_DIR || `/run/user/${process.getuid ? process.getuid() : 1000}`,
@@ -70,6 +71,7 @@ function loadConfig(env = process.env, { hostname = os.hostname() } = {}) {
       access: path.join(STATE_DIR, 'access.json'),
       spotify: path.join(STATE_DIR, 'spotify.json'),
       idle: path.join(STATE_DIR, 'idle.json'),
+      netflix: path.join(STATE_DIR, 'netflix.json'),
     }),
     // dónde estaba el estado antes de TV_STATE_DIR (lo mueve src/core/state-dir.js al arrancar)
     LEGACY: Object.freeze({

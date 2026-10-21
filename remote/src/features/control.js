@@ -13,13 +13,14 @@ const AGENT_PASS = on => `window.TVAgent&&window.TVAgent.pass&&window.TVAgent.pa
  *   audio: { read: Function, toggleMute: Function, step: Function, set: Function },
  *   cfg: { HOME_URL: string, SELF: string }, leaveStage: () => void,
  *   onLayout?: (url: string, layout: string) => void, onReload?: () => void, onNavigate?: () => void,
- * }} deps
+ *   netflix?: { isNetflix: (u: string) => boolean, open: (m: { url: string }) => Promise<any>, leave: () => Promise<void> },
+ * }} deps   netflix: Netflix va en su propia pestaña (src/features/netflix.js); el resto de webs, en la de siempre
  *   onLayout: Jota pidió un formato para la conversación en la página que abre (`layout` de tv_open / tv_open_app)
  *   onNavigate: se va a navegar (la conversación de la tele espera a que la página nueva se pinte antes de cerrarse)
  *   onReload: se volvió a cargar la página que ya se veía (abrir la misma URL o «recargar»): documento nuevo sin cambio de
  *   URL, que Chrome no avisa como cambio de página (tv_idle show en el reposo, tv_open_app en la portada de la app…)
  */
-module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg, leaveStage, onLayout = () => {}, onReload = () => {}, onNavigate = () => {} }) {
+module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg, leaveStage, onLayout = () => {}, onReload = () => {}, onNavigate = () => {}, netflix }) {
   const { HOME_URL, SELF } = cfg;
   function normUrl(s) {
     s = s.trim();
@@ -38,8 +39,10 @@ module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg
     if (!u) return { error: 'dirección no permitida' };
     if (!u.startsWith(SELF + '/')) leaveStage(); // salimos del escenario
     if (typeof layout === 'string' && layout) onLayout(u, layout); // antes de navegar: vale en cuanto se llega
-    const same = u === state.url;
     onNavigate();
+    if (netflix && netflix.isNetflix(u)) { const r = await netflix.open({ url: u }); return r.error ? r : { ok: 1, url: u }; }
+    if (netflix) await netflix.leave();          // Netflix delante: se queda cargada detrás y se vuelve a la pestaña de siempre
+    const same = u === state.url;               // tras volver de Netflix: la URL ya es la de la pestaña de siempre
     await cdp.call('Page.navigate', { url: u });
     if (same) onReload();
     return { ok: 1, url: u };

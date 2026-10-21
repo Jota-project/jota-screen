@@ -22,7 +22,7 @@ test('KINDS: los 7 tipos del contrato, con título e icono hecho de primitivas p
 });
 
 test('lista cerrada: las del contrato con ficha; las de lectura sin ella', () => {
-  assert.deepEqual([...CARD_TOOLS].sort(), ['tv_activity', 'tv_idle', 'tv_media', 'tv_open', 'tv_open_app', 'tv_present', 'tv_show_html', 'tv_spotify', 'tv_volume']);
+  assert.deepEqual([...CARD_TOOLS].sort(), ['tv_activity', 'tv_idle', 'tv_media', 'tv_netflix', 'tv_open', 'tv_open_app', 'tv_present', 'tv_show_html', 'tv_spotify', 'tv_volume']);
   for (const n of ['tv_state', 'tv_links', 'tv_screenshot', 'tv_events', 'tv_key', 'tv_type', 'tv_click_text', 'tv_nav', 'tv_update', 'tv_close', 'web_search', '', null]) {
     assert.equal(toolCard(n, {}), null, String(n));
   }
@@ -33,6 +33,16 @@ test('se compara por sufijo con separador: el prefijo de OpenClaw vale; pegado a
   for (const n of ['tv_open', 'tv-canvas__tv_open', 'tv-canvas.tv_open', 'mcp:tv_open']) assert.equal(toolCard(n, url)?.detail, 'cocina.example', n);
   assert.equal(toolCard('xtv_open', url), null);
   assert.equal(toolCard('tv_open_app', { app: 'netflix' }).detail, 'Netflix', 'tv_open_app no se confunde con tv_open');
+});
+
+test('tv_netflix (Netflix en su pestaña): abrir y poner un título tienen ficha y abren página; buscar y perfiles, no', () => {
+  const { opensPage } = require(path.join(__dirname, '..', '..', 'remote', 'src', 'features', 'agent-ui'));
+  assert.deepEqual(toolCard('tv-canvas__tv_netflix', { action: 'open' }), { kind: 'video', title: 'Abrir en la tele', detail: 'Netflix' });
+  assert.deepEqual(toolCard('tv_netflix', { action: 'play', title: 'La casa de papel' }), { kind: 'video', title: 'Poner en Netflix', detail: 'La casa de papel' });
+  assert.equal(toolCard('tv_netflix', { action: 'play' }).detail, 'Netflix');
+  for (const action of ['search', 'profiles', 'set_default_profile']) assert.equal(toolCard('tv_netflix', { action }), null, action);
+  assert.equal(opensPage('tv_netflix', { action: 'play', title: 'x' }), true);
+  assert.equal(opensPage('tv_netflix', { action: 'search', title: 'x' }), false);
 });
 
 test('detalle de cada herramienta', () => {

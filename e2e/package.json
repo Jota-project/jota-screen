@@ -9,6 +9,7 @@
     "mando:compara": "python3 mando-compara.py",
     "agente": "node agente-capturas.js",
     "agente:serie": "node agente-serie.js",
+    "agente:pestanas": "node agente-pestanas.js",
     "postinstall": "playwright install chromium"
   },
   "devDependencies": {
