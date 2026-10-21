@@ -185,6 +185,23 @@ async function readAll(tab, { name = '', guid = null, learn = () => {}, canSwitc
   return { profile: p.cur, items: art.items, history, warn: [...(art.ids.art ? [] : ['sin consulta de ambiente']), ...(art.ids.eps ? [] : ['sin consulta de episodios']), ...(raw && raw.length ? [] : ['sin historial'])] };
 }
 
+/**
+ * ¿La frase pregunta por lo que se ve en Netflix? Para poner su tarjeta en la conversación al momento, sin depender de
+ * que el agente use la herramienta (a veces contesta de memoria). Las peticiones de poner algo no cuentan (esas llevan su
+ * tarjeta al ponerse). `named`: la serie de «seguir viendo» que se nombra, si hay.
+ * @param {string} text @param {{ title: string } | null} [named]
+ * @returns {{ kind: 'play', title: string } | { kind: 'list' } | { kind: 'recent' } | { kind: 'last' } | null}
+ */
+function intentOf(text, named = null) {
+  const t = ' ' + norm(text) + ' ';
+  if (!t.trim() || /\b(pon|ponme|ponla|ponlo|pone|reproduce|empieza|sigue con|quiero ver|abre)\b/.test(t)) return null;
+  if (named && /(por donde|que capitulo|en que capitulo|cuanto me queda|cuanto queda|cuanto le queda|me quede|voy de|voy en|voy con)/.test(t)) return { kind: 'play', title: named.title };
+  if (/\b(ultim[oa]s?|ayer|anoche)\b/.test(t) && /\b(vi|visto|viendo|veia|veiamos|puse)\b/.test(t)) return /\b(series|ultimas|ultimos)\b/.test(t) ? { kind: 'recent' } : { kind: 'last' };
+  if (/\b(series?|peliculas?)\b/.test(t) && /\b(viendo|veo|a medias|empezadas?|siguiendo|pendientes?)\b/.test(t)) return { kind: 'list' };
+  if (/\bque (estoy|estamos) viendo\b/.test(t)) return { kind: 'list' };
+  return null;
+}
+
 // ───────── orquestación: cuándo se lee, qué se guarda y qué se da al reposo y al agente
 
 const NFX_IMG = /^https:\/\/occ-[\w-]+\.1\.nflxso\.net\/dnm\/api\/v6\/[\w/-]+\.(webp|jpg|png)(\?r=\w+)?$/; // imágenes de Netflix (y nada más)
@@ -392,4 +409,4 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
   return { refresh, soon, start, forIdle, watching, history, last, playLast, serveImg, routes, ops, find, named, media, data: () => data };
 }
 
-module.exports = { readAll, createWatch, pgProfile, pgReady, pgContinue, pgArt, pgHistory, isoDate, NFX_IMG };
+module.exports = { readAll, createWatch, intentOf, pgProfile, pgReady, pgContinue, pgArt, pgHistory, isoDate, NFX_IMG };

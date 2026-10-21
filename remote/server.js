@@ -33,7 +33,7 @@ const createControl = require('./src/features/control');
 const createSpotify = require('./src/features/spotify');
 const createIdle = require('./src/features/idle');
 const createNetflix = require('./src/features/netflix');
-const { createWatch } = require('./src/features/netflix-watch');
+const { createWatch, intentOf } = require('./src/features/netflix-watch');
 const { createJsonStore } = require('./src/core/json-store');
 const { createCommands } = require('./src/transport/commands');
 const { createSessions } = require('./src/transport/sessions');
@@ -172,7 +172,15 @@ const agentCtx = () => {
     page: { url: state.url || '', stage: stageOf(state.url, SELF), idle: a.idle },
     night: a.night, calm: a.calm, glass: a.glass, colors: a.colors };
 };
-const talkView = createTalkView({ cdp, pub: PUB, log: log.info, context: agentCtx });
+// la pregunta del turno, ya final: si es por lo que se ve en Netflix, su tarjeta al momento (sin esperar al agente)
+const talkView = createTalkView({ cdp, pub: PUB, log: log.info, context: agentCtx, onAsk: text => {
+  const i = intentOf(text, nfxWatch.named(text));
+  if (!i) return;
+  const card = i.kind === 'play' ? nfxWatch.media('play', i) : i.kind === 'last' ? (r => (r.error ? null : nfxWatch.media('play', r)))(nfxWatch.last())
+    : nfxWatch.media(i.kind === 'recent' ? 'recent' : 'list');
+  const shown = !!card && talkView.media(card);
+  log.info(`netflix: pregunta reconocida (${i.kind}): tarjeta en la conversación: ${shown ? 'sí' : card ? 'no, la capa no la admite ahora' : 'no, sin datos'}`);
+} });
 const talk = createTalk({ gw, cfg: CFG, media: () => state.media, view: talkView, speaker, log });
 
 // ───────────────────────── órdenes: cada una con su permiso al lado, en su capacidad

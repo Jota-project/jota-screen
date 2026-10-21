@@ -208,3 +208,22 @@ test('la serie que se nombra en la pregunta («¿por dónde voy de X?»), aunque
   assert.equal(w.named('¿Qué series estoy viendo?'), null);
   assert.equal(w.named(''), null);
 });
+
+test('preguntas sobre lo que se ve en Netflix (para su tarjeta al momento); pedir que se ponga algo no cuenta', () => {
+  const S = { title: 'Suits' };
+  const cases = [
+    ['¿Qué series estoy viendo?', null, { kind: 'list' }],
+    ['¿Qué estoy viendo ahora?', null, { kind: 'list' }],
+    ['Enséñame qué series tengo a medias', null, { kind: 'list' }],
+    ['¿Cuáles son las últimas series que he visto?', null, { kind: 'recent' }],
+    ['¿Qué es lo último que estaba viendo?', null, { kind: 'last' }],
+    ['¿Qué vi ayer?', null, { kind: 'last' }],
+    ['¿Por dónde voy de Suits?', S, { kind: 'play', title: 'Suits' }],
+    ['¿Cuánto me queda de Suits?', S, { kind: 'play', title: 'Suits' }],
+    ['Pon Suits por donde iba', S, null],
+    ['Ponme lo último que estaba viendo', null, null],
+    ['¿Qué tiempo hace mañana?', null, null],
+    ['Pon algo tranquilo de jazz', null, null],
+  ];
+  for (const [q, named, want] of cases) assert.deepEqual(W.intentOf(q, named), want, q);
+});

@@ -257,10 +257,11 @@ const snapScript = snap => `(()=>{if(window.top!==window)return;var s=${JSON.str
  * @param {{ cdp: { session?: any, call: (method: string, params: object) => Promise<any> }, pub: string,
  *           batchMs?: number, hideMs?: number, keep?: number, log?: (msg: string) => void, context?: () => any,
  *           awaitMs?: number, morphDelayMs?: number, pillBaseMs?: number, afterPaintMs?: number,
- *           contentHosts?: readonly string[] }} deps
- *   contentHosts: apps de contenido (por defecto CONTENT_HOSTS; las pruebas añaden la suya)
+ *           contentHosts?: readonly string[], onAsk?: (text: string) => void }} deps
+ *   contentHosts: apps de contenido (por defecto CONTENT_HOSTS; las pruebas añaden la suya). onAsk: la pregunta del turno,
+ *   ya final (una vez por turno): quien quiera puede poner su tarjeta sin esperar al agente (media)
  */
-function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log = () => {}, context,
+function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log = () => {}, context, onAsk,
   awaitMs = AWAIT_PAGE_MS, morphDelayMs = MORPH_DELAY_MS, pillBaseMs = PILL_DWELL_BASE_MS, afterPaintMs = AFTER_PAINT_MIN_MS,
   contentHosts = CONTENT_HOSTS }) {
   /** Turnos ya cerrados (el panel viejo enseña sus frases; el nuevo, el último). @type {Turn[]} */
@@ -589,7 +590,9 @@ function createTalkView({ cdp, pub, batchMs = 100, hideMs = 5000, keep = 6, log 
     /** @param {string} text frase acumulada (sustituye a la anterior) @param {boolean} final */
     you(text, final) {
       if (!open) begin(mode);
+      const was = cur.youFinal;
       cur.you = String(text || ''); cur.youFinal = !!final;
+      if (final && !was && onAsk) { try { onAsk(cur.you); } catch (e) { log('conversación: ' + e.message); } }
       if (final && state === 'listen') state = 'think';
       schedule();
     },
