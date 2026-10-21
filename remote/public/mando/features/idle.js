@@ -1,5 +1,5 @@
-// Pantalla en reposo de la tele (ajustes, solo admin): modo, horario (también por día), tiempos, música, disposición
-// y cómo se pinta el agente en la tele (diseño nuevo y nivel de cristal).
+// Pantalla en reposo de la tele (ajustes, solo admin): modo, horario (también por día), tiempos, «Seguir viendo» (fuentes
+// en orden, aspecto, cuántas a la vez; la fila de Spotify es `music`), disposición y cómo se pinta el agente en la tele.
 import { $ } from '../core/dom.js';
 import { cmd, rpc } from '../core/api.js';
 import { buzz } from '../ui/haptics.js';
@@ -13,6 +13,10 @@ const GLASS_DEFAULT = 'auto';
 // teclas del grupo de radios «Cristal» → paso dentro del grupo (Inicio/Fin van a los extremos)
 const RADIO_STEP = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
 let icfg = null, iT = 0;
+// «Seguir viendo»: las fuentes que conoce el mando (el servidor manda el orden en cfg.suggest.sources)
+const SG_SRC = { netflix: ['Netflix', 'Series a medias'], spotify: ['Spotify', 'Lo último que sonó'], youtube: ['YouTube', 'Pronto'] };
+const SG_SOON = new Set(['youtube']);                    // aún sin datos: se ordena, pero no se enciende
+const SG_LOOK = { discreto: 'Una fila de series pequeñas', destacado: 'Una serie en grande', auto: 'En grande si últimamente ves sobre todo una' };
 /** El nivel de cristal solo pinta con el diseño nuevo: con el viejo (o sin ajustes) el selector queda inoperable. */
 export const glassActive = c => !!c && c.agentDesign === DESIGN_ON;
 // segmento de botones con aria-pressed: marca el que lleva data-<key> igual a val
@@ -33,8 +37,7 @@ function idlePaint() {
   $('#idPer').setAttribute('aria-pressed', !!icfg.perDay);
   $('#idIdle').value = String(icfg.idleMin); $('#idDim').value = String(icfg.dimMin);
   if (![...$('#idIdle').options].some(o => o.value === String(icfg.idleMin))) $('#idIdle').add(new Option(icfg.idleMin + ' min', icfg.idleMin, true, true));
-  $('#idMus').setAttribute('aria-pressed', !!icfg.music);
-  $('#idNfx').setAttribute('aria-pressed', icfg.netflix === 'on');
+  sgPaint();
   segPaint('#idLay', 'l', icfg.layout || 'rotar');
   $('#idRe').value = String(icfg.rearrangeMin ?? 20);
   if (![...$('#idRe').options].some(o => o.value === String(icfg.rearrangeMin))) $('#idRe').add(new Option(icfg.rearrangeMin + ' min', icfg.rearrangeMin, true, true));
@@ -52,6 +55,54 @@ function idlePaint() {
     wk.append(l, a, b);
   }
 }
+/** El nodo <svg><use href="#l-…"></svg> del logo de una fuente (símbolos de index.html). @param {string} k */
+function logo(k) {
+  const NS = 'http://www.w3.org/2000/svg', s = document.createElementNS(NS, 'svg'), u = document.createElementNS(NS, 'use');
+  s.setAttribute('class', 'logo'); s.setAttribute('aria-hidden', 'true'); u.setAttribute('href', '#l-' + k); s.append(u);
+  return s;
+}
+const sgOn = x => (x.id === 'spotify' ? !!icfg.music : !!x.on);
+function sgPaint() {
+  const sg = icfg.suggest;
+  $('#sgOn').setAttribute('aria-pressed', !!(sg && sg.on));
+  $('#sgSrc').textContent = '';
+  if (!sg) return;                                       // un servidor de antes: sin «Seguir viendo» configurable
+  sg.sources.filter(x => SG_SRC[x.id]).forEach((x, i, all) => {
+    const [n, h] = SG_SRC[x.id], on = sgOn(x);
+    const r = document.createElement('div'); r.className = 'sgRow' + (on ? '' : ' off'); r.setAttribute('role', 'listitem');
+    const nm = document.createElement('span'); nm.className = 'nm'; nm.textContent = n;
+    const sm = document.createElement('small'); sm.textContent = h; nm.append(sm);
+    const mv = document.createElement('span'); mv.className = 'mv';
+    for (const [d, t] of /** @type {[number, string][]} */ ([[-1, '↑'], [1, '↓']])) {
+      const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.dataset.mv = String(d); b.dataset.id = x.id;
+      b.setAttribute('aria-label', (d < 0 ? 'Subir ' : 'Bajar ') + n); b.disabled = d < 0 ? i === 0 : i === all.length - 1; mv.append(b);
+    }
+    const sw = document.createElement('button'); sw.type = 'button'; sw.className = 'sw'; sw.dataset.id = x.id;
+    sw.setAttribute('aria-pressed', String(on)); sw.setAttribute('aria-label', n + (SG_SOON.has(x.id) ? ' (pronto)' : '')); sw.disabled = SG_SOON.has(x.id);
+    r.append(logo(x.id), nm, mv, sw); $('#sgSrc').append(r);
+  });
+  segPaint('#sgLook', 'v', sg.look || 'discreto');
+  $('#sgLookH').textContent = SG_LOOK[sg.look] || SG_LOOK.discreto;
+  segPaint('#sgMax', 'v', String(sg.max || 2));
+}
+/** subir/bajar una fuente (se queda el foco en el mismo botón) o encenderla; Spotify es el interruptor de la música */
+function sgClick(e) {
+  const b = e.target.closest('button'); if (!b || !icfg || !icfg.suggest) return;
+  const list = icfg.suggest.sources, i = list.findIndex(x => x.id === b.dataset.id);
+  if (i < 0) return;
+  buzz(7);
+  if (b.dataset.mv) {
+    const j = i + Number(b.dataset.mv); if (j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    sgPaint(); idleSave();
+    const again = $('#sgSrc').querySelector(`button[data-id="${b.dataset.id}"][data-mv="${b.dataset.mv}"]`);
+    (again && !again.disabled ? again : $('#sgSrc').querySelector(`button.sw[data-id="${b.dataset.id}"]`)).focus();
+    return;
+  }
+  if (b.dataset.id === 'spotify') icfg.music = !icfg.music; else list[i].on = !list[i].on;
+  sgPaint(); idleSave();
+}
+
 export async function idleLoad() { const r = await rpc({ t: 'idle', op: 'get' }); if (r && r.cfg) { icfg = r.cfg; idlePaint(); } }
 function idleSave() { clearTimeout(iT); iT = setTimeout(async () => { const r = await rpc({ t: 'idle', op: 'set', cfg: icfg }); if (r && r.cfg) icfg = r.cfg; }, 300); }
 function setGlass(g) { if (!glassActive(icfg) || !g || g === (icfg.glass || GLASS_DEFAULT)) return; buzz(7); icfg.glass = g; idlePaint(); idleSave(); }
@@ -74,8 +125,10 @@ export const idle = {
     $('#idPer').addEventListener('click', () => { if (!icfg) return; icfg.perDay = !icfg.perDay; idlePaint(); idleSave(); });
     $('#idIdle').addEventListener('change', e => { if (icfg) { icfg.idleMin = +e.target.value; idleSave(); } });
     $('#idDim').addEventListener('change', e => { if (icfg) { icfg.dimMin = +e.target.value; idleSave(); } });
-    $('#idMus').addEventListener('click', () => { if (!icfg) return; icfg.music = !icfg.music; idlePaint(); idleSave(); });
-    $('#idNfx').addEventListener('click', () => { if (!icfg) return; buzz(7); icfg.netflix = icfg.netflix === 'on' ? 'off' : 'on'; idlePaint(); idleSave(); });
+    $('#sgOn').addEventListener('click', () => { if (!icfg || !icfg.suggest) return; buzz(7); icfg.suggest.on = !icfg.suggest.on; sgPaint(); idleSave(); });
+    $('#sgSrc').addEventListener('click', sgClick);
+    $('#sgLook').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || !icfg || !icfg.suggest) return; buzz(7); icfg.suggest.look = b.dataset.v; sgPaint(); idleSave(); });
+    $('#sgMax').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || !icfg || !icfg.suggest) return; buzz(7); icfg.suggest.max = +b.dataset.v; sgPaint(); idleSave(); });
     $('#idLay').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || !icfg) return; buzz(7); icfg.layout = b.dataset.l; idlePaint(); idleSave(); });
     $('#idRe').addEventListener('change', e => { if (icfg) { icfg.rearrangeMin = +e.target.value; idleSave(); } });
     $('#idCalm').addEventListener('click', () => { if (!icfg) return; icfg.calm = !icfg.calm; idlePaint(); idleSave(); });

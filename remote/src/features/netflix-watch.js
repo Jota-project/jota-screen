@@ -266,6 +266,20 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
     }));
   }
 
+  /**
+   * La serie que más se ha visto en los últimos `days` días del historial (que solo guarda el día), con su parte de los
+   * episodios: el reposo la pone en grande si manda (aspecto «según el momento»). null sin historial reciente.
+   * @param {number} [days]
+   */
+  function dominant(days = 14) {
+    const since = new Date(now() - days * 864e5).toISOString().slice(0, 10), count = new Map();
+    let n = 0;
+    for (const h of data.history) if (h.day && h.day >= since) { n++; count.set(h.title, (count.get(h.title) || 0) + 1); }
+    if (!n) return null;
+    const [title, c] = [...count].sort((a, b) => b[1] - a[1])[0];
+    return { title, share: c / n, n };
+  }
+
   // ───────── tarjetas para la conversación con Jota en la tele (talk-view.js: media)
   const abs = u => { const p = img(u); return p ? self + p : ''; };
   const sub = it => (it.ep ? [it.ep.s && 'T' + it.ep.s, it.ep.e && 'E' + it.ep.e, it.ep.title].filter(Boolean).join(' · ') : 'Película');
@@ -406,7 +420,7 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
   /** órdenes para `netflix` (src/features/netflix.js: extend) */
   const ops = { watching: () => watching(), history: () => history(), last: () => last(), play_last: () => playLast(), refresh: () => refresh('a petición') };
 
-  return { refresh, soon, start, forIdle, watching, history, last, playLast, serveImg, routes, ops, find, named, media, data: () => data };
+  return { refresh, soon, start, forIdle, dominant, watching, history, last, playLast, serveImg, routes, ops, find, named, media, data: () => data };
 }
 
 module.exports = { readAll, createWatch, intentOf, pgProfile, pgReady, pgContinue, pgArt, pgHistory, isoDate, NFX_IMG };

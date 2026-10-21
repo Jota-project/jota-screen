@@ -41,6 +41,13 @@ const ART = '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><d
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8' };
 const srv = http.createServer((q, r) => {
   const u = q.url.split('?')[0];
+  if (u.startsWith('/idle/sg')) { // un recuadro con el tamaño real de la imagen a la que sustituye (así se ve en las capturas)
+    const p = new URL(q.url, 'http://x').searchParams, w = +p.get('w'), h = +p.get('h'), c = p.get('c') || '#3a2a6e';
+    r.writeHead(200, { 'content-type': 'image/svg+xml' });
+    return r.end(`<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><defs><linearGradient id="g" x2="1" y2="1"><stop offset="0" stop-color="${c}"/><stop offset="1" stop-color="#15101e"/></linearGradient></defs>` +
+      `<rect width="${w}" height="${h}" fill="url(#g)"/><rect x="1.5" y="1.5" width="${w - 3}" height="${h - 3}" fill="none" stroke="#fff" stroke-opacity=".35" stroke-width="3" stroke-dasharray="12 8"/>` +
+      `<text x="${w - 18}" y="${Math.round(Math.min(w, h) / 9) + 14}" fill="#fff" fill-opacity=".75" font-family="sans-serif" font-size="${Math.round(Math.min(w, h) / 10)}" text-anchor="end">${p.get('n')} ${w}×${h}</text></svg>`);
+  }
   if (u.startsWith('/idle/art') || u.startsWith('/idle/nfx')) { r.writeHead(200, { 'content-type': 'image/svg+xml' }); return r.end(ART); }
   const f = path.join(PUB, u === '/' ? 'idle.html' : u);
   if (!f.startsWith(PUB) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { r.writeHead(404); return r.end(); }
@@ -67,6 +74,25 @@ const VARIANTS = [
     { id: 3, kind: 'movie', title: 'Una película', pos: 3000, dur: 6000, ep: null, card: '/idle/nfx?u=6', story: '/idle/nfx?u=7' },
   ] } }) },
 ];
+// «Seguir viendo» con varias fuentes, en los dos aspectos (imágenes: recuadros con su tamaño real)
+const sg = (n, w, h, c) => `/idle/sg?n=${encodeURIComponent(n)}&w=${w}&h=${h}&c=${encodeURIComponent(c)}`;
+const NFX1 = { id: 1, kind: 'show', title: 'Una serie con un título larguísimo que no cabe en una línea', pos: 1200, dur: 3300, ep: { s: 12, e: 104, title: 'Capítulo', still: sg('fotograma', 342, 192, '#6a2a3a') }, card: sg('tarjeta', 665, 375, '#7a2a3a'), story: sg('StoryArt', 848, 477, '#8a2a3a') };
+const NFX = [NFX1,
+  { id: 2, kind: 'show', title: 'Aquí no hay quien viva', pos: 0, dur: 1500, ep: { s: 3, e: 7, title: 'Dos' }, card: sg('tarjeta', 665, 375, '#7a3a2a'), story: null },
+  { id: 3, kind: 'movie', title: 'Una película', pos: 3000, dur: 6000, ep: null, card: sg('tarjeta', 665, 375, '#5a2a5a'), story: null },
+  { id: 4, kind: 'show', title: 'La cuarta serie de la fila', pos: 900, dur: 2700, ep: { s: 2, e: 1, title: 'Uno' }, card: sg('tarjeta', 665, 375, '#3a2a6a'), story: null }];
+const SPOT = (now, o) => ({ src: 'spotify', state: 'resume', ctx: 'Mi lista n.º 55 con un nombre largo', track: 'Nightsout', artist: 'I Am Waiting For You Last Summer', art: sg('carátula', 640, 640, '#2a6a4a'), artW: 640, progress: 95e3, duration: 243e3, ...o });
+const YT = (o) => ({ src: 'youtube', items: [{ title: 'Un vídeo de YouTube con un título muy largo, como suelen ser', channel: 'Un canal', pos: 600, dur: 1500, thumb: sg('maxres', 1280, 720, '#6a5a2a'), thumbW: 1280, ...o }] });
+const base = now => ({ profile: 'evening', weather: wx(now), music: null, acts: [timer(now), wash(now)] });
+VARIANTS.push(
+  { n: 'sug2', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), suggest: { blocks: [{ src: 'netflix', items: [NFX1] }, SPOT(now)] } }) },
+  { n: 'sug2b', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), acts: [], suggest: { blocks: [SPOT(now, { state: 'playing' }), { src: 'netflix', items: [NFX1] }] } }) },
+  { n: 'sug3', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), suggest: { blocks: [{ src: 'netflix', items: [NFX1] }, SPOT(now), YT()] } }) },
+  { n: 'dis1', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), suggest: { look: 'discreto', blocks: [{ src: 'netflix', items: NFX }] } }) },
+  { n: 'dis2', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), suggest: { look: 'discreto', blocks: [{ src: 'netflix', items: NFX }, SPOT(now)] } }) },
+  { n: 'dis3', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), acts: [timer(now)], suggest: { look: 'discreto', blocks: [{ src: 'netflix', items: NFX }, SPOT(now, { state: 'playing' }), YT()] } }) },
+  { n: 'sug3b', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), acts: [timer(now)], suggest: { blocks: [YT({ thumb: sg('hqdefault', 480, 270, '#6a5a2a'), thumbW: 480 }), { src: 'netflix', items: [NFX1] }, SPOT(now)] } }) },
+);
 const LAYOUTS = ['margen', 'zonas', 'apilada'];
 
 // en la página: las cajas visibles de cada widget. Para un texto, la caja de su tinta: en horizontal la de su texto (un
@@ -98,7 +124,7 @@ function measure() {
       const s = getComputedStyle(el);
       if (s.visibility === 'hidden') continue;
       const texts = [...el.childNodes].filter(n => n.nodeType === 3 && n.textContent.trim());
-      const solid = el.matches('.art, .act svg, .pb .tr, .nf-hero, .nf-still, .nf-cimg');
+      const solid = el.matches('.art, .act svg, .pb .tr, .nf-hero, .nf-still, .nf-cimg, .sg-img, .sg-bar');
       if (!texts.length && !solid) continue;
       let b = box(el.getBoundingClientRect());
       if (texts.length) {
@@ -119,6 +145,8 @@ function measure() {
     }
     out.widgets.push(w);
   }
+  const u = Math.min(innerWidth / 1920, innerHeight / 1080);
+  out.imgs = [...document.querySelectorAll('.sg-img[data-w]')].filter(e => e.getClientRects().length && !e.closest('.gone')).map(e => ({ w: e.getBoundingClientRect().width / u, max: +e.dataset.w }));
   return out;
 }
 
@@ -141,6 +169,7 @@ function check(m) {
     for (const a of A.parts) for (const b of B.parts)
       if (Math.min(a.r, b.r) - Math.max(a.x, b.x) > T && Math.min(a.b, b.b) - Math.max(a.y, b.y) > T) bad.push(`solape: ${desc(A, a)} con ${desc(B, b)}`);
   }
+  for (const i of m.imgs || []) if (i.w > i.max + 1) bad.push(`imagen más grande que su original: ${Math.round(i.w)} de ${i.max} px de la tele`);
   return bad;
 }
 

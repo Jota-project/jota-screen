@@ -419,6 +419,18 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 /* utilidades: sustituyen a los antiguos style= del HTML; van al final para ganar a .acts y .foot con igual especificidad */
 .sprite{position:absolute;width:0;height:0;overflow:hidden}
 .fld.flush{border-top:0}
+/* «Seguir viendo»: fuentes en orden (↑ ↓ en vez de arrastrar: la hoja ya se desliza y así llega el lector de pantalla) */
+.sgSrc{display:flex;flex-direction:column;gap:6px;padding:2px 0 12px}
+.sgSrc:empty{display:none}
+.sgRow{display:flex;align-items:center;gap:10px;padding:8px 8px 8px 10px;border-radius:16px;background:var(--surface)}
+.sgRow .logo{width:30px;height:30px;flex:none}
+.sgRow .nm{flex:1;min-width:0;font-size:15px;line-height:1.25}
+.sgRow .nm small{display:block;color:var(--dim);font-size:12.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sgRow.off .nm{opacity:.6}
+.sgRow .mv{display:flex;gap:4px}
+.sgRow .mv button{width:36px;height:36px;border-radius:11px;border:1px solid var(--edge);background:transparent;color:var(--dim);font:600 13px "Inter",system-ui,-apple-system,sans-serif;touch-action:manipulation}
+.sgRow .mv button:disabled{opacity:.3}
+.sgRow .sw:disabled{opacity:.4}
 .acts.one{grid-template-columns:1fr}
 .u-mt0{margin-top:0}
 .u-mt2{margin-top:2px}
