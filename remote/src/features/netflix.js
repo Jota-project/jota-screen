@@ -229,7 +229,7 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
         try {
           const r = await /** @type {Function} */ (cdp.request)('Runtime.evaluate', { expression: PROBE, returnByValue: true }, sessionId);
           const p = r && r.result && r.result.value;
-          if (p && p.cur && !p.gate) tabGuid = p.cur;
+          if (p && p.cur) tabGuid = p.cur;   // también con «¿Quién eres?» delante (Netflix la vuelve a enseñar tras un rato): la cookie sigue en ese perfil
         } finally { cdp.call('Target.detachFromTarget', { sessionId }, true).catch(() => {}); }
       } catch {}
     }
