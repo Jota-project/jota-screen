@@ -29,7 +29,7 @@ const PLAYING = `(()=>{const v=document.querySelector('video');if(!v)return 0;if
 const HIDE = `(()=>{window.__tvHidden=true;if(!window.__tvGuard){window.__tvGuard=1;document.addEventListener('play',e=>{const m=e.target;if(window.__tvHidden&&m&&m.pause)m.pause()},true)}try{const vp=netflix.appContext.state.playerApp.getAPI().videoPlayer;for(const id of vp.getAllPlayerSessionIds())vp.getVideoPlayerBySessionId(id).pause()}catch{}for(const m of document.querySelectorAll('video,audio'))m.pause();return 1})()`;
 const UNHIDE = 'window.__tvHidden=false';
 /** órdenes que enseñan lo que ve el perfil: no para invitados */
-const PRIVATE = new Set(['watching', 'history', 'play_last', 'refresh']);
+const PRIVATE = new Set(['watching', 'history', 'last', 'play_last', 'refresh']);
 
 /**
  * @typedef {{ profile?: string, profiles?: Record<string, string>, titles?: Record<string, { id: string, title: string }>,

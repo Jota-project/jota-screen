@@ -125,6 +125,17 @@ netflix.extend({ ...nfxWatch.ops,
     const card = nfxWatch.media('list'), shown = !!card && talkView.media(card);
     log.info(`netflix: «qué estoy viendo» (tarjeta en la conversación: ${shown ? 'sí' : card ? 'no, la capa no la admite ahora' : 'no, sin datos'})`);
     return nfxWatch.watching();
+  },
+  // «¿qué es lo último que estaba viendo?»: la respuesta y su tarjeta con el ▶ sin pulsar (no se pone nada)
+  last: () => {
+    const r = nfxWatch.last(), card = r.error ? null : nfxWatch.media('play', r), shown = !!card && talkView.media(card);
+    log.info(`netflix: «lo último que veía»: ${r.title || r.error}${shown ? ' (tarjeta en la conversación)' : ''}`);
+    return r;
+  },
+  play_last: async () => {
+    const r = await nfxWatch.playLast();
+    log.info(`netflix: «ponme lo último»: ${r.error || r.last}`);
+    return r;
   } });
 // tv_open / tv_open_app con `layout`: Jota elige el formato de la conversación para la página que abre. Abrir la misma
 // URL (o recargar) es un documento nuevo sin cambio de URL: onPage no lo ve y se avisa desde aquí

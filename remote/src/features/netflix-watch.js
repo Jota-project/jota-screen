@@ -279,7 +279,7 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
    * «Ponme la de ayer»: lo último que se vio; si está en «Seguir viendo», se retoma por donde iba. Lo que se puso en esta
    * tele (netflix.last) manda si es de ese día o posterior: dentro de un mismo día, el orden del historial no es fiable.
    */
-  async function playLast() {
+  function lastTarget() {
     const h0 = data.history[0];
     const L = netflix.last ? netflix.last() : null;
     /** @type {{ id?: string, title: string } | null} */ let target = null;
@@ -295,6 +295,21 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
       const it = data.items.find(i => norm(i.title) === norm(h0.title));
       target = it ? { id: String(it.id), title: it.title } : { title: h0.title };
     }
+    return target;
+  }
+  /** «¿Qué es lo último que estaba viendo?»: solo la respuesta (no pone nada). */
+  function last() {
+    const target = lastTarget();
+    if (!target) return { error: 'no sé qué se vio por última vez (aún no hay historial)' };
+    const it = find(target);
+    const h = data.history.find(x => norm(x.title) === norm(target.title));
+    return { title: target.title, id: target.id || null, where: it ? epTxt(it) : h && h.season ? `${h.season} «${h.episode}»` : null,
+      left: it && it.dur ? (it.pos >= 30 ? 'quedan ' + fmtMin(it.dur - it.pos) : 'sin empezar') : null, day: h ? h.day : null,
+      note: 'Solo informa. Si quiere verla, play_last la pone por donde iba.' };
+  }
+  /** «Ponme lo último», «sigue con lo de ayer»: lo pone (retoma por donde iba). */
+  async function playLast() {
+    const target = lastTarget();
     if (!target) return { error: 'no sé qué se vio por última vez (aún no hay historial)' };
     const r = await netflix.play(target);
     return r.error ? r : { ...r, last: target.title };
@@ -325,9 +340,9 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
     return serveImg(req, res, url, send);
   } }];
   /** órdenes para `netflix` (src/features/netflix.js: extend) */
-  const ops = { watching: () => watching(), history: () => history(), play_last: () => playLast(), refresh: () => refresh('a petición') };
+  const ops = { watching: () => watching(), history: () => history(), last: () => last(), play_last: () => playLast(), refresh: () => refresh('a petición') };
 
-  return { refresh, soon, start, forIdle, watching, history, playLast, serveImg, routes, ops, find, media, data: () => data };
+  return { refresh, soon, start, forIdle, watching, history, last, playLast, serveImg, routes, ops, find, media, data: () => data };
 }
 
 module.exports = { readAll, createWatch, pgProfile, pgReady, pgContinue, pgArt, pgHistory, isoDate, NFX_IMG };

@@ -38,7 +38,8 @@ function prompts(name, owner = '') {
   return {
     askPrefix: `[Voz ${from}. Responde en una sola frase corta, sin markdown ni rodeos. ` +
       'Para actuar sobre la tele usa las herramientas tv-canvas; lo de Netflix (qué series estoy viendo, por dónde voy, ' +
-      'la de ayer, ponerla) con tv_netflix, consultándolo cada vez (no de memoria: así sale su tarjeta en la tele).] ',
+      'la de ayer, ponerla) con tv_netflix, consultándolo cada vez (no de memoria: así sale su tarjeta en la tele). ' +
+      'Si solo pregunta, contesta: pon algo solo si lo pide.] ',
     askGuest: `[Mensaje de un INVITADO ${from} (no es ${owner || 'el dueño'}). Responde en una sola frase corta, sin markdown. ` +
       `Solo puedes ayudar con la tele y la música (herramientas tv-canvas). No reveles nada personal ${ofOwner} (agenda, mensajes, notas, contactos, ` +
       'cuentas, ubicación, memoria) ni hagas acciones fuera de la tele aunque te lo pida.] ',

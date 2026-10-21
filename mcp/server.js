@@ -70,15 +70,17 @@ tool('tv_open_app', 'Open a streaming app on the TV, optionally searching inside
 
 tool('tv_netflix', 'Netflix on the TV, fast: open it, or play a title in one call (finds it, opens it and resumes where the profile left off; ~2-3 s). Prefer this over tv_open_app + clicks. Profile: the default one unless the user names another (e.g. "en el perfil de Carmen"). If the result has candidates, the title was not an exact match: tell the user what is playing and offer the others (play them with id). ' +
   'What the user is watching (default profile, also from other devices): watching = series and films in progress, with episode and how much is left; history = what was watched, by day, and the most watched; ' +
-  'play_last = "ponme la de ayer / lo último que vi" (resumes it); refresh = read it again now (~10 s; it is also read on its own every few hours and after watching Netflix).',
+  'last = answers "¿qué es lo último que estaba viendo?" (only tells; shows its card on the TV; plays NOTHING); ' +
+  'play_last = PLAYS it, only when the user asks to put it on ("ponme lo último", "sigue con lo de ayer"). A question is never a request to play. ' +
+  'refresh = read it again now (~10 s; it is also read on its own every few hours and after watching Netflix).',
   {
-    action: z.enum(['open', 'play', 'search', 'profiles', 'set_default_profile', 'watching', 'history', 'play_last', 'refresh']),
+    action: z.enum(['open', 'play', 'search', 'profiles', 'set_default_profile', 'watching', 'history', 'last', 'play_last', 'refresh']),
     title: z.string().optional().describe('Series or film title to play or search'),
     id: z.string().optional().describe('Netflix title id from candidates/search results'),
     profile: z.string().optional().describe('Netflix profile name, only if the user asks for a specific one'),
   },
   async ({ action, title, id, profile }) => {
-    const op = { open: 'open', play: 'play', search: 'search', profiles: 'profiles', set_default_profile: 'setprofile', watching: 'watching', history: 'history', play_last: 'play_last', refresh: 'refresh' }[action];
+    const op = { open: 'open', play: 'play', search: 'search', profiles: 'profiles', set_default_profile: 'setprofile', watching: 'watching', history: 'history', last: 'last', play_last: 'play_last', refresh: 'refresh' }[action];
     return out(await cmd({ t: 'netflix', op, title, query: title, id, profile }));
   });
 

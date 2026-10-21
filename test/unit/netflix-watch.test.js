@@ -148,7 +148,7 @@ test('órdenes: «seguir viendo» e historial no son para invitados', async () =
   const cmds = createCommands({ permsOf: dev => P[dev.role] });
   cmds.register(nf.commands);
   const guest = { role: 'guest' }, member = { role: 'member' };
-  for (const op of ['watching', 'history', 'play_last', 'refresh']) assert.match((await cmds.dispatch({ t: 'netflix', op }, { dev: guest })).error, /privado/, op);
+  for (const op of ['watching', 'history', 'last', 'play_last', 'refresh']) assert.match((await cmds.dispatch({ t: 'netflix', op }, { dev: guest })).error, /privado/, op);
   assert.ok((await cmds.dispatch({ t: 'netflix', op: 'watching' }, { dev: member })).items);
 });
 
@@ -166,4 +166,17 @@ test('tarjetas para la conversación: la lista de lo que se ve y la del título 
   assert.equal(P.items[0].still, 'http://127.0.0.1:8787/idle/nfx?u=' + encodeURIComponent(IMG('s1')), 'y el fotograma del capítulo');
   assert.equal(w.media('play', { id: 2001 }).key, 'nfx-play-1001', 'también por el id del capítulo');
   assert.equal(w.media('play', { title: 'otra cosa' }), null, 'lo que no está en «seguir viendo», sin tarjeta');
+});
+
+test('«¿qué es lo último que estaba viendo?» solo contesta (no pone nada); «ponme lo último» lo pone', async () => {
+  const { w, seen } = rig();
+  await w.refresh();
+  const before = seen.length;
+  const r = w.last();
+  assert.equal(seen.length, before, 'preguntar no pone nada');
+  assert.deepEqual({ title: r.title, where: r.where, left: r.left, day: r.day }, { title: 'La serie de prueba', where: 'T2 E4 «Capítulo: con dos puntos»', left: 'quedan 30 min', day: '2026-10-20' });
+  assert.ok(w.media('play', r), 'y hay tarjeta para enseñarla');
+  await w.playLast();
+  assert.deepEqual(seen.at(-1), { id: '1001', title: 'La serie de prueba' }, 'pedirlo, sí');
+  assert.match(rig().w.last().error, /historial/);
 });
