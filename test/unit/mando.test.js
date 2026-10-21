@@ -159,6 +159,72 @@ test('mando: el orbe de la voz no deja el gesto al navegador (touch-action:none;
   assert.doesNotMatch(rules, /touch-action:(manipulation|pan|auto)/);
 });
 
+test('mando: ajustes del reposo (features/idle.js): cada #id existe en index.html y «Agente en la tele» es accesible', () => {
+  const html = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8');
+  const js = fs.readFileSync(path.join(PUB, 'mando', 'features', 'idle.js'), 'utf8');
+  const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
+  assert.deepEqual([...new Set([...js.matchAll(/\$\('#([\w-]+)'\)/g)].map(m => m[1]))].filter(id => !ids.has(id)), []);
+  // conmutador del diseño nuevo: mismo patrón que #idCalm (aria-pressed + nombre accesible), zona de 48 px
+  assert.match(html, /<button class="sw t48" id="idAgDes" aria-pressed="false" aria-label="[^"]+">/);
+  // selector «Cristal»: radiogroup con nombre, un radio por nivel del contrato (cfg.glass), en este orden y con estas etiquetas
+  // de partida apagado (aria-disabled="true"): el diseño por defecto es el viejo, y así no parece operable mientras
+  // llegan los ajustes (o si no llegan)
+  const grp = /<div class="seg t48" id="idGlass" role="radiogroup" aria-label="Cristal" aria-disabled="true">([\s\S]*?)<\/div>/.exec(html);
+  assert.ok(grp, 'existe el grupo #idGlass');
+  const radios = [...grp[1].matchAll(/<button role="radio" aria-checked="(true|false)"(?: tabindex="-1")? data-g="([^"]+)">([^<]+)<\/button>/g)];
+  assert.deepEqual(radios.map(m => [m[2], m[3]]), [['auto', 'Automático'], ['A', 'Completo'], ['B', 'Ligero'], ['C', 'Opaco']]);
+  assert.deepEqual(radios.map(m => m[1]), ['true', 'false', 'false', 'false'], 'de partida, Automático');
+  // los radios se pintan con aria-checked (aria-pressed en un radio no es ARIA válido) y comparten el estilo de marcado
+  const css = fs.readFileSync(path.join(PUB, 'mando', 'styles', 'mando.css'), 'utf8');
+  assert.match(css, /\.seg button\[aria-checked=true\]/);
+  assert.match(css, /\.seg\.t48 button\{height:48px\}/);
+  // con el diseño viejo el grupo se anuncia inoperable (aria-disabled) y se ve apagado
+  assert.match(css, /\.seg\[aria-disabled=true\]\{[^}]*opacity:/);
+});
+
+test('mando: «Cristal» solo se puede elegir con el diseño nuevo (glassActive)', async () => {
+  const { glassActive } = await import(pathToFileURL(path.join(PUB, 'mando', 'features', 'idle.js')).href);
+  assert.equal(glassActive({ agentDesign: 'v2' }), true);
+  assert.equal(glassActive({ agentDesign: 'v1' }), false);
+  assert.equal(glassActive({}), false, 'sin agentDesign del servidor, diseño viejo');
+  assert.equal(glassActive(null), false, 'sin ajustes cargados');
+  // y el selector lo respeta: ni el clic ni las flechas guardan otro nivel
+  const js = fs.readFileSync(path.join(PUB, 'mando', 'features', 'idle.js'), 'utf8');
+  assert.match(js, /function setGlass\(g\) \{ if \(!glassActive\(icfg\)/);
+  assert.match(js, /function glassKey\(e\) \{\s*if \(!glassActive\(icfg\)\) return;/);
+});
+
+/** Grupo #idGlass falso: los atributos se guardan como texto (como en el DOM) y cada radio lleva su data-g. */
+function fakeGlassGroup() {
+  const node = () => ({ attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); } });
+  const buttons = ['auto', 'A', 'B', 'C'].map(g => Object.assign(node(), { dataset: { g }, tabIndex: 0 }));
+  return Object.assign(node(), { buttons, querySelectorAll: () => buttons });
+}
+
+test('mando: «Cristal» con el diseño viejo se pinta apagado pero conserva su nivel (glassPaint)', async () => {
+  const { glassPaint } = await import(pathToFileURL(path.join(PUB, 'mando', 'features', 'idle.js')).href);
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const grp = fakeGlassGroup();
+  const checked = () => grp.buttons.map(b => [b.dataset.g, b.attrs['aria-checked'], b.tabIndex]);
+  try {
+    Object.defineProperty(globalThis, 'document', { configurable: true, value: { querySelector: s => (s === '#idGlass' ? grp : null) } });
+    // diseño viejo con «Ligero» guardado: inoperable, y «Ligero» sigue marcado y es el que entra con Tab
+    glassPaint({ agentDesign: 'v1', glass: 'B' });
+    assert.equal(grp.attrs['aria-disabled'], 'true');
+    assert.deepEqual(checked(), [['auto', 'false', -1], ['A', 'false', -1], ['B', 'true', 0], ['C', 'false', -1]]);
+    // al pasar al diseño nuevo vuelve a responder con el mismo nivel
+    glassPaint({ agentDesign: 'v2', glass: 'B' });
+    assert.equal(grp.attrs['aria-disabled'], 'false');
+    assert.deepEqual(checked(), [['auto', 'false', -1], ['A', 'false', -1], ['B', 'true', 0], ['C', 'false', -1]]);
+    // sin nivel del servidor, Automático
+    glassPaint({ agentDesign: 'v1' });
+    assert.equal(grp.attrs['aria-disabled'], 'true');
+    assert.deepEqual(checked().map(c => c[1]), ['true', 'false', 'false', 'false']);
+  } finally {
+    if (saved) Object.defineProperty(globalThis, 'document', saved); else delete globalThis.document;
+  }
+});
+
 test('pcm-player: PCM16 LE se pasa a Float32 y el frame sin 0xA1 ni seq no suena', async () => {
   const { pcm16ToFloat32, createPcmPlayer } = await import(pathToFileURL(path.join(PUB, 'mando', 'features', 'pcm-player.js')).href);
   const b = new Uint8Array([0xA1, 0, 5, 0x00, 0x80, 0xFF, 0x7F, 0, 0]).buffer;   // -32768, 32767, 0
@@ -178,4 +244,147 @@ test('pcm-player: PCM16 LE se pasa a Float32 y el frame sin 0xA1 ni seq no suena
   assert.ok(srcs.every(s => s.stopped));
   p.play(new Uint8Array([0xA1, 0, 6, 1, 0]).buffer);       // tras stop, otro turno vale
   assert.equal(srcs.length, 3);
+});
+
+// ── formato de la conversación en la tele desde la hoja de Jota (features/talkform.js, contrato r3 §3) ──
+const talkform = () => import(pathToFileURL(path.join(PUB, 'mando', 'features', 'talkform.js')).href);
+
+test('mando: los formatos de la conversación son los del contrato (agent-contract.js FORMS)', async () => {
+  const { FORMS } = require(path.join(__dirname, '..', '..', 'remote', 'src', 'tv', 'agent-contract'));
+  assert.deepEqual([...(await talkform()).FORMS], [...FORMS]);
+});
+
+test('mando: deslizar la tarjeta pide el otro formato (derecha → panel, izquierda → píldora) solo pasado el umbral o con golpe', async () => {
+  const { decide, SWIPE_MIN_PX: T, SWIPE_MIN_VEL: V, FLICK_MIN_PX: F } = await talkform();
+  const cases = [
+    ['pill', T, 0, 'panel'], ['pill', T - 1, 0, null], ['pill', -T * 2, 0, null],          // de píldora solo hacia la derecha
+    ['panel', -T, 0, 'pill'], ['panel', -(T - 1), 0, null], ['panel', T * 2, 0, null],      // de panel solo hacia la izquierda
+    ['pill', F, V, 'panel'], ['pill', F - 1, V * 3, null], ['pill', F, V - 0.01, null],     // golpe: velocidad y recorrido mínimos
+    ['panel', -F, -V, 'pill'], ['panel', -F, V, null],                                      // golpe hacia el otro lado
+    ['pill', T, -V * 3, 'panel'],                                                           // pasado el umbral vale aunque frene
+    ['otro', T * 3, V * 3, null], [undefined, -T * 3, 0, null],
+  ];
+  for (const [form, dx, vx, want] of cases) assert.equal(decide(form, dx, vx), want, `${form} dx=${dx} vx=${vx}`);
+});
+
+test('mando: la tarjeta sigue al dedo hasta el umbral y se resiste después y en el sentido que no cambia nada; el eje se decide tras la holgura', async () => {
+  const { rubber, axis, SWIPE_MIN_PX: T, RUBBER: R, LOCK_PX: L } = await talkform();
+  assert.equal(rubber('pill', T / 2), T / 2);
+  assert.equal(rubber('pill', T + 100), T + 100 * R);
+  assert.equal(rubber('pill', -100), -100 * R);
+  assert.equal(rubber('panel', -T / 2), -T / 2);
+  assert.equal(rubber('panel', -(T + 100)), -(T + 100 * R));
+  assert.equal(rubber('panel', 100), 100 * R);
+  assert.equal(axis(L - 1, 0), null);
+  assert.equal(axis(L, 3), 'x');
+  assert.equal(axis(-L, -3), 'x');
+  assert.equal(axis(3, L), 'y', 'vertical: es desplazar la hoja');
+  assert.equal(axis(L, L), 'y', 'en la diagonal manda desplazar');
+});
+
+test('mando: la velocidad del golpe es la de justo antes de soltar (deprisa, pararse y soltar no cambia el formato)', async () => {
+  const { releaseVel, decide, VEL_WINDOW_MS: Wn, SWIPE_MIN_VEL: V, FLICK_MIN_PX: F } = await talkform();
+  const fast = [{ x: 0, t: 0 }, { x: 20, t: 16 }, { x: 40, t: 32 }];
+  assert.equal(releaseVel([...fast, { x: 40, t: 40 }], 40), 40 / 40);
+  assert.ok(releaseVel([...fast, { x: 40, t: 40 }], 40) >= V);
+  // deprisa hasta 40 px, quieto medio segundo y soltar: ya no es golpe
+  const still = [...fast, { x: 40, t: 532 }];
+  assert.equal(releaseVel(still, 532), 0);
+  assert.equal(decide('pill', 40, releaseVel(still, 532)), null);
+  assert.equal(decide('pill', 40, releaseVel([...fast, { x: 40, t: 40 }], 40)), 'panel', `golpe de ${F}+ px`);
+  // un solo punto en la ventana: sin velocidad
+  assert.equal(releaseVel([{ x: 0, t: 0 }, { x: 10, t: Wn + 50 }], Wn + 50), 0);
+});
+
+test('mando: hoja de Jota: cada #id de agent.js y talkform.js existe; botón de formato accesible y tarjeta sin robar el desplazamiento', () => {
+  const html = fs.readFileSync(path.join(PUB, 'index.html'), 'utf8');
+  const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(m => m[1]));
+  for (const f of ['agent.js', 'talkform.js']) {
+    const js = fs.readFileSync(path.join(PUB, 'mando', 'features', f), 'utf8');
+    assert.deepEqual([...new Set([...js.matchAll(/\$\('#([\w-]+)'\)/g)].map(m => m[1]))].filter(id => !ids.has(id)), [], f);
+  }
+  // botón: de partida oculto (sin conversación en la tele) y en la fila de 48 px de Parar / Quitar. Su texto es la acción
+  // (cambia con el formato), así que no lleva aria-pressed: «Hacer píldora, activado» diría lo contrario de lo que hay
+  assert.match(html, /<div class="vzA">[^\n]*<button class="b2" id="agForm" type="button" hidden>Ampliar en la tele<\/button><\/div>/);
+  assert.doesNotMatch(html, /id="agForm"[^>]*aria-pressed/);
+  // el cambio confirmado se anuncia en su propia región viva (#agSt es del estado de la conversación), visible para el
+  // lector de pantalla desde el principio: ni hidden ni display:none
+  assert.match(html, /<div class="vzSr" id="agFs" role="status"><\/div>/);
+  const sr = /(?:^|})\s*\.vzSr\{([^}]*)\}/m.exec(fs.readFileSync(path.join(PUB, 'mando', 'styles', 'mando.css'), 'utf8'));
+  assert.ok(sr, '.vzSr en mando.css');
+  assert.match(sr[1], /clip-path:inset\(50%\)/);
+  assert.doesNotMatch(sr[1], /display:none|visibility:hidden/);
+  // la tarjeta envuelve la frase y la respuesta
+  assert.match(html, /<div class="vzCard" id="agCard">\s*<p class="vzQ" id="agQ"><\/p>\s*<div class="rep" id="rep"><\/div>/);
+  const css = fs.readFileSync(path.join(PUB, 'mando', 'styles', 'mando.css'), 'utf8');
+  assert.match(css, /\.vzA \.b2\{height:48px/);
+  const card = [...css.matchAll(/(?:^|})\s*\.vzCard(?:\[[^\]]+\]|\.[\w-]+)?\{([^}]*)\}/gm)].map(m => m[1]).join(';');
+  assert.match(card, /touch-action:pan-y/, 'el vertical sigue siendo del navegador (la hoja se desplaza)');
+  assert.doesNotMatch(card, /touch-action:none/);
+});
+
+/** Hoja de Jota falsa para talkForm: tarjeta, pista y botón con lo justo del DOM. */
+function fakeAgentSheet() {
+  const node = extra => Object.assign({ hidden: false, attrs: {}, dataset: {}, textContent: '', setAttribute(k, v) { this.attrs[k] = String(v); },
+    classList: { set: new Set(), toggle(c, on) { if (on) this.set.add(c); else this.set.delete(c); }, add(c) { this.set.add(c); }, remove(c) { this.set.delete(c); } },
+    style: { removeProperty() {}, setProperty() {} } }, extra);
+  const spans = ['pill', 'panel'].map(f => node({ dataset: { f } }));
+  const els = { '#agCard': node(), '#agForm': node({ hidden: true }), '#agFh': node({ hidden: true, querySelectorAll: () => spans }),
+    '#agFs': node() };
+  return { els, spans };
+}
+
+test('mando: el control de formato pinta lo último del servidor y se va con canSwitch false o sin conversación (hidden)', async () => {
+  const { talkForm } = await talkform();
+  const saved = Object.getOwnPropertyDescriptor(globalThis, 'document');
+  const { els, spans } = fakeAgentSheet();
+  const b = els['#agForm'], fs_ = els['#agFs'], on = () => spans.filter(s => s.classList.set.has('on')).map(s => s.dataset.f);
+  try {
+    Object.defineProperty(globalThis, 'document', { configurable: true, value: { querySelector: s => els[s] || null } });
+    talkForm.got({ ev: 'form', form: 'pill', canSwitch: true });
+    assert.equal(b.hidden, false);
+    assert.equal(b.textContent, 'Ampliar en la tele');
+    assert.equal('aria-pressed' in b.attrs, false, 'etiqueta de acción: sin aria-pressed');
+    assert.equal(fs_.textContent, '', 'al aparecer no se anuncia nada');
+    assert.equal(els['#agCard'].dataset.sw, 'pill');
+    assert.equal(els['#agFh'].hidden, false);
+    assert.deepEqual(on(), ['pill']);
+    talkForm.got({ ev: 'form', form: 'panel', canSwitch: true });
+    assert.equal(b.textContent, 'Hacer píldora');
+    assert.equal('aria-pressed' in b.attrs, false);
+    assert.deepEqual(on(), ['panel']);
+    assert.equal(fs_.textContent, 'En la tele: panel grande', 'el cambio confirmado se anuncia');
+    talkForm.got({ ev: 'form', form: 'pill', canSwitch: true });
+    assert.equal(fs_.textContent, 'En la tele: píldora');
+    talkForm.got({ ev: 'form', form: 'panel', canSwitch: true });
+    talkForm.got({ ev: 'form', form: 'panel', canSwitch: true });   // el mismo otra vez (reconexión, otro turno)
+    assert.equal(fs_.textContent, 'En la tele: panel grande');
+    talkForm.got({ ev: 'form', form: 'panel', canSwitch: false });
+    assert.equal(b.hidden, true, 'canSwitch false: sin control');
+    assert.equal(els['#agFh'].hidden, true);
+    assert.equal(els['#agCard'].dataset.sw, undefined, 'sin control, la tarjeta no se desliza');
+    talkForm.got({ ev: 'form', form: 'pill', canSwitch: true });
+    talkForm.got(null);                                    // hidden: la tele ya no enseña la conversación
+    assert.equal(b.hidden, true);
+    assert.equal(fs_.textContent, '', 'sin conversación no queda un anuncio viejo');
+    talkForm.got({ ev: 'form', form: 'panel', canSwitch: true });
+    assert.equal(fs_.textContent, '', 'una conversación nueva no es un cambio');
+    talkForm.got({ ev: 'form', form: 'raro', canSwitch: true });
+    assert.equal(b.hidden, true, 'un formato desconocido no pinta nada');
+    // canSwitch tiene que ser true de verdad
+    talkForm.got({ ev: 'form', form: 'pill' });
+    assert.equal(b.hidden, true);
+  } finally {
+    if (saved) Object.defineProperty(globalThis, 'document', saved); else delete globalThis.document;
+  }
+});
+
+test('mando: agent.js pasa los `form` y `hidden` de talk al control de formato y la orden es talkform', () => {
+  const js = fs.readFileSync(path.join(PUB, 'mando', 'features', 'agent.js'), 'utf8');
+  assert.match(js, /j\.ev === 'form'\) \{ talkForm\.got\(j\)/);
+  assert.match(js, /j\.ev === 'hidden'\) \{[^}]*talkForm\.got\(null\)/);
+  const tf = fs.readFileSync(path.join(PUB, 'mando', 'features', 'talkform.js'), 'utf8');
+  assert.match(tf, /rpc\(\{ t: 'talkform', form \}\)/);
+  // al capturar, el lostpointercapture de la captura implícita (la frase o la respuesta) sube a la tarjeta: no es soltar
+  assert.match(tf, /addEventListener\('lostpointercapture', e => \{ if \(e\.target === card\)/);
 });

@@ -9,10 +9,16 @@ const fs = require('node:fs');
 const { WebSocketServer, WebSocket } = require('ws');
 const { writeJson } = require('./src/core/json-store');
 const { islandSource } = require('./src/tv/tokens');
+const { hslHex } = require('./src/core/color');
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const MODES = ['auto', 'day', 'evening', 'night', 'cinema'];
 const LAYOUTS = ['rotar', 'margen', 'zonas', 'apilada']; // distribuciones del reposo v2
+const AGENT_DESIGNS = ['v1', 'v2'];                      // capa del agente en la tele: v1 tv-talk.js, v2 tv-agent.js (paneles vivos)
+const GLASS = ['auto', 'A', 'B', 'C'];                   // cristal del agente: auto (según lo que aguante la tele), completo, ligero, opaco
+// colores de la carátula para el orbe y los brillos del agente: saturación y luz acotadas para que se lean sobre el cristal oscuro
+const AGENT_COLOR_SAT = [0.35, 0.85];
+const AGENT_COLOR_LIGHT = [0.55, 0.75];
 const DEFAULTS = {
   city: '', lat: /** @type {number | null} */ (null), lon: /** @type {number | null} */ (null), tz: 'UTC', // los pone TV_CITY, TV_LAT…
   mode: 'auto',                 // auto | day | evening | night | cinema
@@ -24,6 +30,8 @@ const DEFAULTS = {
   layout: 'rotar',              // rotar | margen | zonas | apilada
   rearrangeMin: 20,             // minutos entre reacomodos de los widgets (0 = nunca); también evita el quemado
   calm: false,                  // movimiento reducido: luces y ecualizador quietos
+  agentDesign: 'v1',            // v1 | v2: diseño de la conversación en la tele (src/tv/talk-view.js)
+  glass: 'auto',                // auto | A | B | C: nivel del cristal del agente (solo v2)
 };
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
@@ -80,6 +88,8 @@ function createIdle(o) {
     if (LAYOUTS.includes(c.layout)) out.layout = c.layout;
     if (Number.isFinite(+c.rearrangeMin)) out.rearrangeMin = Math.min(120, Math.max(0, Math.round(+c.rearrangeMin)));
     if (c.calm !== undefined) out.calm = !!c.calm;
+    if (AGENT_DESIGNS.includes(c.agentDesign)) out.agentDesign = c.agentDesign;
+    if (GLASS.includes(c.glass)) out.glass = c.glass;
     return out;
   }
 
@@ -332,6 +342,8 @@ function createIdle(o) {
 
   return {
     URL_IDLE, isIdle, touch, onNav, run, activity, art, setMusic, ambient, watching: () => clients.size > 0 && cfg.music,
+    /** Lo que la capa del agente necesita del reposo (server.js le añade el contexto de la página). */
+    agentContext: () => agentContextOf({ cfg, profile, idle: isIdle(state.url), music }),
     upgrade: (req, socket, head) => wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws)),
     info: () => ({ profile, idle: isIdle(state.url), acts: acts.size }),
   };
@@ -349,5 +361,30 @@ function ambientOf({ idle, profile, music }) {
   return { profile, music: m };
 }
 
+/** [h, s, l] de la carátula → #rrggbb legible sobre el cristal oscuro; null si no lo es. @param {any} c */
+function agentColor(c) {
+  if (!Array.isArray(c) || c.length < 3 || !c.slice(0, 3).every(Number.isFinite)) return null;
+  /** @param {number} v @param {number[]} range [mín, máx] */
+  const fit = (v, range) => Math.min(range[1], Math.max(range[0], v));
+  return hslHex(((c[0] % 360) + 360) % 360, fit(c[1], AGENT_COLOR_SAT), fit(c[2], AGENT_COLOR_LIGHT));
+}
+
+/**
+ * Contexto del agente según el reposo: diseño, noche, movimiento reducido, cristal y, solo con el reposo en pantalla y
+ * música sonando, los dos primeros colores de la carátula (fuera del reposo la música no se consulta y estaría vieja).
+ * @param {{ cfg: { agentDesign: string, glass: string, calm: boolean }, profile: string, idle: boolean, music: any }} a
+ * @returns {{ design: string, night: boolean, calm: boolean, glass: string, colors: [string, string] | null, idle: boolean, music: boolean }}
+ */
+function agentContextOf({ cfg, profile, idle, music }) {
+  const on = !!(idle && music);
+  const pair = on && Array.isArray(music.colors) ? music.colors.slice(0, 2).map(agentColor) : [];
+  return {
+    design: cfg.agentDesign, night: profile === 'night', calm: !!cfg.calm, glass: cfg.glass,
+    colors: pair.length === 2 && pair.every(Boolean) ? [pair[0], pair[1]] : null,
+    idle, music: !!music,
+  };
+}
+
 module.exports = createIdle;
 module.exports.ambientOf = ambientOf;
+module.exports.agentContextOf = agentContextOf;

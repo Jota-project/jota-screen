@@ -48,18 +48,24 @@ const tool = (name, description, shape, fn) => server.registerTool(name, { descr
 tool('tv_state', 'Current state of the TV browser: page title, URL, volume, whether a video is playing (media: 1 playing, 0 paused, -1 no video) and what is on the stage.', {},
   async () => out(await api('GET', '/api/state')));
 
+// formato de la conversación en la tele para la página que se abre (lo mismo que FORMS de remote/src/tv/agent-contract.js;
+// test/unit/agent-form.test.js comprueba que coinciden)
+const LAYOUTS = ['pill', 'panel'];
+const layout = z.enum(LAYOUTS).optional().describe('pill when the page is meant to be watched full screen (a video, a photo gallery, a map); ' +
+  'default keeps the conversation panel. Streaming apps already get the pill.');
+
 tool('tv_open', 'Open a URL on the TV. Bare text is turned into a Google search. Only http/https. For YouTube/Netflix searches prefer tv_open_app.',
-  { url: z.string().describe('Full URL, a domain, or search text') },
-  async ({ url }) => out(await cmd({ t: 'nav', url }), 'Opened'));
+  { url: z.string().describe('Full URL, a domain, or search text'), layout },
+  async ({ url, layout }) => out(await cmd({ t: 'nav', url, ...(layout ? { layout } : {}) }), 'Opened'));
 
 tool('tv_open_app', 'Open a streaming app on the TV, optionally searching inside it. After opening, use tv_screenshot / tv_links / tv_click_text to pick the result and start playback.',
-  { app: z.enum(['youtube', 'netflix', 'spotify', 'home']), query: z.string().optional().describe('Search text inside the app') },
-  async ({ app, query }) => {
+  { app: z.enum(['youtube', 'netflix', 'spotify', 'home']), query: z.string().optional().describe('Search text inside the app'), layout },
+  async ({ app, query, layout }) => {
     const q = encodeURIComponent(query || '');
     const url = app === 'youtube' ? (query ? `https://www.youtube.com/results?search_query=${q}` : 'https://www.youtube.com/')
       : app === 'netflix' ? (query ? `https://www.netflix.com/search?q=${q}` : 'https://www.netflix.com/browse')
         : app === 'spotify' ? (query ? `https://open.spotify.com/search/${q}` : 'https://open.spotify.com/') : null;
-    return out(await cmd(app === 'home' ? { t: 'home' } : { t: 'nav', url }), 'Opened ' + app);
+    return out(await cmd(app === 'home' ? { t: 'home' } : { t: 'nav', url, ...(layout ? { layout } : {}) }), 'Opened ' + app);
   });
 
 tool('tv_nav', 'Browser navigation on the TV: back, forward, reload, or go to the home screen.',
@@ -172,7 +178,9 @@ tool('tv_idle',
   'op=show opens it now; op=get returns its settings and current profile; op=set changes settings: mode (auto|day|evening|night|cinema), ' +
   'bed/wake ("HH:MM", fixed sleep schedule), perDay + week {mon:{bed,wake},…} for a per-weekday schedule, idleMin (minutes without use before it opens itself, 0 = never), ' +
   'dimMin (at night, minutes until only a faint clock remains), music (show Spotify), city/lat/lon/tz (weather location; lat/lon null = no weather), ' +
-  'layout (rotar|margen|zonas|apilada: how clock, weather and music are arranged; rotar cycles them), rearrangeMin (minutes between rearrangements, 0 = never), calm (reduced motion).',
+  'layout (rotar|margen|zonas|apilada: how clock, weather and music are arranged; rotar cycles them), rearrangeMin (minutes between rearrangements, 0 = never), calm (reduced motion), ' +
+  'agentDesign (v1|v2: how the conversation with Jota is drawn on the TV; v2 = live glass panels with tool cards), ' +
+  'glass (auto|A|B|C: glass level of the v2 panels; auto picks it by how smooth the TV runs, A full, B light, C opaque).',
   { op: z.enum(['show', 'get', 'set']), cfg: z.record(z.any()).optional() },
   async ({ op, cfg }) => out(await cmd({ t: 'idle', op, cfg })));
 

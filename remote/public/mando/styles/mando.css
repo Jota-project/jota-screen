@@ -105,7 +105,11 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .sw[aria-pressed=true]::after{transform:translateX(20px)}
 .seg{display:flex;gap:4px;background:var(--bg);border:1px solid var(--edge);border-radius:14px;padding:3px;grid-column:1/-1}
 .seg button{flex:1;height:36px;border:0;border-radius:11px;background:transparent;color:var(--dim);font:600 13.5px "Inter",system-ui,-apple-system,sans-serif;touch-action:manipulation}
-.seg button[aria-pressed=true]{background:var(--accent-tint);color:var(--tx)}
+.seg button[aria-pressed=true],.seg button[aria-checked=true]{background:var(--accent-tint);color:var(--tx)}
+/* .t48: zona de toque de 48 px sin cambiar el aspecto (el conmutador la amplía con ::before; ::after es el botón) */
+.sw.t48::before{content:"";position:absolute;inset:-9px 0}
+.seg.t48 button{height:48px}
+.seg[aria-disabled=true]{opacity:.45}  /* «Cristal» con el diseño viejo: se ve apagado, como lo anuncia aria-disabled */
 .tm,.sel{height:38px;border-radius:12px;border:1px solid var(--line);background:var(--surface);color:var(--tx);font:600 15px "Inter",system-ui,-apple-system,sans-serif;padding:0 10px;-webkit-appearance:none;appearance:none;touch-action:manipulation}
 .tms{display:flex;gap:8px;align-items:center}
 .wk{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px 10px;align-items:center;padding:4px 2px 10px}
@@ -267,11 +271,25 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .vzOut[hidden]{display:none}
 .vzOut:focus-visible{outline:2px solid var(--accent-text);outline-offset:-6px;border-radius:999px}
 /* Parar (mientras piensa, escribe o suena en el móvil) y Quitar de la tele (tras la respuesta, mientras se ve) */
-.vzA{display:flex;gap:4px;margin:8px 0 0 -16px;flex:none}
+.vzA{display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 0 -16px;flex:none}
 .vzA:not(:has(.b2:not([hidden]))){display:none}
 .vzA .b2{height:48px;padding:0 16px;font-size:15px;font-weight:500;color:var(--accent-text)}
 .vzA .b2::before{width:100%;height:100%}
 .vzA .b2[hidden]{display:none}
+/* formato de la conversación en la tele (features/talkform.js): la tarjeta (frase y respuesta) se desliza en horizontal
+   siguiendo al dedo (--dx, con resistencia) y al soltar encaja en su sitio con un rebote; la pista (quieta, bajo la
+   tarjeta) dice hacia dónde va cada formato y se enciende la que se va a pedir. Solo vertical para el navegador: la hoja sigue desplazándose. */
+#agS{overflow-x:hidden}                                /* la tarjeta desplazada no abre un desplazamiento horizontal */
+.vzCard{flex:none;touch-action:pan-y}
+.vzCard[data-sw]{transform:translateX(var(--dx,0px));transition:transform .42s cubic-bezier(.3,1.35,.5,1)}
+.vzCard.drag{transition:none;user-select:none;-webkit-user-select:none;cursor:grabbing}
+.vzFh{display:flex;justify-content:space-between;margin-top:14px;font-size:13px;color:var(--dim)}
+.vzFh[hidden]{display:none}
+.vzFh span{opacity:.5;transition:opacity .2s ease,color .2s ease}
+.vzFh .on{opacity:1}
+.vzFh .arm{opacity:1;color:var(--accent-text)}
+/* solo para el lector de pantalla (el anuncio del cambio de formato): fuera de la vista, pero no oculto */
+.vzSr{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .vzC{display:flex;justify-content:center;gap:4px;margin-top:14px;flex:none}
 .vzC .b2{height:48px;padding:0 16px;font-size:15px;font-weight:500}
 .vzC .b2::before{width:100%;height:100%}

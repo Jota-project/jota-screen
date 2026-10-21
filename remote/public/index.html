@@ -32,6 +32,7 @@
 <link rel="modulepreload" href="/mando/features/go.js">
 <link rel="modulepreload" href="/mando/features/agent.js">
 <link rel="modulepreload" href="/mando/features/voice.js">
+<link rel="modulepreload" href="/mando/features/talkform.js">
 <link rel="modulepreload" href="/mando/features/spotify-state.js">
 <link rel="modulepreload" href="/mando/features/spotify-lists.js">
 <link rel="modulepreload" href="/mando/features/spotify.js">
@@ -284,9 +285,13 @@
 <div class="sheet vzV" id="agS" role="dialog" aria-label="Hablar con Jota">
   <div class="vzTop"><button class="b2 vzX" id="agX" type="button" aria-label="Cerrar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button><span>{{TV_NAME}}</span></div>
   <div class="vzSt" id="agSt" aria-live="polite">Te escucho</div>
-  <p class="vzQ" id="agQ"></p>
-  <div class="rep" id="rep"></div>
-  <div class="vzA"><button class="b2" id="agStop" type="button" hidden>Parar</button><button class="b2" id="agHide" type="button" hidden>Quitar de la tele</button></div>
+  <div class="vzCard" id="agCard">
+    <p class="vzQ" id="agQ"></p>
+    <div class="rep" id="rep"></div>
+  </div>
+  <div class="vzFh" id="agFh" aria-hidden="true" hidden><span data-f="pill">← Píldora</span><span data-f="panel">Panel →</span></div>
+  <div class="vzA"><button class="b2" id="agStop" type="button" hidden>Parar</button><button class="b2" id="agHide" type="button" hidden>Quitar de la tele</button><button class="b2" id="agForm" type="button" hidden>Ampliar en la tele</button></div>
+  <div class="vzSr" id="agFs" role="status"></div>
   <input class="in vzIn" id="agin" placeholder="Pídele algo a Jota…" autocomplete="off" autocorrect="on" spellcheck="true" enterkeyhint="send">
   <div class="vzO">
     <button class="vzOrb" id="agOrb" type="button" aria-label="Escribir o dictar a Jota"></button>
@@ -336,6 +341,11 @@
     <option value="0">Nunca</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
   <div class="fld"><span>Menos movimiento<small>Las luces del fondo se quedan quietas</small></span><button class="sw" id="idCalm" aria-pressed="false" aria-label="Menos movimiento"></button></div>
   <div class="acts one u-mt8"><button class="bt" id="idShow" type="button">Ver el reposo ahora</button></div>
+  <div class="sh">Agente en la tele</div>
+  <div class="fld"><span>Diseño nuevo<small>Las respuestas de Jota en un panel de cristal vivo</small></span><button class="sw t48" id="idAgDes" aria-pressed="false" aria-label="Diseño nuevo del agente"></button></div>
+  <div class="fld"><span>Cristal<small>Solo con el diseño nuevo. Automático lo aligera si la tele va justa</small></span><div class="seg t48" id="idGlass" role="radiogroup" aria-label="Cristal" aria-disabled="true">
+    <button role="radio" aria-checked="true" data-g="auto">Automático</button><button role="radio" aria-checked="false" tabindex="-1" data-g="A">Completo</button><button role="radio" aria-checked="false" tabindex="-1" data-g="B">Ligero</button><button role="radio" aria-checked="false" tabindex="-1" data-g="C">Opaco</button>
+  </div></div>
   <div class="sh">Personas con acceso</div>
   <div id="devs"></div>
   <div class="acts one u-mt8 u-mb6"><button class="bt" id="kickG" type="button">Quitar a todos los invitados</button></div>

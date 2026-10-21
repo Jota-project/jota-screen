@@ -97,6 +97,24 @@ test('sondeo de la página: solo con mandos conectados, y avisa si cambia', asyn
   assert.equal(bc, 1, 'sin cambios no se difunde');
 });
 
+test('sondeo de la página: con la capa del agente a la vista sondea aunque no haya mandos y avisa de `playback`', async () => {
+  let calls = 0, active = false, t = 0;
+  const seen = [];
+  const cdp = { ready: true, session: 'S', call: async () => { calls++; t += 0.3; return { result: { value: [1, 0, 1000, 1000, [1, t]] } }; } };
+  const state = { media: -1, scroll: null };
+  const poll = createPagePoll({ cdp, state, broadcast: () => {}, watched: () => false, active: () => active, onPlayback: on => seen.push(on), dwellMs: 0 });
+  await poll.poll();
+  assert.equal(calls, 0);
+  active = true;
+  await poll.poll(); await poll.poll();
+  assert.equal(state.playback, true, 'avanza: reproducción de verdad');
+  assert.deepEqual(seen, [true]);
+  await poll.poll();
+  assert.deepEqual(seen, [true], 'solo avisa al cambiar');
+  poll.reset();
+  assert.deepEqual([state.playback, seen], [false, [true, false]], 'otra página: se mide desde cero');
+});
+
 test('estáticos: subcarpetas sí; ocultos, enlaces simbólicos y nombres de rutas, no', () => {
   const fs = require('node:fs'), os = require('node:os');
   const d = fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-pub-'));

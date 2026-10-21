@@ -121,6 +121,34 @@ test('traduce los mensajes', async () => {
   } finally { c.close(); await f.stop(); }
 });
 
+test('tool_call → {type:tool}: start con args (solo objeto), result como end con ok; el resultado no se propaga', async () => {
+  const f = await fake(ready);
+  const c = mk(f);
+  const evs = [];
+  c.on(e => evs.push(e));
+  try {
+    await c.ensure();
+    const J = o => f.conns[0].send(JSON.stringify({ type: 'tool_call', turn_id: 't-1', ...o }));
+    J({ phase: 'start', name: 'tv-canvas__tv_open', tool_call_id: 'c1', args: { url: 'https://example.com' }, result: null, is_error: null });
+    J({ phase: 'result', name: 'tv-canvas__tv_open', tool_call_id: 'c1', args: null, result: 'secreto-del-resultado', is_error: false });
+    J({ phase: 'result', name: 'tv_volume', tool_call_id: 'c2', args: null, result: { e: 1 }, is_error: true });
+    J({ phase: 'start', name: 'tv_state', tool_call_id: 'c3', args: ['no', 'objeto'] });
+    J({ phase: 'result', name: 'tv_state', tool_call_id: 'c3' });   // sin is_error: ok
+    J({ phase: 'progress', name: 'x', tool_call_id: 'c4' });         // fase desconocida: se ignora
+    f.conns[0].send(JSON.stringify({ type: 'turn_end', turn_id: 't-1' }));
+    await until(() => evs.some(e => e.type === 'turn_end'));
+    assert.deepEqual(evs, [
+      { type: 'tool', turnId: 't-1', phase: 'start', id: 'c1', name: 'tv-canvas__tv_open', args: { url: 'https://example.com' } },
+      { type: 'tool', turnId: 't-1', phase: 'end', id: 'c1', name: 'tv-canvas__tv_open', ok: true },
+      { type: 'tool', turnId: 't-1', phase: 'end', id: 'c2', name: 'tv_volume', ok: false },
+      { type: 'tool', turnId: 't-1', phase: 'start', id: 'c3', name: 'tv_state', args: null },
+      { type: 'tool', turnId: 't-1', phase: 'end', id: 'c3', name: 'tv_state', ok: true },
+      { type: 'turn_end', turnId: 't-1' },
+    ]);
+    assert.doesNotMatch(JSON.stringify(evs), /secreto-del-resultado/);
+  } finally { c.close(); await f.stop(); }
+});
+
 test('cierre inesperado (también 1000) → down, isReady() false, y el siguiente ensure() abre otra conexión', async () => {
   const f = await fake(ready);
   const c = mk(f);

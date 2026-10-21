@@ -12,8 +12,25 @@ const AUDIO_MAGIC = 0xA1;                    // frame de audio del Gateway: 0xA1
 /**
  * @typedef {{type:'partial',text:string} | {type:'final',text:string} | {type:'turn_start',turnId:string,seq:number}
  *   | {type:'token',turnId:string,text:string} | {type:'turn_end',turnId:string} | {type:'audio',seq:number,pcm:Buffer,frame:Buffer}
- *   | {type:'turn_error',turnId:string,message:string} | {type:'down'}} GwEvent
+ *   | {type:'turn_error',turnId:string,message:string} | {type:'down'} | ToolEvent} GwEvent
  */
+/**
+ * Llamada a herramienta del agente (solo llega si el Gateway tiene `tool_calls_enabled=true` para este cliente; no va en el handshake).
+ * `args` solo en start (objeto o null); `ok` solo en end. El resultado no se propaga: nunca se pinta en crudo.
+ * @typedef {{type:'tool',turnId:string,phase:'start',id:string,name:string,args:object|null}
+ *   | {type:'tool',turnId:string,phase:'end',id:string,name:string,ok:boolean}} ToolEvent
+ */
+
+/** @param {any} v */
+const isPlain = v => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/** tool_call del Gateway → ToolEvent (null si la fase no es start ni result). @param {any} m @returns {ToolEvent | null} */
+function toolEvent(m) {
+  const base = { type: /** @type {'tool'} */ ('tool'), turnId: m.turn_id, id: String(m.tool_call_id ?? ''), name: String(m.name ?? '') };
+  if (m.phase === 'start') return { ...base, phase: 'start', args: isPlain(m.args) ? m.args : null };
+  if (m.phase === 'result') return { ...base, phase: 'end', ok: m.is_error !== true };
+  return null;
+}
 
 /**
  * @param {{ url: string, key: string, agent: string, log: { info: Function, warn: Function }, WebSocketImpl?: any, readyMs?: number, bufferMax?: number }} o
@@ -62,7 +79,8 @@ function createGatewayClient({ url, key, agent, log, WebSocketImpl = WebSocket, 
       case 'token': return emit({ type: 'token', turnId: m.turn_id, text: String(m.text ?? '') });
       case 'turn_end': return emit({ type: 'turn_end', turnId: m.turn_id });
       case 'error': if (m.code === 'TURN_ERROR') emit({ type: 'turn_error', turnId: m.turn_id, message: String(m.message ?? '') }); return;
-      default: return;                               // status, interrupted, tool_call…: no hacen falta
+      case 'tool_call': { const ev = toolEvent(m); if (ev) emit(ev); return; }
+      default: return;                               // status, interrupted…: no hacen falta
     }
   }
 

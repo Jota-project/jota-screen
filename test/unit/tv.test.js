@@ -107,3 +107,33 @@ test('tokens de la tele: la isla los lleva delante y tv-island.js no repite sus 
   assert.equal(readTokens(d), '--a:1; --b:"x y";');
   fs.rmSync(d, { recursive: true, force: true });
 });
+
+// ── reproducción de verdad (ronda 2): señal aparte de `media`, para el paso del panel a la píldora
+const dev = require(path.join(R, 'devices'));
+test('PAGE_PROBE: `media` sigue igual (4 primeros valores) y el 5.º es el vídeo que suena con más área', () => {
+  assert.deepEqual(parseProbe([1, 500, 2000, 1000, [0.9, 12.5]]), { media: 1, scroll: { pos: 0.5, size: 0.5 } }, 'parseProbe no cambia');
+  assert.deepEqual(dev.parsePlayback([1, 0, 0, 0, [0.9, 12.5]]), { area: 0.9, t: 12.5 });
+  assert.equal(dev.parsePlayback([1, 0, 0, 0, null]), null);
+  assert.equal(dev.parsePlayback([1, 0, 0, 0]), null);
+  assert.equal(dev.parsePlayback([1, 0, 0, 0, ['x', 1]]), null);
+  for (const k of ['paused', 'ended', 'readyState<' + dev.PLAYBACK_MIN_READY, 'fullscreenElement', 'getBoundingClientRect']) assert.ok(dev.PAGE_PROBE.includes(k), k);
+});
+
+test('createPlaybackWatch: grande y avanzando durante el dwell → true; pequeño, quieto o pausado → false al momento', () => {
+  const w = dev.createPlaybackWatch({ dwellMs: 600 });
+  const big = t => ({ area: 1, t });
+  assert.equal(w.update(big(0), 0), false, 'una lectura no dice si avanza');
+  assert.equal(w.update(big(0.25), 250), false);
+  assert.equal(w.update(big(0.5), 500), false);
+  assert.equal(w.update(big(0.75), 750), true, '600 ms avanzando desde la primera lectura');
+  assert.equal(w.update(big(0.75), 1000), false, 'se para (buffering, pausa): false');
+  assert.equal(w.update(big(1), 1250), false, 'vuelve a contar');
+  const tr = dev.createPlaybackWatch({ dwellMs: 600 });
+  let on = false;
+  for (let i = 0; i < 20; i++) on = tr.update({ area: dev.PLAYBACK_MIN_AREA - 0.1, t: i * 0.25 }, i * 250) || on;
+  assert.equal(on, false, 'un tráiler pequeño nunca');
+  w.update(big(2), 1500); w.update(big(2.3), 1800); w.update(big(2.6), 2100);
+  assert.equal(w.on, true);
+  assert.equal(w.update(null, 2400), false, 'sin vídeo sonando');
+  w.reset(); assert.equal(w.on, false);
+});

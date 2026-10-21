@@ -4,14 +4,22 @@
 // saneada), historial, reproducir/pausar y saltar en el vídeo, volumen de PipeWire, pulsar por texto o coordenadas,
 // listar enlaces y capturar la pantalla. Cada orden lleva su permiso al lado.
 
+/** La capa del agente deja pasar el puntero (o deja de hacerlo). @param {boolean} on */
+const AGENT_PASS = on => `window.TVAgent&&window.TVAgent.pass&&window.TVAgent.pass(${on})`;
+
 /**
  * @param {{
  *   cdp: { call: Function }, state: any, broadcast: () => void, key: (k: string) => any,
  *   audio: { read: Function, toggleMute: Function, step: Function, set: Function },
  *   cfg: { HOME_URL: string, SELF: string }, leaveStage: () => void,
+ *   onLayout?: (url: string, layout: string) => void, onReload?: () => void, onNavigate?: () => void,
  * }} deps
+ *   onLayout: Jota pidió un formato para la conversación en la página que abre (`layout` de tv_open / tv_open_app)
+ *   onNavigate: se va a navegar (la conversación de la tele espera a que la página nueva se pinte antes de cerrarse)
+ *   onReload: se volvió a cargar la página que ya se veía (abrir la misma URL o «recargar»): documento nuevo sin cambio de
+ *   URL, que Chrome no avisa como cambio de página (tv_idle show en el reposo, tv_open_app en la portada de la app…)
  */
-module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg, leaveStage }) {
+module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg, leaveStage, onLayout = () => {}, onReload = () => {}, onNavigate = () => {} }) {
   const { HOME_URL, SELF } = cfg;
   function normUrl(s) {
     s = s.trim();
@@ -24,11 +32,16 @@ module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg
     if (/^[\w-]+(\.[\w-]+)+$/.test(host) && !/\s/.test(s)) return 'https://' + s;
     return 'https://www.google.com/search?q=' + encodeURIComponent(s);
   }
-  async function nav(url) {
+  /** @param {any} url @param {any} [layout] 'pill' | 'panel' (lo demás se ignora) */
+  async function nav(url, layout) {
     const u = normUrl(String(url || ''));
     if (!u) return { error: 'dirección no permitida' };
     if (!u.startsWith(SELF + '/')) leaveStage(); // salimos del escenario
+    if (typeof layout === 'string' && layout) onLayout(u, layout); // antes de navegar: vale en cuanto se llega
+    const same = u === state.url;
+    onNavigate();
     await cdp.call('Page.navigate', { url: u });
+    if (same) onReload();
     return { ok: 1, url: u };
   }
   async function hist(delta) {
@@ -105,9 +118,13 @@ module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg
     x = Number(x); y = Number(y);
     if (!Number.isFinite(x) || !Number.isFinite(y)) return { error: 'coordenadas no válidas' };
     const base = { x, y, button: 'left', clickCount: 1 };
-    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
-    await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', ...base });
-    await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base });
+    // la membrana de la conversación (tv-agent.js) recibe el puntero para arrastrarla: el clic de Jota pasa a través
+    await cdp.call('Runtime.evaluate', { expression: AGENT_PASS(true) }).catch(() => {});
+    try {
+      await cdp.call('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+      await cdp.call('Input.dispatchMouseEvent', { type: 'mousePressed', ...base });
+      await cdp.call('Input.dispatchMouseEvent', { type: 'mouseReleased', ...base });
+    } finally { await cdp.call('Runtime.evaluate', { expression: AGENT_PASS(false) }).catch(() => {}); }
     return { ok: 1 };
   }
   async function shot(m) {
@@ -139,14 +156,14 @@ module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg
   /** @type {import('../transport/commands').Command[]} */
   const commands = [
     // webs y navegación
-    { t: 'nav', perm: 'web', run: m => nav(m.url) },
+    { t: 'nav', perm: 'web', run: m => nav(m.url, m.layout) },
     { t: 'links', perm: 'web', run: m => links(m.text) },
     { t: 'clicktext', perm: 'web', run: m => clickText(m.text) },
     { t: 'click', perm: 'web', run: m => clickAt(m.x, m.y) },
     { t: 'home', run: () => nav(HOME_URL) },
     { t: 'back', run: () => hist(-1) },
     { t: 'forward', run: () => hist(1) },
-    { t: 'reload', run: async () => { await cdp.call('Page.reload', {}); return { ok: 1 }; } },
+    { t: 'reload', run: async () => { await cdp.call('Page.reload', {}); onReload(); return { ok: 1 }; } },
     { t: 'shot', perm: 'adminQuiet', run: m => shot(m) },
     // reproducción y volumen
     { t: 'pp', run: () => playpause() },
