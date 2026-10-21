@@ -180,3 +180,12 @@ test('«¿qué es lo último que estaba viendo?» solo contesta (no pone nada); 
   assert.deepEqual(seen.at(-1), { id: '1001', title: 'La serie de prueba' }, 'pedirlo, sí');
   assert.match(rig().w.last().error, /historial/);
 });
+
+test('tarjeta de «qué he visto»: las últimas series del historial, sin repetir, con imagen si están en «seguir viendo»', async () => {
+  const { w } = rig();
+  await w.refresh();
+  const R = w.media('recent');
+  assert.equal(R.kind, 'list');
+  assert.deepEqual(R.items.map(i => i.title), ['La serie de prueba', 'Una película'], 'una vez cada una, en orden');
+  assert.ok(R.items[0].img.startsWith('http://127.0.0.1:8787/idle/nfx?u='));
+});

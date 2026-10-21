@@ -236,11 +236,25 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
     return data.items.find(i => id && (i.id === id || (i.ep && i.ep.id === id))) || data.items.find(i => q && q.title && norm(i.title) === norm(q.title)) || null;
   }
   /**
-   * `list`: lo que se está viendo (hasta 4). `play`: el título q, con su imagen de ambiente y el fotograma del capítulo.
-   * null si no hay datos (o no se conoce ese título). @param {'list' | 'play'} kind @param {{ id?: any, title?: string }} [q]
+   * `list`: lo que se está viendo (hasta 4). `recent`: las últimas series vistas según el historial (hasta 4; con imagen si
+   * están en «seguir viendo»). `play`: el título q, con su imagen de ambiente y el fotograma del capítulo.
+   * null si no hay datos (o no se conoce ese título). @param {'list' | 'recent' | 'play'} kind @param {{ id?: any, title?: string }} [q]
    */
   function media(kind, q) {
     if (now() - data.at > 48 * 3600e3) return null;
+    if (kind === 'recent') {
+      const seen = new Set(), items = [];
+      for (const h of data.history) {
+        const k = norm(h.title);
+        if (seen.has(k)) continue;
+        seen.add(k);
+        const it = find({ title: h.title });
+        items.push(it ? { title: it.title, sub: it.ep ? sub(it) : 'Película', left: left(it), frac: frac(it), img: abs(it.card || it.story) }
+          : { title: h.title, sub: h.season ? `${h.season} · ${h.episode}` : 'Película', left: '', frac: 0, img: '' });
+        if (items.length >= 4) break;
+      }
+      return items.length ? { key: 'nfx-recent-' + data.at, kind: 'list', items } : null;
+    }
     if (kind === 'list') {
       const items = data.items.slice(0, 4).map(it => ({ title: it.title, sub: it.ep ? sub(it) : 'Película', left: left(it), frac: frac(it), img: abs(it.card || it.story) }));
       return items.length ? { key: 'nfx-list-' + data.at, kind, items } : null;

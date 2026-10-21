@@ -126,6 +126,12 @@ netflix.extend({ ...nfxWatch.ops,
     log.info(`netflix: «qué estoy viendo» (tarjeta en la conversación: ${shown ? 'sí' : card ? 'no, la capa no la admite ahora' : 'no, sin datos'})`);
     return nfxWatch.watching();
   },
+  // «¿qué he visto últimamente?»: además de los días, las últimas series con sus imágenes en la conversación
+  history: () => {
+    const card = nfxWatch.media('recent'), shown = !!card && talkView.media(card);
+    log.info(`netflix: «qué he visto» (tarjeta en la conversación: ${shown ? 'sí' : card ? 'no, la capa no la admite ahora' : 'no, sin datos'})`);
+    return nfxWatch.history();
+  },
   // «¿qué es lo último que estaba viendo?»: la respuesta y su tarjeta con el ▶ sin pulsar (no se pone nada)
   last: () => {
     const r = nfxWatch.last(), card = r.error ? null : nfxWatch.media('play', r), shown = !!card && talkView.media(card);
