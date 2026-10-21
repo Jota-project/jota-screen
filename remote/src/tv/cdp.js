@@ -41,6 +41,7 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
     /** @type {Map<string, TargetInfo>} */ pages: new Map(),
     /** contextos de los mundos aislados con nombre del marco principal (p. ej. «tv») */ worlds: new Map(),
     ready: false,
+    /** @type {Promise<void> | null} enganche en curso (activate) */ attaching: null,
 
     async connect() {
       if (this.stopped) return;
@@ -141,16 +142,36 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
     /** Engancha una pestaña como activa (suelta la anterior, que si no sigue mandando eventos). */
     async activate(id) {
       if (this.targetId === id && this.session) return;
+      if (this.targetId === id && this.attaching) return this.attaching; // ya se está enganchando: no abrir otra sesión
       const old = this.session;
       this.targetId = id; this.session = null; this.worlds.clear();
       h.onActivating();
       if (old) this.call('Target.detachFromTarget', { sessionId: old }, true).catch(() => {});
-      try {
-        const r = await this.call('Target.attachToTarget', { targetId: id, flatten: true }, true);
-        if (this.targetId !== id) { this.call('Target.detachFromTarget', { sessionId: r.sessionId }, true).catch(() => {}); return; } // ya se activó otra
-        this.session = r.sessionId;
-        h.onAttached(this.pages.get(id));
-      } catch {}
+      const p = this.attaching = (async () => {
+        try {
+          const r = await this.call('Target.attachToTarget', { targetId: id, flatten: true }, true);
+          if (this.targetId !== id) { this.call('Target.detachFromTarget', { sessionId: r.sessionId }, true).catch(() => {}); return; } // ya se activó otra
+          this.session = r.sessionId;
+          h.onAttached(this.pages.get(id));
+        } catch {}
+      })();
+      try { await p; } finally { if (this.attaching === p) this.attaching = null; }
+    },
+
+    /** Trae una pestaña al frente (en el kiosco se ve al instante) y la engancha como activa. */
+    async show(id) {
+      if (!this.pages.has(id)) throw new Error('nopage');
+      await this.call('Target.activateTarget', { targetId: id }, true);
+      await this.activate(id);
+      if (this.targetId !== id || !this.session) throw new Error('nopage');
+    },
+
+    /** Abre una pestaña en blanco, la trae al frente y la engancha como activa. Devuelve su id. */
+    async newTab() {
+      const { targetId } = await this.call('Target.createTarget', { url: 'about:blank' }, true);
+      this.pages.set(targetId, this.pages.get(targetId) || { targetId, type: 'page', url: 'about:blank', title: '' });
+      await this.show(targetId);
+      return targetId;
     },
   };
   return cdp;

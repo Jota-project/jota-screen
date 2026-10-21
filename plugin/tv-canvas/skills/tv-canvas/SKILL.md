@@ -7,12 +7,19 @@ description: Controlar la tele (Chrome en pantalla completa): abrir YouTube/Netf
 
 La tele es un Chrome en modo kiosco en el servidor de jota-screen. Se maneja con las herramientas MCP `tv_*` (servidor `tv-canvas`). Los comandos que llegan por voz piden **respuestas de una frase**: actúa y confirma en pocas palabras ("Hecho, Netflix abierto"), sin explicar los pasos.
 
-## Cómo reproducir algo (YouTube / Netflix)
+## Netflix
+`tv_netflix` lo hace todo en una llamada (unos 2-3 s), sin capturas ni clics:
+- «Pon Netflix» → `action: open`.
+- «Ponme X» → `action: play` con `title`. Busca, abre y retoma por donde se dejó. Si devuelve `candidates`, no había un título exacto: di qué se está poniendo y ofrece las otras (se ponen con `id`).
+- «… en el perfil de Carmen» → añade `profile`. Sin él, usa el perfil por defecto. Para cambiar el de por defecto: `set_default_profile`. `profiles` lista los que hay.
+- Un capítulo concreto todavía no: pon la serie y, si hace falta, termina con `tv_links` / `tv_click_text`.
+Si dice que Netflix pide iniciar sesión, no escribas contraseñas: díselo al usuario.
+
+## Cómo reproducir algo en YouTube (u otras webs)
 1. `tv_open_app` con `app` y `query` (abre los resultados de búsqueda).
 2. `tv_screenshot` o `tv_links` (con filtro, p. ej. el título) para ver los resultados.
 3. `tv_click_text` con el título (regex, sin distinguir mayúsculas) o `tv_click_at` con las coordenadas de `tv_links`.
-4. En Netflix puede pedir perfil: `tv_click_text` con el nombre del perfil. En la ficha, `tv_click_text` con `Reproducir|Play|Continuar`.
-5. Comprueba con `tv_state` (`media: 1` = se está reproduciendo). Si no, repite desde 2 o usa `tv_key` con `Enter`.
+4. Comprueba con `tv_state` (`media: 1` = se está reproduciendo). Si no, repite desde 2 o usa `tv_key` con `Enter`.
 Los fotogramas de vídeo con DRM salen negros en las capturas; es normal. Si la sesión está cerrada o pide contraseña, no la escribas: dilo al usuario.
 
 ## Controles

@@ -80,6 +80,26 @@ test('CDP: engancha la pestaña, avisa por los ganchos y corta las llamadas que 
   await fake.close();
 });
 
+test('CDP: varias pestañas: traer una al frente, abrir otra y un solo enganche aunque se pida dos veces', async () => {
+  const fake = await startFakeCdp({ pages: [{ targetId: 'P1', type: 'page', url: 'http://127.0.0.1:8787/idle.html', title: 'Salón' }] });
+  const seen = [];
+  const cdp = createCdp({ port: fake.port, log: { info() {}, error() {} }, timeoutMs: 500, retryMs: 50, hooks: { onAttached: t => seen.push(t && t.targetId) } });
+  cdp.connect();
+  for (let i = 0; i < 100 && !cdp.session; i++) await new Promise(r => setTimeout(r, 10));
+  const id = await cdp.newTab();
+  assert.equal(id, 'P2');
+  assert.equal(cdp.targetId, 'P2'); assert.equal(cdp.session, 'S-P2');
+  await new Promise(r => setTimeout(r, 30)); // el aviso de pestaña nueva llega después: no debe abrir otra sesión
+  assert.equal(fake.find('Target.attachToTarget').filter(c => c.params.targetId === 'P2').length, 1, 'un solo enganche a la pestaña nueva');
+  await cdp.show('P1');
+  assert.equal(cdp.session, 'S-P1');
+  assert.ok(fake.find('Target.activateTarget').some(c => c.params.targetId === 'P1'), 'se trae al frente en Chrome');
+  assert.ok(fake.find('Target.detachFromTarget').some(c => c.params.sessionId === 'S-P2'), 'la de detrás se suelta');
+  await assert.rejects(cdp.show('NO'), /nopage/);
+  assert.deepEqual(seen, ['P1', 'P2', 'P1']);
+  cdp.stop(); await fake.close();
+});
+
 test('tokens de la tele: la isla los lleva delante y tv-island.js no repite sus colores', () => {
   const fs = require('node:fs');
   const os = require('node:os');

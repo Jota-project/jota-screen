@@ -2,7 +2,7 @@
 // enseña quién eres y, a un admin, los dispositivos, los permisos y el reposo.
 import { $ } from '../core/dom.js';
 import { cfg, saveCfg, state, on } from '../core/store.js';
-import { getRtt, isUp } from '../core/api.js';
+import { getRtt, isUp, rpc } from '../core/api.js';
 import { ROLE_N, left } from '../core/perms.js';
 import { buzz } from '../ui/haptics.js';
 import { openSheet, isOpen } from '../ui/sheets.js';
@@ -21,9 +21,21 @@ function refreshSet() {
   $('#foot').textContent = (isUp() ? 'Conectado' : 'Sin conexión') + (getRtt() ? ' · ' + Math.round(getRtt()) + ' ms' : '');
 }
 
+// perfil de Netflix (lo ven quienes pueden abrir webs, salvo invitados; sale cuando la tele ya conoce los perfiles)
+async function netflixLoad() {
+  const box = $('#nfBox');
+  if (!state.me || state.me.role === 'guest') { box.hidden = true; return; }
+  const r = await rpc({ t: 'netflix', op: 'profiles' });
+  const list = (r && r.profiles) || [];
+  box.hidden = !list.length;
+  if (!list.length) return;
+  const sel = $('#nfProf'); sel.textContent = '';
+  for (const n of list) sel.add(new Option(n, n, false, n === r.profile));
+}
+
 export const settings = {
   name: 'settings',
-  clicks: { more: () => { refreshSet(); if (state.me && state.me.role === 'admin') { refreshDevs(); idleLoad(); } openSheet('setS'); } },
+  clicks: { more: () => { refreshSet(); netflixLoad(); if (state.me && state.me.role === 'admin') { refreshDevs(); idleLoad(); } openSheet('setS'); } },
   init() {
     $('#rSpeed').addEventListener('input', e => { cfg.speed = +e.target.value; $('#vSpeed').textContent = cfg.speed.toFixed(1) + '×'; saveCfg(); });
     $('#rScroll').addEventListener('input', e => { cfg.scroll = +e.target.value; $('#vScroll').textContent = cfg.scroll.toFixed(1) + '×'; saveCfg(); });
@@ -32,6 +44,7 @@ export const settings = {
     // al pulsar el orbe mientras Jota habla: interrumpir (por defecto) o esperar
     $('#segIntr').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; cfg.voiceInterrupt = b.dataset.v === '1'; saveCfg(); refreshSet(); buzz(7); });
     $('#swDark').addEventListener('click', () => { cfg.theme = cfg.theme === 'claro' ? 'oscuro' : 'claro'; saveCfg(); applyTheme(); paintAmbient(); refreshSet(); buzz(8); });
+    $('#nfProf').addEventListener('change', async e => { buzz(7); const r = await rpc({ t: 'netflix', op: 'setprofile', profile: e.target.value }); if (!r || r.error) netflixLoad(); });
     if (!document.documentElement.requestFullscreen) $('#fsRow').hidden = true;
     $('#swFs').addEventListener('click', () => {
       if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen().catch(() => {});

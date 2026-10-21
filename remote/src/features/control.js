@@ -9,9 +9,10 @@
  *   cdp: { call: Function }, state: any, broadcast: () => void, key: (k: string) => any,
  *   audio: { read: Function, toggleMute: Function, step: Function, set: Function },
  *   cfg: { HOME_URL: string, SELF: string }, leaveStage: () => void,
- * }} deps
+ *   netflix?: { isNetflix: (u: string) => boolean, open: (m: { url: string }) => Promise<any>, leave: () => Promise<void> },
+ * }} deps   netflix: Netflix va en su propia pestaña (src/features/netflix.js); el resto de webs, en la de siempre
  */
-module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg, leaveStage }) {
+module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg, leaveStage, netflix }) {
   const { HOME_URL, SELF } = cfg;
   function normUrl(s) {
     s = s.trim();
@@ -28,6 +29,8 @@ module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg
     const u = normUrl(String(url || ''));
     if (!u) return { error: 'dirección no permitida' };
     if (!u.startsWith(SELF + '/')) leaveStage(); // salimos del escenario
+    if (netflix && netflix.isNetflix(u)) { const r = await netflix.open({ url: u }); return r.error ? r : { ok: 1, url: u }; }
+    if (netflix) await netflix.leave();          // Netflix delante: se queda cargada detrás y se vuelve a la pestaña de siempre
     await cdp.call('Page.navigate', { url: u });
     return { ok: 1, url: u };
   }

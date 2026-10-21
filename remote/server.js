@@ -30,6 +30,8 @@ const createKeyboard = require('./src/features/keyboard');
 const createControl = require('./src/features/control');
 const createSpotify = require('./src/features/spotify');
 const createIdle = require('./src/features/idle');
+const createNetflix = require('./src/features/netflix');
+const { createJsonStore } = require('./src/core/json-store');
 const { createCommands } = require('./src/transport/commands');
 const { createSessions } = require('./src/transport/sessions');
 const { createWs } = require('./src/transport/ws');
@@ -61,6 +63,7 @@ cdp = createCdp({ port: CDP_PORT, log, hooks: {
   onDown() { tv.clearPage(); keyboard.focusSet(null); talkView.reset(); broadcast(); },
   onActivating() { keyboard.focusSet(null); },
   onAttached(t) {
+    if (t && t.url !== state.url) idle.onNav(t.url); // otra pestaña delante (Netflix o la de siempre): la isla y el ambiente se repasan
     if (t) { state.title = t.title; state.url = t.url; }
     talkView.reset(); // otra pestaña: la conversación se vuelve a inyectar en ella
     spotify.page.attached();
@@ -90,7 +93,8 @@ const limiter = createRateLimiter({ max: 5, ms: 60_000 }); // 5 fallos -> 60 s b
 // ───────────────────────── capacidades
 const keyboard = createKeyboard({ cdp, log, clients: ws.clients, devOf });
 const stage = createStage({ cdp, state, cfg: CFG, nav: u => control.nav(u) });
-const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave() });
+const netflix = createNetflix({ cdp, cfg: CFG, store: createJsonStore(CFG.FILES.netflix, { fallback: {} }), log: log.info });
+const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave(), netflix });
 const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: () => idle });
 const idle = createIdle({
   PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
@@ -107,7 +111,7 @@ const talk = createTalk({ gw, cfg: CFG, media: () => state.media, view: talkView
 
 // ───────────────────────── órdenes: cada una con su permiso al lado, en su capacidad
 const commands = createCommands({ permsOf: acc.permsOf, onUse: () => idle.touch(), log });
-for (const list of [talk.commands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
+for (const list of [talk.commands, netflix.commands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
   createAccessCommands({ acc, meOf }), tv.commands]) commands.register(list);
 
 /** Una orden del mando (sock), de la API o del MCP (ctx.dev), con los permisos de su dispositivo. */
