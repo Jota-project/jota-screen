@@ -2,7 +2,7 @@
 // onData y TVIdle quedan globales (las capturas de e2e/ los llaman).
 const $ = id => document.getElementById(id);
 const B = document.body, BG = $('bg'), G = $('grid');
-const W = { hora: $('wHora'), ctx: $('wCtx'), mus: $('wMus') };
+const W = { hora: $('wHora'), ctx: $('wCtx'), mus: $('wMus'), nfx: $('wNfx') };
 let D = { profile: 'day', weather: null, music: null, acts: [], cfg: { dimMin: 20, layout: 'rotar', rearrangeMin: 18, calm: false } }, off = 0, lastEvent = Date.now();
 
 // ── distribuciones: cada escena coloca los widgets en la rejilla (fila-inicio / col-inicio / fila-fin / col-fin), sin que
@@ -26,14 +26,24 @@ const L = {
   ],
 };
 L.rotar = [...L.margen, ...L.zonas, ...L.apilada];
-let layout = '', scene = 0, rTimer = 0, moving = false;
+// «Seguir viendo» (Netflix): mientras se enseña, sus propias escenas. Hora pequeña y contexto en dos filas; el widget en las
+// otras cuatro, a todo el ancho; la música se aparta. Dos escenas en espejo para el reacomodo (y contra el quemado).
+L.nfx = [
+  { hora: ['1/1/3/6', 'start', 'start', 'line', 'left'], ctx: ['1/8/3/13', 'end', 'start', 'col', 'right'], nfx: ['3/1/7/13', 'start', 'end', '', 'left'] },
+  { nfx: ['1/1/5/13', 'end', 'start', '', 'right'], hora: ['5/7/7/13', 'end', 'end', 'line', 'right'], ctx: ['5/1/7/6', 'start', 'end', 'col', 'left'] },
+];
+let layout = '', scene = 0, rTimer = 0, moving = false, nfxOn = false;
+const scenes = () => (nfxOn ? L.nfx : L[layout]);
 // cada widget ocupa su celda entera; su contenido (.wi) se alinea dentro con data-jx/data-jy (idle.css)
 function place(sc) {
-  for (const k of ['hora', 'ctx', 'mus']) {
-    const [area, jx, jy, v, ta] = sc[k], e = W[k];
+  for (const k of Object.keys(W)) {
+    const e = W[k];
+    e.classList.toggle('gone', !sc[k]);                    // lo que no está en la escena no ocupa sitio
+    if (!sc[k]) continue;
+    const [area, jx, jy, v, ta] = sc[k];
     e.style.gridArea = area; e.dataset.jx = jx; e.dataset.jy = jy;
     e.dataset.v = D.profile === 'night' && k === 'mus' ? 'line' : v; e.dataset.ta = ta;
-    if (k === 'mus') e.dataset.dir = ta === 'right' ? 'rev' : '';
+    if (k === 'mus' || k === 'nfx') e.dataset.dir = ta === 'right' ? 'rev' : '';
   }
   fit();
 }
@@ -41,7 +51,7 @@ function place(sc) {
 // escala todas sus medidas (--s en idle.css). La hora no lo necesita: se ajusta a su celda con cqh/cqw.
 function fit() {
   const g = parseFloat(getComputedStyle(G).rowGap) || 0;
-  for (const e of [W.ctx, W.mus]) {
+  for (const e of [W.ctx, W.mus, W.nfx]) {
     e.style.setProperty('--fit', '1');
     const kids = [...e.firstElementChild.children].map(c => c.getBoundingClientRect()).filter(r => r.width || r.height);
     if (!kids.length || !e.clientHeight) continue;
@@ -58,7 +68,7 @@ function rearrange(next) {
   G.classList.add('leaving');
   setTimeout(() => {
     const els = Object.values(W), ins = els.map(e => e.firstElementChild), first = ins.map(e => e.getBoundingClientRect());
-    place(L[layout][next]); scene = next;
+    place(scenes()[next]); scene = next;
     if (!calm) ins.forEach((e, i) => {
       const a = first[i], b = e.getBoundingClientRect();
       e.style.transition = 'none'; e.style.transform = `translate(${a.left - b.left}px,${a.top - b.top}px)`;
@@ -79,12 +89,12 @@ function setLayout(name) {
   if (!L[name]) name = 'rotar';
   if (name === layout) return;
   const first = !layout; layout = name; scene = 0;
-  if (first) place(L[layout][0]); else rearrange(0);
+  if (first) place(scenes()[0]); else rearrange(0);
 }
 function schedule() {
   clearInterval(rTimer);
   const min = Number(D.cfg.rearrangeMin) || 0;
-  if (min > 0) rTimer = setInterval(() => rearrange((scene + 1) % L[layout].length), min * 60e3);
+  if (min > 0) rTimer = setInterval(() => rearrange((scene + 1) % scenes().length), min * 60e3);
 }
 
 // ── reloj con dígitos que caen al cambiar
@@ -202,7 +212,7 @@ function timePal() {
 function applyPalette() {
   const dark = D.profile === 'night' || D.profile === 'cinema';
   let p = dark ? PAL.dark : timePal();
-  if (!dark && artPal && D.music) { const ev = D.profile === 'evening'; p = [tone(artPal[0], ev ? .32 : .36), tone(artPal[1], ev ? .28 : .34), p[2], ev ? .32 : .3]; }
+  if (!dark && artPal && (D.music || nfxOn)) { const ev = D.profile === 'evening'; p = [tone(artPal[0], ev ? .32 : .36), tone(artPal[1], ev ? .28 : .34), p[2], ev ? .32 : .3]; }
   BG.style.setProperty('--ca', p[0]); BG.style.setProperty('--cb', p[1]); BG.style.setProperty('--base', p[2]); BG.style.setProperty('--orb', p[3]);
 }
 
@@ -240,6 +250,67 @@ function progress() {
   $('pf').style.transform = `scaleX(${(p / m.duration).toFixed(4)})`;
 }
 
+// ── Seguir viendo (Netflix): el servidor manda la lista (con las imágenes ya por /idle/nfx) solo cuando toca enseñarla
+const dur = sec => { const m = Math.max(1, Math.round(sec / 60)); return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min'; };
+const epLabel = it => (it.ep ? [it.ep.s && 'T' + it.ep.s, it.ep.e && 'E' + it.ep.e].filter(Boolean).join(' · ') : 'Película');
+const fresh = it => !it.pos || it.pos < 30;                // capítulo aún sin empezar (el siguiente de la serie)
+const leftLabel = it => (it.dur ? (fresh(it) ? dur(it.dur) : 'quedan ' + dur(it.dur - it.pos)) : '');
+const frac = it => (it.dur ? Math.min(1, Math.max(0, it.pos / it.dur)) : 0);
+/** pone una imagen con fundido sobre la anterior (y, si se pide, saca sus colores para el ambiente) */
+function swapImg(box, url, onload) {
+  if (!url) { box.textContent = ''; return; }
+  if (box.dataset.u === url) return;
+  box.dataset.u = url;
+  const img = new Image();
+  img.decoding = 'async';
+  img.onload = () => {
+    if (box.dataset.u !== url) return;
+    const olds = [...box.querySelectorAll('img')];
+    img.style.opacity = 0; box.prepend(img);
+    requestAnimationFrame(() => { img.style.opacity = 1; });
+    setTimeout(() => olds.forEach(o => o.remove()), 1300);
+    if (onload) onload(img);
+  };
+  img.src = url;
+}
+let nfxKey = '';
+function watching() {
+  const list = (D.watching && D.watching.items) || [];
+  const on = list.length > 0 && D.profile !== 'night' && D.profile !== 'cinema';
+  if (on !== nfxOn) { nfxOn = on; scene = 0; if (layout) rearrange(0); }
+  if (!on) { nfxKey = ''; return; }
+  const k = JSON.stringify(list.slice(0, 3));
+  if (k === nfxKey) return;
+  nfxKey = k;
+  const it = list[0];
+  $('nfT').textContent = it.title;
+  $('nfS').textContent = epLabel(it);
+  $('nfL').textContent = leftLabel(it);
+  $('nfF').style.transform = `scaleX(${frac(it).toFixed(3)})`;
+  swapImg($('nfHero'), it.story || it.card, img => { if (!D.music) { try { artPal = extract(img); } catch { artPal = null; } applyPalette(); } });
+  // el episodio: su fotograma (en una película, la tarjeta), su número y su título
+  const still = $('nfStill');
+  swapImg(still, (it.ep && it.ep.still) || it.card);
+  $('nfSF').style.transform = `scaleX(${frac(it).toFixed(3)})`;
+  // (lo que queda ya va en el destacado: aquí, qué es y cuánto dura)
+  $('nfEK').textContent = (it.ep ? (fresh(it) ? 'Siguiente episodio' : 'Episodio ' + (it.ep.e || '')) : 'Película') + (it.dur ? ' · ' + dur(it.dur) : '');
+  $('nfET').textContent = it.ep ? it.ep.title || epLabel(it) : it.title;
+  // dos títulos más, con la tarjeta de la serie (lleva su logo)
+  const row = $('nfRow'); row.textContent = '';
+  for (const o of list.slice(1, 3)) {
+    const c = document.createElement('div'); c.className = 'nf-card';
+    const im = document.createElement('div'); im.className = 'nf-cimg';
+    const bar = document.createElement('span'); bar.className = 'nf-bar';
+    const f = document.createElement('i'); f.style.transform = `scaleX(${frac(o).toFixed(3)})`; bar.append(f);
+    im.append(bar);
+    const cs = document.createElement('div'); cs.className = 'nf-cs'; cs.textContent = o.title + ' · ' + epLabel(o);
+    c.append(im, cs); row.append(c);
+    swapImg(im, o.card || o.story);
+  }
+  $('nfMore').hidden = list.length < 2;
+  requestAnimationFrame(fit);
+}
+
 // ── perfil y atenuado nocturno
 function profile() {
   for (const p of ['day', 'evening', 'night', 'cinema']) B.classList.toggle(p, D.profile === p);
@@ -259,9 +330,9 @@ function onData(m) {
   D = { ...m, cfg: { ...D.cfg, ...(m.cfg || {}) } };
   setTz(D.cfg.tz);
   if (key(D) !== prev) lastEvent = Date.now();
-  profile(); weather(); music(); acts();
+  profile(); weather(); music(); acts(); watching();
   if (JSON.stringify(D.cfg) !== prevCfg) { setLayout(D.cfg.layout); schedule(); }
-  place(L[layout][scene]);
+  if (!moving) place(scenes()[scene % scenes().length]);
 }
 function connect() {
   const ws = new WebSocket('ws://' + location.host + '/idle-ws');
@@ -269,7 +340,7 @@ function connect() {
   ws.onclose = () => setTimeout(connect, 1500);
 }
 // para pruebas y capturas: TVIdle.scene(n) fuerza una escena con su reacomodo; TVIdle.place(n), al momento
-window.TVIdle = { scene: n => rearrange(n % L[layout].length), place: n => { scene = n % L[layout].length; place(L[layout][scene]); }, now: () => ({ layout, scene, moving }) };
+window.TVIdle = { scene: n => rearrange(n % scenes().length), place: n => { scene = n % scenes().length; place(scenes()[scene]); }, now: () => ({ layout, scene, moving, nfx: nfxOn }) };
 // sin servidor también funciona: reloj y ambiente según la hora
 D.profile = (h => h >= 8 && h < 20 ? 'day' : 'evening')(new Date().getHours());
 // ±32 px de la tele de 1920×1080 (la misma unidad --u que idle.css), para que la deriva no se coma el margen en pantallas pequeñas

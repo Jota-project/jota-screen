@@ -115,6 +115,30 @@ test('CDP: al conectar con Netflix cargada detrás, se engancha la pestaña que 
   } finally { cdp.stop(); await fake.close(); }
 });
 
+test('CDP: una pestaña de fondo no se engancha, no cuenta entre las pestañas y se cierra', async () => {
+  const fake = await startFakeCdp({ pages: [{ targetId: 'P1', type: 'page', url: 'http://127.0.0.1:8787/idle.html', title: 'Salón' }], evaluate: e => (e.includes('location.href') ? 'https://www.netflix.com/browse' : undefined) });
+  const cdp = createCdp({ port: fake.port, log: { info() {}, error() {} }, timeoutMs: 500, retryMs: 50 });
+  try {
+    cdp.connect();
+    for (let i = 0; i < 100 && !cdp.session; i++) await new Promise(r => setTimeout(r, 10));
+    const tab = await cdp.bgTab();
+    await tab.go('https://www.netflix.com/browse');
+    // Chrome avisa de que la pestaña ha navegado: tampoco así entra entre las pestañas
+    fake.event('Target.targetInfoChanged', { targetInfo: { targetId: 'P2', type: 'page', url: 'https://www.netflix.com/browse', title: 'Netflix' } });
+    assert.equal(await tab.ev(() => globalThis.location.href), 'https://www.netflix.com/browse');
+    await new Promise(r => setTimeout(r, 30));
+    assert.equal(cdp.session, 'S-P1', 'la sesión activa sigue en la que se ve');
+    assert.deepEqual([...cdp.pages.keys()], ['P1']);
+    assert.ok(cdp.bg.has('P2'));
+    assert.ok(!fake.find('Target.activateTarget').length, 'nunca se trae al frente');
+    const nav = fake.find('Page.navigate')[0];
+    assert.equal(nav.sessionId, 'S-P2', 'navega la de fondo, no la activa');
+    assert.ok(fake.find('Page.addScriptToEvaluateOnNewDocument').some(c => c.sessionId === 'S-P2' && /pause/.test(c.params.source)), 'muda antes de cargar nada');
+    await tab.close();
+    assert.ok(fake.find('Target.closeTarget').some(c => c.params.targetId === 'P2'));
+  } finally { cdp.stop(); await fake.close(); }
+});
+
 test('tokens de la tele: la isla los lleva delante y tv-island.js no repite sus colores', () => {
   const fs = require('node:fs');
   const os = require('node:os');

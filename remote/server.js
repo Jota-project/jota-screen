@@ -31,6 +31,7 @@ const createControl = require('./src/features/control');
 const createSpotify = require('./src/features/spotify');
 const createIdle = require('./src/features/idle');
 const createNetflix = require('./src/features/netflix');
+const { createWatch } = require('./src/features/netflix-watch');
 const { createJsonStore } = require('./src/core/json-store');
 const { createCommands } = require('./src/transport/commands');
 const { createSessions } = require('./src/transport/sessions');
@@ -93,12 +94,15 @@ const limiter = createRateLimiter({ max: 5, ms: 60_000 }); // 5 fallos -> 60 s b
 // ───────────────────────── capacidades
 const keyboard = createKeyboard({ cdp, log, clients: ws.clients, devOf });
 const stage = createStage({ cdp, state, cfg: CFG, nav: u => control.nav(u) });
-const netflix = createNetflix({ cdp, cfg: CFG, store: createJsonStore(CFG.FILES.netflix, { fallback: {} }), log: log.info });
+const netflix = createNetflix({ cdp, cfg: CFG, store: createJsonStore(CFG.FILES.netflix, { fallback: {} }), log: log.info, onLeave: () => nfxWatch.soon() });
+// «Seguir viendo» e historial de Netflix: lo lee una pestaña oculta de vez en cuando; lo usan el reposo y el agente
+const nfxWatch = createWatch({ cdp, netflix, store: createJsonStore(CFG.FILES.watching, { fallback: {} }), log: log.info, onChange: () => idle.nfxChanged() });
+netflix.extend(nfxWatch.ops);
 const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave(), netflix });
 const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: () => idle });
 const idle = createIdle({
   PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
-  stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info,
+  stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info, nfx: () => nfxWatch.forIdle(),
 });
 // J Gateway (voz): sin TV_GATEWAY_URL el cliente no se crea y todo se comporta como un Gateway caído
 const gw = CFG.GATEWAY_URL
@@ -133,6 +137,7 @@ const handler = createHttp({
     manifestRoute(statics, acc.tokenDev),
     ...stage.routes,
     ...idle.routes,
+    ...nfxWatch.routes,
   ],
   fallback: statics.serve,
 });
@@ -159,6 +164,7 @@ listen({ port: PORT, handler, onUpgrade, log });
 ws.start();
 pagePoll.start();
 cdp.connect();
+nfxWatch.start();                                     // primera lectura al minuto; después, cada 3 h y tras ver Netflix
 pointer.start();
 control.volRead();
 process.on('SIGTERM', () => process.exit(0));

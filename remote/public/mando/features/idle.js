@@ -14,6 +14,7 @@ function idlePaint() {
   $('#idIdle').value = String(icfg.idleMin); $('#idDim').value = String(icfg.dimMin);
   if (![...$('#idIdle').options].some(o => o.value === String(icfg.idleMin))) $('#idIdle').add(new Option(icfg.idleMin + ' min', icfg.idleMin, true, true));
   $('#idMus').setAttribute('aria-pressed', !!icfg.music);
+  $('#idNfx').setAttribute('aria-pressed', icfg.netflix === 'on');
   $('#idLay').querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', b.dataset.l === (icfg.layout || 'rotar')));
   $('#idRe').value = String(icfg.rearrangeMin ?? 20);
   if (![...$('#idRe').options].some(o => o.value === String(icfg.rearrangeMin))) $('#idRe').add(new Option(icfg.rearrangeMin + ' min', icfg.rearrangeMin, true, true));
@@ -42,6 +43,7 @@ export const idle = {
     $('#idIdle').addEventListener('change', e => { if (icfg) { icfg.idleMin = +e.target.value; idleSave(); } });
     $('#idDim').addEventListener('change', e => { if (icfg) { icfg.dimMin = +e.target.value; idleSave(); } });
     $('#idMus').addEventListener('click', () => { if (!icfg) return; icfg.music = !icfg.music; idlePaint(); idleSave(); });
+    $('#idNfx').addEventListener('click', () => { if (!icfg) return; buzz(7); icfg.netflix = icfg.netflix === 'on' ? 'off' : 'on'; idlePaint(); idleSave(); });
     $('#idLay').addEventListener('click', e => { const b = e.target.closest('button'); if (!b || !icfg) return; buzz(7); icfg.layout = b.dataset.l; idlePaint(); idleSave(); });
     $('#idRe').addEventListener('change', e => { if (icfg) { icfg.rearrangeMin = +e.target.value; idleSave(); } });
     $('#idCalm').addEventListener('click', () => { if (!icfg) return; icfg.calm = !icfg.calm; idlePaint(); idleSave(); });

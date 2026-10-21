@@ -28,6 +28,8 @@ const PLAYING = `(()=>{const v=document.querySelector('video');if(!v)return 0;if
 // vuelva a sonar hasta que se enseñe otra vez
 const HIDE = `(()=>{window.__tvHidden=true;if(!window.__tvGuard){window.__tvGuard=1;document.addEventListener('play',e=>{const m=e.target;if(window.__tvHidden&&m&&m.pause)m.pause()},true)}try{const vp=netflix.appContext.state.playerApp.getAPI().videoPlayer;for(const id of vp.getAllPlayerSessionIds())vp.getVideoPlayerBySessionId(id).pause()}catch{}for(const m of document.querySelectorAll('video,audio'))m.pause();return 1})()`;
 const UNHIDE = 'window.__tvHidden=false';
+/** órdenes que enseñan lo que ve el perfil: no para invitados */
+const PRIVATE = new Set(['watching', 'history', 'play_last', 'refresh']);
 
 /**
  * @typedef {{ profile?: string, profiles?: Record<string, string>, titles?: Record<string, { id: string, title: string }> }} Data
@@ -38,14 +40,20 @@ const UNHIDE = 'window.__tvHidden=false';
  *   log?: (s: string) => void,
  *   wait?: (ms: number) => Promise<void>,
  *   now?: () => number,
- * }} deps
+ *   onLeave?: () => void,
+ * }} deps   onLeave: Netflix ha pasado a segundo plano (src/features/netflix-watch.js vuelve a leer al rato)
  */
-module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait = ms => new Promise(r => setTimeout(r, ms)), now = Date.now }) {
+module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait = ms => new Promise(r => setTimeout(r, ms)), now = Date.now, onLeave = () => {} }) {
   /** @type {Data} */
   const data = { profiles: {}, titles: {}, ...(store.load() || {}) };
   const save = () => { try { store.save(data); } catch (e) { log('netflix: no se pudo guardar: ' + e.message); } };
   /** @type {string | null} */
   let tab = null;
+  /** @type {string | null} perfil en el que está la pestaña de Netflix (la cookie de perfil es de todo Chrome) */
+  let tabGuid = null;
+  /** órdenes de más (las de «Seguir viendo», src/features/netflix-watch.js) */
+  /** @type {Record<string, (m: any) => any>} */
+  const extra = {};
 
   /** @param {string} expression */
   const ev = async expression => (await cdp.call('Runtime.evaluate', { expression, returnByValue: true }))?.result?.value;
@@ -116,6 +124,7 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
       p = await load(`${ORIGIN}/SwitchProfile?tkn=${g}`);
       if (!p || p.gate || p.cur !== g) return { error: 'No he podido entrar en el perfil ' + want };
     } else if (p.gate) return { error: 'Netflix pregunta el perfil y no hay ninguno elegido (TV_NETFLIX_PROFILE o Ajustes del mando)' };
+    tabGuid = p.cur || null;
     return { ok: 1, p };
   }
 
@@ -193,6 +202,13 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
     try { await ev(HIDE); } catch {}
     const other = [...cdp.pages.keys()].find(k => k !== tab);
     if (other) await cdp.show(other); else await cdp.newTab();
+    try { onLeave(); } catch {}
+  }
+
+  /** Para el lector de «Seguir viendo»: qué perfil leer y en cuál está la pestaña de Netflix (si vive). */
+  function profileInfo() {
+    const name = defaultProfile();
+    return { name, guid: guidOf(name), tabGuid: alive() ? tabGuid : null };
   }
 
   function profiles() {
@@ -215,17 +231,24 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
       case 'play': return play(m);
       case 'profiles': return profiles();
       case 'setprofile': return setProfile(m.profile);
-      default: return { error: 'op debe ser open, search, play, profiles o setprofile' };
+      default: return extra[m.op] ? extra[m.op](m) : { error: 'op debe ser open, search, play, profiles, setprofile' + Object.keys(extra).map(k => ', ' + k).join('') };
     }
   }
 
   return {
-    isNetflix, open, search, play, leave, profiles, setProfile, run, isActive,
+    isNetflix, open, search, play, leave, profiles, setProfile, run, isActive, profileInfo, learn,
+    /** añade órdenes (op → función) @param {Record<string, (m: any) => any>} ops */
+    extend: ops => Object.assign(extra, ops),
     /** @type {import('../transport/commands').Command[]} */
     commands: [{
       t: 'netflix',
-      perm: (m, P, ctx) => (!P.web ? 'Abrir webs no está permitido'
-        : (m.op === 'setprofile' || m.profile) && ctx.dev && ctx.dev.role === 'guest' ? 'Los invitados no pueden elegir el perfil' : null),
+      perm: (m, P, ctx) => {
+        const guest = !!(ctx.dev && ctx.dev.role === 'guest');
+        if (!P.web) return 'Abrir webs no está permitido';
+        if (guest && (m.op === 'setprofile' || m.profile)) return 'Los invitados no pueden elegir el perfil';
+        if (guest && PRIVATE.has(m.op)) return 'Lo que se ve en Netflix es privado';   // historial y «seguir viendo» del dueño
+        return null;
+      },
       run: m => run(m),
     }],
   };

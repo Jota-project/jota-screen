@@ -24,6 +24,7 @@ const DEFAULTS = {
   layout: 'rotar',              // rotar | margen | zonas | apilada
   rearrangeMin: 20,             // minutos entre reacomodos de los widgets (0 = nunca); también evita el quemado
   calm: false,                  // movimiento reducido: luces y ecualizador quietos
+  netflix: 'off',               // «Seguir viendo» de Netflix en el reposo: off | on (cuándo sale solo, más adelante: wantNetflix)
 };
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
 const toMin = s => { const [h, m] = s.split(':').map(Number); return h * 60 + m; };
@@ -35,8 +36,8 @@ const validTz = tz => { try { new Intl.DateTimeFormat('en-GB', { timeZone: tz })
  *   place?: { city?: string, lat?: number | null, lon?: number | null, tz?: string },
  *   cdp: { call: Function, session: string | null }, nav: (url: string) => Promise<any>, state: { url: string },
  *   stageKind: () => string | null, onWatch?: () => void, onAmbient?: () => void, log?: (...a: any[]) => void,
- *   fetch?: typeof fetch,
- * }} IdleDeps
+ *   fetch?: typeof fetch, nfx?: () => any[] | null,
+ * }} IdleDeps   nfx: «Seguir viendo» de Netflix para el reposo (src/features/netflix-watch.js), con las imágenes ya por /idle/nfx
  */
 /** @param {IdleDeps} o */
 function createIdle(o) {
@@ -80,6 +81,7 @@ function createIdle(o) {
     if (LAYOUTS.includes(c.layout)) out.layout = c.layout;
     if (Number.isFinite(+c.rearrangeMin)) out.rearrangeMin = Math.min(120, Math.max(0, Math.round(+c.rearrangeMin)));
     if (c.calm !== undefined) out.calm = !!c.calm;
+    if (c.netflix === 'on' || c.netflix === 'off') out.netflix = c.netflix;
     return out;
   }
 
@@ -208,8 +210,14 @@ function createIdle(o) {
   // los tokens de shared/tokens-tv.css van delante como texto: la isla no puede cargar CSS nuestro dentro de una web ajena
   const islandSrc = () => { try { return islandSource(PUB); } catch (e) { log('isla: ' + e.message); return ''; } };
   let overlayOn = false;
+  // «Seguir viendo»: el único sitio que decide si sale. Hoy, el interruptor; más adelante, el contexto (hora, costumbre…)
+  function wantNetflix() {
+    if (cfg.netflix !== 'on' || profile === 'night' || profile === 'cinema' || !o.nfx) return null;
+    const items = o.nfx();
+    return items && items.length ? { items: items.slice(0, 6) } : null;
+  }
   function payload() {
-    return JSON.stringify({ t: 'idle', now: Date.now(), profile, cfg: { city: cfg.city, tz: cfg.tz, dimMin: cfg.dimMin, mode: cfg.mode, music: cfg.music, layout: cfg.layout, rearrangeMin: cfg.rearrangeMin, calm: cfg.calm }, weather, music, acts: actList() });
+    return JSON.stringify({ t: 'idle', now: Date.now(), profile, cfg: { city: cfg.city, tz: cfg.tz, dimMin: cfg.dimMin, mode: cfg.mode, music: cfg.music, layout: cfg.layout, rearrangeMin: cfg.rearrangeMin, calm: cfg.calm }, weather, music, acts: actList(), watching: wantNetflix() });
   }
   let pTimer = null;
   function push() {
@@ -332,6 +340,7 @@ function createIdle(o) {
 
   return {
     URL_IDLE, isIdle, touch, onNav, run, activity, art, setMusic, ambient, watching: () => clients.size > 0 && cfg.music,
+    nfxChanged: () => push(),                       // hay datos nuevos de «Seguir viendo»
     upgrade: (req, socket, head) => wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws)),
     info: () => ({ profile, idle: isIdle(state.url), acts: acts.size }),
   };

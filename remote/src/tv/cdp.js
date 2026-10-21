@@ -29,6 +29,8 @@ function getJSON(url) {
  * }} Hooks
  */
 
+const BG_MARK = 'about:blank#tv-bg'; // así nace una pestaña de fondo (bgTab): se reconoce desde el primer aviso
+
 /**
  * @param {{ port: number, log: { info: Function, error: Function }, hooks?: Hooks, retryMs?: number, timeoutMs?: number }} o
  */
@@ -42,6 +44,7 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
     /** contextos de los mundos aislados con nombre del marco principal (p. ej. «tv») */ worlds: new Map(),
     ready: false,
     /** @type {Promise<void> | null} enganche en curso (activate) */ attaching: null,
+    /** pestañas de fondo (bgTab): ni se enganchan, ni se cuentan entre las pestañas, ni se traen al frente */ bg: new Set(),
 
     async connect() {
       if (this.stopped) return;
@@ -63,7 +66,7 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
     stop() { this.stopped = true; try { this.ws && this.ws.close(); } catch {} },
 
     down() {
-      this.ready = false; this.session = null; this.targetId = null; this.pages.clear(); this.worlds.clear();
+      this.ready = false; this.session = null; this.targetId = null; this.pages.clear(); this.worlds.clear(); this.bg.clear();
       for (const [, p] of this.pending) { clearTimeout(p.t); p.rej(new Error('cdp')); }
       this.pending.clear();
       h.onDown();
@@ -77,10 +80,19 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
       return id;
     },
 
-    /** Llamada con respuesta, en la pestaña activa (o al navegador con browser = true). */
+    /**
+     * Llamada con respuesta: en la pestaña activa, al navegador (browser = true) o en otra sesión (su id, p. ej. una
+     * pestaña de fondo).
+     * @param {string} method @param {any} [params] @param {boolean | string} [browser]
+     */
     call(method, params = {}, browser = false) {
       return new Promise((res, rej) => {
         if (!this.ready || !this.ws || this.ws.readyState !== WebSocket.OPEN) return rej(new Error('cdp'));
+        if (typeof browser === 'string') {
+          const id = this.send(method, params, browser);
+          const t = setTimeout(() => { this.pending.delete(id); rej(new Error('timeout')); }, Math.max(timeoutMs, 30000)); // leer una web lleva su rato
+          return this.pending.set(id, { res, rej, t });
+        }
         const sid = browser ? undefined : this.session;
         if (!browser && !sid) return rej(new Error('nopage'));
         const id = this.send(method, params, sid || undefined);
@@ -107,12 +119,15 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
         case 'Target.targetInfoChanged': {
           const t = pr.targetInfo;
           if (!t || t.type !== 'page' || /^(devtools|chrome-extension):/.test(t.url)) return;
+          if (t.url.startsWith(BG_MARK)) this.bg.add(t.targetId); // el aviso llega antes que la respuesta de createTarget
+          if (this.bg.has(t.targetId)) return;
           this.pages.set(t.targetId, t);
           if (m.method === 'Target.targetCreated' || !this.targetId) this.autoActivate(t.targetId);
           if (t.targetId === this.targetId) h.onPage(t);
           break;
         }
         case 'Target.targetDestroyed': {
+          if (this.bg.delete(pr.targetId)) return;
           this.pages.delete(pr.targetId);
           if (pr.targetId === this.targetId) {
             this.targetId = null; this.session = null; this.worlds.clear();
@@ -183,6 +198,43 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
       await this.call('Target.activateTarget', { targetId: id }, true);
       await this.activate(id);
       if (this.targetId !== id || !this.session) throw new Error('nopage');
+    },
+
+    /**
+     * Pestaña de fondo para leer una web sin que se vea: oculta, con el foco emulado (para que la web pinte) y muda.
+     * Nunca se engancha como activa. go(url) navega, ev(fn, ...args) ejecuta fn (serializada) en la página, until(fn,
+     * ok, ms) repite hasta que ok(valor), close() la cierra (también si algo falla: úsala con try/finally).
+     */
+    async bgTab() {
+      const { targetId } = await this.call('Target.createTarget', { url: BG_MARK, background: true }, true);
+      this.bg.add(targetId); this.pages.delete(targetId);
+      const close = () => this.call('Target.closeTarget', { targetId }, true).catch(() => {});
+      try {
+        const { sessionId } = await this.call('Target.attachToTarget', { targetId, flatten: true }, true);
+        const on = (m, p) => this.call(m, p, sessionId);
+        await on('Page.addScriptToEvaluateOnNewDocument', { source: 'document.addEventListener("play",e=>{try{e.target.muted=true;e.target.pause()}catch(_){}},true)' });
+        await on('Emulation.setFocusEmulationEnabled', { enabled: true });
+        /** @param {Function} fn @param {...any} args */
+        const ev = async (fn, ...args) => {
+          const r = await on('Runtime.evaluate', { expression: `(${fn})(...${JSON.stringify(args)})`, returnByValue: true, awaitPromise: true });
+          if (r.exceptionDetails) throw new Error((r.exceptionDetails.exception && r.exceptionDetails.exception.description) || r.exceptionDetails.text);
+          return r.result.value;
+        };
+        return {
+          go: (/** @type {string} */ url) => on('Page.navigate', { url }),
+          ev,
+          /** @param {Function} fn @param {(v: any) => boolean} ok @param {number} ms */
+          async until(fn, ok, ms) {
+            const t0 = Date.now();
+            for (;;) {
+              let v; try { v = await ev(fn); } catch {}
+              if (ok(v) || Date.now() - t0 > ms) return v;
+              await new Promise(r => setTimeout(r, 150));
+            }
+          },
+          close,
+        };
+      } catch (e) { await close(); throw e; }
     },
 
     /** Abre una pestaña en blanco, la trae al frente y la engancha como activa. Devuelve su id. */

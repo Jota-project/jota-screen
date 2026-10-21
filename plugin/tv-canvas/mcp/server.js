@@ -62,15 +62,17 @@ tool('tv_open_app', 'Open a streaming app on the TV, optionally searching inside
     return out(await cmd(app === 'home' ? { t: 'home' } : { t: 'nav', url }), 'Opened ' + app);
   });
 
-tool('tv_netflix', 'Netflix on the TV, fast: open it, or play a title in one call (finds it, opens it and resumes where the profile left off; ~2-3 s). Prefer this over tv_open_app + clicks. Profile: the default one unless the user names another (e.g. "en el perfil de Carmen"). If the result has candidates, the title was not an exact match: tell the user what is playing and offer the others (play them with id).',
+tool('tv_netflix', 'Netflix on the TV, fast: open it, or play a title in one call (finds it, opens it and resumes where the profile left off; ~2-3 s). Prefer this over tv_open_app + clicks. Profile: the default one unless the user names another (e.g. "en el perfil de Carmen"). If the result has candidates, the title was not an exact match: tell the user what is playing and offer the others (play them with id). ' +
+  'What the user is watching (default profile, also from other devices): watching = series and films in progress, with episode and how much is left; history = what was watched, by day, and the most watched; ' +
+  'play_last = "ponme la de ayer / lo último que vi" (resumes it); refresh = read it again now (~10 s; it is also read on its own every few hours and after watching Netflix).',
   {
-    action: z.enum(['open', 'play', 'search', 'profiles', 'set_default_profile']),
+    action: z.enum(['open', 'play', 'search', 'profiles', 'set_default_profile', 'watching', 'history', 'play_last', 'refresh']),
     title: z.string().optional().describe('Series or film title to play or search'),
     id: z.string().optional().describe('Netflix title id from candidates/search results'),
     profile: z.string().optional().describe('Netflix profile name, only if the user asks for a specific one'),
   },
   async ({ action, title, id, profile }) => {
-    const op = { open: 'open', play: 'play', search: 'search', profiles: 'profiles', set_default_profile: 'setprofile' }[action];
+    const op = { open: 'open', play: 'play', search: 'search', profiles: 'profiles', set_default_profile: 'setprofile', watching: 'watching', history: 'history', play_last: 'play_last', refresh: 'refresh' }[action];
     return out(await cmd({ t: 'netflix', op, title, query: title, id, profile }));
   });
 
@@ -184,7 +186,8 @@ tool('tv_idle',
   'op=show opens it now; op=get returns its settings and current profile; op=set changes settings: mode (auto|day|evening|night|cinema), ' +
   'bed/wake ("HH:MM", fixed sleep schedule), perDay + week {mon:{bed,wake},…} for a per-weekday schedule, idleMin (minutes without use before it opens itself, 0 = never), ' +
   'dimMin (at night, minutes until only a faint clock remains), music (show Spotify), city/lat/lon/tz (weather location; lat/lon null = no weather), ' +
-  'layout (rotar|margen|zonas|apilada: how clock, weather and music are arranged; rotar cycles them), rearrangeMin (minutes between rearrangements, 0 = never), calm (reduced motion).',
+  'layout (rotar|margen|zonas|apilada: how clock, weather and music are arranged; rotar cycles them), rearrangeMin (minutes between rearrangements, 0 = never), calm (reduced motion), ' +
+  'netflix (on|off: a big "Seguir viendo" widget with the Netflix series in progress, with their images).',
   { op: z.enum(['show', 'get', 'set']), cfg: z.record(z.any()).optional() },
   async ({ op, cfg }) => out(await cmd({ t: 'idle', op, cfg })));
 

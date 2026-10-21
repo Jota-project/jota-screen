@@ -12,7 +12,12 @@ La tele es un Chrome en modo kiosco en el servidor de jota-screen. Se maneja con
 - «Pon Netflix» → `action: open`.
 - «Ponme X» → `action: play` con `title`. Busca, abre y retoma por donde se dejó. Si devuelve `candidates`, no había un título exacto: di qué se está poniendo y ofrece las otras (se ponen con `id`).
 - «… en el perfil de Carmen» → añade `profile`. Sin él, usa el perfil por defecto. Para cambiar el de por defecto: `set_default_profile`. `profiles` lista los que hay.
+- «¿Qué series estoy viendo?», «¿por dónde voy de X?» → `action: watching` (lo que está a medias, con capítulo y lo que queda).
+- «¿Qué he visto esta semana?», «¿qué veo más?» → `action: history` (por días y lo más visto).
+- «Ponme la de ayer», «sigue con lo último» → `action: play_last`.
+- Si parece viejo (mira `at`), `action: refresh` y vuelve a preguntar. Es lo del perfil por defecto, también lo visto en el móvil.
 - Un capítulo concreto todavía no: pon la serie y, si hace falta, termina con `tv_links` / `tv_click_text`.
+- En el reposo puede salir un «Seguir viendo» grande con las imágenes: `tv_idle` `op: set` con `cfg: {netflix: "on"}` (o `"off"`).
 Si dice que Netflix pide iniciar sesión, no escribas contraseñas: díselo al usuario.
 
 ## Cómo reproducir algo en YouTube (u otras webs)
