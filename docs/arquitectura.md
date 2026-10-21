@@ -65,25 +65,32 @@ remote/
   src/tv/
     cdp.js                adaptador de Chrome (CDP): pestaña activa, call/fire, ganchos, reconexión
     devices.js            puntero, volumen (wpctl), sonda de la página y el código de emparejar pintado en la tele
-    page-poll.js          sondeo de vídeo y scroll, solo con mandos conectados
+    page-poll.js          sondeo de vídeo y scroll con mandos conectados; `playback` (vídeo grande que avanza) también con la capa
+                          del agente (v2) a la vista
+    agent-contract.js     lo que el servidor y tv-agent.js dicen igual: valores de la foto, fuentes propias y el binding del arrastre
+    agent-form.js         formato de la capa del agente (`formFor`/`decideForm`), apps de contenido (`CONTENT_HOSTS`), alcance
     tokens.js             lee shared/tokens-tv.css y arma la fuente de la isla (tokens delante)
   src/features/           capacidades: cada una devuelve sus `commands` (y `routes`, si tiene)
-    control.js            nav, links, clicktext, click, home, back, forward, reload, shot, pp, seek, fs, vol, volset
+    control.js            nav (con `layout` opcional), links, clicktext, click, home, back, forward, reload, shot, pp, seek, fs, vol, volset
     keyboard.js           key, text, field (escribir en directo), focus (aviso de foco)
     stage.js              present, show, stage, close, toast; ruta /stage/p*.html; canal /stage-ws
     spotify.js            spotify (todas las acciones), spwatch; rutas /spotify/login y /spotify/callback
     idle.js               envoltorio de remote/idle.js: activity, idle; ruta /idle/art
-    talk.js               ask, vstart, vend, vcancel, stop, hide: hablar con Jota por el J Gateway, un turno a la vez; la voz sube
+    talk.js               ask, vstart, vend, vcancel, stop, hide, talkform: hablar con Jota por el J Gateway, un turno a la vez; la voz sube
                           en directo y la respuesta vuelve por el mismo WS del mando (`talk`); suena en la tele, en el móvil o en
                           ninguno. La tele quita la conversación 5 s después del audio (o del texto, si no sonó). `stop` cancela el
                           turno en el Gateway (`cancel`) y corta el audio; `hide` solo la quita; `vstart`/`ask` con `interrupt`
                           paran lo que haya y siguen (sin él, BUSY mientras hay turno o Jota habla). Interrumpe este servidor:
-                          el barge-in del Gateway sigue desactivado
+                          el barge-in del Gateway sigue desactivado. Las llamadas a herramientas del turno van a la tele como fichas.
+                          `talkform` cambia el formato de la capa (v2) y el móvil recibe `ev:'form'`
+    agent-ui.js           fichas de herramientas del agente: lista cerrada (`CARD_TOOLS`, por sufijo), `toolCard`, tipos e iconos
+                          (`KINDS`); `layoutOf` (el `layout` de tv_open / tv_open_app) y `opensPage` (la herramienta pone otra página)
   src/gateway/
-    client.js             cliente WS del J Gateway: ensure, send, audio, end, cancel y eventos (partial, final, token, audio, turn_end, down)
+    client.js             cliente WS del J Gateway: ensure, send, audio, end, cancel y eventos (partial, final, token, tool, audio, turn_end, down)
   src/tv/ (voz)
     speaker.js            altavoz de la tele: PCM sin cabecera a `TV_SPEAKER_CMD`; onIdle cuando acaba de sonar
-    talk-view.js          lo que se dice y la respuesta, pintado en la tele (isla o panel); hide() y onHide
+    talk-view.js          lo que se dice y la respuesta, pintado en la tele (isla o panel); hide() y onHide; diseño v1 o v2;
+                          en v2, formato (userForm, agentLayout, onForm), scripts de documento nuevo y binding del arrastre
   src/transport/
     commands.js           registro de órdenes y dispatch() (patrón Command)
     http.js               tabla de rutas; si ninguna encaja, estáticos
@@ -102,7 +109,9 @@ remote/
     mando/ui/             haptics, pill, theme, status, sheets, actions, gestures
     mando/features/       ambient, controls, trackpad, keyboard, go, agent, voice, pcm-player, mic-worklet, spotify, spotify-lists, spotify-state, pair, admin, settings, idle
     mando/styles/mando.css  estilos del mando (v3: glifos flotantes, luces en órbita, voz, ahora suena y teclado)
-    tv-talk.js            capa de la tele con la conversación (la pinta talk-view.js)
+    tv-talk.js            capa de la tele con la conversación (la pinta talk-view.js; diseño v1)
+    tv-agent.js           paneles vivos del agente: cristal, orbe y fichas (diseño v2; la pinta talk-view.js)
+    fonts/                fuentes propias de la capa del agente (Fraunces, OFL), mandadas como bytes con la fuente
     idle.html, idle.css, idle-app.js   pantalla en reposo (sin nada en línea)
     shared/tokens-tv.css  tokens Jota Dusk de la tele (reposo e isla)
     shared/tokens-mando.css  tokens Jota Dusk del mando (oscuro y claro), alineados con los de la tele
@@ -160,6 +169,141 @@ orden directa `data-a`) se registran en `app.js` con `register([...])`; un nombr
 sentido y sin ciclos: `core ← ui ← features ← app` (y entre features: settings → admin → pair, settings → idle,
 settings, controls y spotify → ambient, spotify → spotify-lists → spotify-state). Ningún módulo hace nada al cargarse salvo `app.js`. Lo comprueba
 `test/unit/mando.test.js`.
+
+## Conversación en la tele: paneles vivos (diseño v2)
+
+Interruptor `agentDesign` del reposo (`v1` por defecto; `idle set`, solo admin) y nivel de cristal `glass`
+(`auto|A|B|C`). `talk-view.js` lee `context()` (server.js: `idle.agentContext()`, la página y `state.playback`) en cada
+pintada; si el diseño cambia, reinyecta la capa del otro y quita la anterior en la misma llamada. v1 sigue siendo
+`tv-talk.js` tal cual.
+
+```
+Gateway ── tool_call {turn_id, phase start|result, name, tool_call_id, args, is_error}   (solo con tool_calls_enabled)
+   │  client.js → {type:'tool', turnId, phase start|end, id, name, args (start) | ok (end)}   el resultado no se propaga
+   ▼
+talk.js ── mismo filtro de turnId/fantasma que los tokens, rearma el plazo (arm); con un turno que aún puede ser
+   │  el parado (`maybeGhost`) las retiene hasta su primer token y las tira si resulta ser el fantasma
+   │  toolCard(name, args) → ficha {kind, title, detail ≤ 60, opens?}: view.tool(…) / view.toolEnd({id, ok})
+   │  layoutOf(name, args) → view.agentLayout(layout, url)   (tv_open / tv_open_app con `layout`)
+   │  sin ficha (lecturas, desconocidas): solo el nombre al registro
+   ▼
+talk-view.js ── foto completa cada ≤ 100 ms: TVAgent.render(SNAP)
+      {form pill|panel, ctx idle|music|web|video, state listen|think|talk|error|done, live, night, calm, glass, colors,
+       turns: [{id, you, youFinal, jota, tools:[{id, kind, title, detail, status run|ok|fail}], error, hint}], icons,
+       enter open|restore, tab? (solo la foto del cambio de pestaña), shown? {turnId: [tú, Jota]} (con tab)}
+```
+
+- Los valores que admite la foto, los nombres de las fuentes y el del binding viven en `src/tv/agent-contract.js`;
+  `tv-agent.js` lleva su copia y `tv-agent-static.test.js` comprueba que coinciden.
+- El estado del orbe se deriva aquí: turno por voz → `listen`; escrito o frase final → `think`; herramienta → `think`;
+  primer token → `talk`; `done` → `done`. Un `error()` o una herramienta fallida → `error` (la fallida, con la pista
+  «Di «otra vez» para reintentar.»). El de `error()` se queda hasta el turno siguiente; el de una herramienta se
+  despeja si otra posterior acaba bien (`RECOVER_ON_OK`), y entonces `done` → `done`.
+- Una ficha cuyo resultado no llega (done, error o caída antes, Parar, interrumpir) deja de girar al cerrar o archivar
+  el turno: pasa a `SETTLED_STATUS` (`ok`), nunca a `fail` (ni alerta ni pista).
+- Herramientas de casa: por palabras del nombre sin prefijo (`home|light(s)|luz|luces|hass`, camelCase incluido); las que llevan
+  un verbo de lectura (`get|list|search|find|status|history`) no tienen ficha.
+- Panel: los 2 últimos turnos (`KEEP_TURNS`); píldora: solo el último a la vista (la foto lleva los 2 igual: el turno
+  anterior se pliega o reaparece en el viaje del paso, con el contenido ya oculto). `ctx` (el tinte) sigue a la página en cada foto;
+  noche, calma, cristal y colores también. Colores: solo con el reposo en pantalla y música.
+- Se cierra `4000 + 45 × letras de la respuesta` ms tras el fin real del audio (o del texto); Parar la quita al momento.
+- Los `tool_call` solo llegan si el Gateway tiene `tool_calls_enabled=true` para este cliente; este servidor no lo
+  pide en el handshake. Sin ellos, v2 funciona igual, sin fichas (y sin el `layout` de los args: queda el de la orden `nav`).
+
+### Formato: lo decide lo que se ve
+
+`agent-form.js` es una función pura, `formFor({ url, stage, idle, playback, override, agentLayout })` (`decideForm` dice
+además de dónde sale), con este orden:
+
+1. `override` del usuario (arrastre en la tele u orden `talkform` del mando) para el contenido actual → `user`
+2. `agentLayout`: Jota lo pidió al abrir esta página (`tv_open` / `tv_open_app` con `layout: 'pill' | 'panel'`) → `agent`
+3. app de contenido (`CONTENT_HOSTS`: Netflix, YouTube, Spotify, Prime Video, Disney+, Max, Movistar+, Twitch, RTVE Play,
+   Atresplayer, Filmin, Apple TV…, por sufijo de host con límite de etiqueta y, si lleva ruta, de segmento) o el
+   escenario propio (`stageOf(url)`: `tpl-<tipo>.html` o `stage/…`, sacado de la URL y no del estado del escenario, que
+   «atrás» o un clic no limpian) → píldora aunque no se reproduzca nada → `content`
+4. `playback` (vídeo grande que avanza, de page-poll) en cualquier web → píldora → `playback` (reserva)
+5. reposo y webs normales → panel → `default`
+
+- Al empezar un turno se decide de cero (un turno nuevo en el reposo o en una web vuelve al panel; uno que empieza ya
+  dentro de una app nace píldora). Con la capa a la vista se vuelve a mirar cuando una página nueva ya **enseña su
+  contenido** (tras la foto `restore`, la página contesta a `PAINT_PROBE`: tras el primer paint, cada `PAINT_EVERY_MS`
+  mira una rejilla de `PAINT_GRID`² puntos y cuando `PAINT_MIN_POINTS` caen en contenido de verdad —imagen o vídeo con
+  imagen, fondo con imagen o texto, nunca la capa ni las cajas grises de un esqueleto— dos rAF y listo; `PAINT_WAIT_MS`
+  como mucho. LCP no sirve: la capa restaurada es el candidato más grande),
+  cuando cambia `playback` y cuando el usuario o Jota piden otro formato. Lo automático (3, 4) solo va de panel a
+  píldora y tras `MORPH_DELAY_MS`; volver al panel es cosa del usuario (al momento) o de Jota (tras el respiro).
+- `override` vale mientras siga el mismo contenido (`OVERRIDE_SCOPE = 'content'`: misma entrada de `CONTENT_HOSTS`, mismo
+  host sin `www.`, el mismo escenario o el reposo); al cambiar de contenido se olvida. Lo de Jota vale en cuanto se llega
+  a la página que abrió y mientras se siga en ese sitio; si no se llega en `AGENT_LAYOUT_TTL_MS`, se olvida.
+- Cierre: un turno con una ficha que pone otra página (`opens`: tv_open, tv_open_app, tv_present, tv_show_html,
+  tv_idle show) y sin ninguna página pintada desde que empezó no se cierra hasta que se pinte (`AWAIT_PAGE_MS` como
+  mucho); pintada, lo que quede del cierre normal y al menos `AFTER_PAINT_MIN_MS`. Si pasa sola a píldora, se queda
+  `PILL_DWELL_BASE_MS + 45 ms/letra`; si la cambia el usuario o Jota con el turno acabado, el cierre normal desde ahí.
+  Un paso que se cancela en el respiro (se pausó) no deja la espera colgada. Abrir la URL que ya se ve (tv_idle show en el
+  reposo, la portada de una app en la que ya se está) o «recargar» es un documento nuevo sin cambio de URL: `control.nav`
+  avisa con `onReload` (server.js → `talkView.reset()`), porque `onPage` no lo ve.
+
+### Navegar con la capa abierta
+
+Navegar es un documento nuevo. Mientras la capa v2 se ve, la fuente (con tokens y fuentes) y la última foto van también
+como scripts de documento nuevo (`Page.addScriptToEvaluateOnNewDocument`, solo el marco principal); la página siguiente
+la pinta en cuanto hay `documentElement`, con `enter:'restore'`: en su caja, sin animaciones de entrada y con lo ya dicho
+a la vista, con el cristal ya opaco (sin fundido) y con el tinte del documento anterior (ni el ancho ni el velo saltan
+al cambiar de documento; la foto siguiente trae el de la página nueva y la membrana va a él con sus muelles, el velo con
+una transición). Se quitan al ocultarla o al pasar a v1. La capa va en la capa superior (popover manual) y el host se
+mueve, nunca se recrea, al entrar o salir de pantalla completa: dentro del elemento a pantalla completa si admite hijos
+(un `<div>`, como los reproductores de YouTube o Netflix: lo de fuera queda inerte y la membrana no recibiría el puntero),
+y en body con un `<video>` a pantalla completa (se ve, pero no se puede arrastrar: queda el gesto del mando). Fuentes: Fraunces de `public/fonts/` (OFL) mandada como bytes
+(`FontFace` desde un ArrayBuffer, nombre propio `TV Fraunces`), así se ve igual con `font-src 'none'`; Inter no está
+vendorizada: la de palo seco es la del sistema en todas partes.
+
+### Cambiar de pestaña con la capa abierta (Netflix va en la suya)
+
+`cdp.show(id)` engancha primero la pestaña de destino, aún detrás (la anterior sigue enganchada), y espera la promesa de
+`onAttached` (como mucho `FRONT_WAIT_MS`): `talkView.reset({ tab: true, from })` pinta ya, sin `batchMs`, la última foto
+que se vio (su tinte, `enter:'restore'` y `tab`), con `shown`: lo que la pestaña que se deja enseña de cada turno
+(`TVAgent.revealed()`, preguntado por `from` con `FROM_WAIT_MS` de tope). La página retira en seco lo que se quedó
+pintado en ella y restaura esas palabras sin entradas; el resto se revela como siempre. Luego `Target.activateTarget`
+(se ve ya con la capa), `onLeft` → `talkView.leave()` quita en seco (`TVAgent.hide(true)`) la capa de la que se deja, y
+se suelta su sesión. La foto siguiente trae el tinte de la pestaña nueva (los muelles hacen el cambio de ancho).
+`activate` / `autoActivate` siguen soltando la anterior antes de enganchar.
+
+Pestaña en blanco: `about:blank` (y `chrome://newtab`, `chrome-search:`) no es la página nueva: con esa URL no se sondea,
+y si la sonda ve el documento aún en blanco contesta `blank` y se vuelve a mirar; no cuenta como pintada. Un fallo de la
+sonda tampoco cuenta (se repite si no hubo navegación). Si llega una navegación con la espera en curso o vencida (la
+pintada fue el tope de la sonda), la espera se vuelve a armar y el cierre cuenta `AFTER_PAINT_MIN_MS` desde la pintada
+de verdad.
+
+### Cambiar el formato: mando y puntero de la tele
+
+```
+mando ── {t:'talkform', form:'panel'|'pill'}   permiso agent; solo quien puede parar (el móvil que preguntó o agente completo)
+   │                                           → {ok:1, form} | {error}
+tele ─── arrastre de la membrana con el ratón (pointer.py) → binding __tvAgentForm('panel'|'pill')
+   ▼                                           (Runtime.addBinding, una vez por sesión CDP; server.js onBinding)
+talk-view.userForm(form) ── override del contenido actual, cambio al momento (los dos sentidos)
+   │
+   ▼  onForm(form, canSwitch)
+talk.js ── {t:'talk', ev:'form', form:'pill'|'panel', canSwitch:true|false} al móvil del intercambio
+```
+
+- `ev:'form'` llega al empezar cada turno en v2, en cada cambio de formato (automático, de Jota o del usuario) y al
+  cerrarse la capa (`canSwitch:false`). En v1 no llega (no hay nada que cambiar). El mando pinta con él su control
+  («Ampliar en la tele» / «Hacer píldora»). Va al móvil del intercambio, como `hidden`: otro móvil con el agente completo
+  puede mandar `talkform` (como `stop`) pero no ve el control. Si el móvil del intercambio se reconecta (otra conexión
+  del mismo dispositivo, `devId`), `talk.greet` la hace la del intercambio y le manda el formato al conectarse; `may()`
+  también reconoce el mismo dispositivo. Con el token maestro (sin dispositivo) solo vale la misma conexión.
+- En la tele solo la membrana visible (`.body`) recibe el puntero; el host y el resto de la capa siguen con
+  `pointer-events:none`. Píldora hacia la derecha → panel; panel hacia el centro o hacia arriba → píldora (pasado
+  `DRAG.swap` o con un gesto rápido: velocidad de más de `DRAG.flick` en los últimos `DRAG.win` ms antes de soltar, con el
+  punto de soltar, y al menos `DRAG.flickMin` de recorrido); mientras se arrastra, contenido y membrana siguen al dedo con
+  goma (`DRAG.band`, y nunca más que el sitio que queda hasta el área segura: el panel, ya arriba del todo, no sube) y al
+  soltar encajan con los muelles en uno de los dos destinos. Los eventos no **suben** de la membrana a la web
+  (`stopPropagation`; los oyentes en fase de captura de `document` o `window` sí los ven, con `#__tvagent` de destino) y
+  el `mousedown` no hace su acción por defecto: ni foco perdido ni selección. La página cambia ya y mantiene lo elegido
+  `DRAG.hold` ms hasta que la foto lo confirme.
+- El binding vive en el mundo de la página (la capa se pinta ahí): una web podría llamarlo. Solo acepta exactamente
+  `pill` o `panel`, con la capa v2 a la vista y no más seguido que `BINDING_GAP_MS`; como mucho cambia el formato.
 
 ## Roles y permisos
 

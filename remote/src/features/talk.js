@@ -12,16 +12,21 @@
 // turno (cancel al Gateway) y el audio y quita la vista; `hide` solo la quita; `vstart`/`ask` con `interrupt` paran lo que
 // haya y siguen; sin él, un turno en vuelo o Jota hablando es BUSY. Parar o interrumpir: el móvil que preguntó o uno con
 // el agente completo. El barge-in del Gateway no se usa: interrumpe este servidor.
+// Las llamadas a herramientas del turno (`tool`) pasan el mismo filtro que los tokens: las de la lista cerrada de
+// agent-ui.js van a la vista como ficha (`tool`/`toolEnd`); de las demás solo se registra el nombre (nunca args ni resultado).
 const { WebSocket } = require('ws');
+const { toolCard, toolName, layoutOf, opensPage } = require('./agent-ui');
 
 const DOWN = 'Jota no está disponible.';
 const BUSY = 'Sigo con la petición anterior. Espera un momento.';
 const NOT_HEARD = 'No te he entendido. Prueba otra vez.';
 const NO_REPLY = 'No he recibido respuesta.';
 const STOPPED = 'Parado.';
+const NO_FORMS = 'La tele no puede cambiar el formato de la conversación.';
 const OUTS = ['tv', 'phone', 'none'];
 const RATE_MS = 24;                                        // muestras por ms del PCM del Gateway (24 kHz)
 const TV_GRACE_MS = 5000;                                  // tras end, si el altavoz no avisa, «habla» como mucho lo estimado más esto
+const TOOL_ID_MAX = 80;                                    // caracteres del id de una llamada a herramienta que llegan a la vista
 
 /**
  * Instrucciones que van delante de cada mensaje: con el nombre de la pantalla (TV_NAME) y, si se da, el del dueño (TV_OWNER).
@@ -42,6 +47,8 @@ function prompts(name, owner = '') {
 /** «Jota habla»: lo que suena de una respuesta; `ending` tras speaker.end (tele), `view` la tele espera a esto para done.
  * @typedef {{ out: string, ws: any, samples: number, first: number, last: number, timer: any, ending: boolean, view: boolean }} Play */
 
+/** Ficha de herramienta tal como la recibe la vista. @typedef {{ id: string, kind: string, title: string, detail: string }} ToolView */
+
 /** Vista de la tele que no pinta nada (tests y arranques sin ella). */
 const NO_VIEW = { turn() {}, you() {}, jota() {}, done() {}, error() {}, hide() {} };
 /** Altavoz de la tele que no suena (tests y arranques sin él). Sin onIdle: su `end` cuenta como fin al momento. */
@@ -51,8 +58,11 @@ const NO_SPEAKER = { start() {}, write() {}, end() {}, stop() {} };
  * @param {{
  *   gw: { ensure: () => Promise<boolean>, send: (t: string) => void, audio: (b: Buffer) => void, end: () => void, cancel?: () => void, on: (fn: (ev: any) => void) => () => void },
  *   cfg: { NAME: string, OWNER?: string }, media: () => number,
- *   view?: { turn: (mode: 'island' | 'panel') => void, you: (t: string, final: boolean) => void, jota: (t: string) => void, done: () => void, error: (t: string) => void,
- *            hide?: () => void, onHide?: (fn: () => void) => void },
+ *   view?: { turn: (mode: 'island' | 'panel', o?: { voice: boolean }) => void, you: (t: string, final: boolean) => void, jota: (t: string) => void, done: () => void, error: (t: string) => void,
+ *            hide?: () => void, onHide?: (fn: () => void) => void, tool?: (c: ToolView) => void, toolEnd?: (e: { id: string, ok: boolean }) => void,
+ *            userForm?: (form: any) => any, agentLayout?: (layout: string, url: string) => void,
+ *            onForm?: (fn: (form: 'pill' | 'panel', canSwitch: boolean) => void) => void,
+ *            form?: () => { form: 'pill' | 'panel', canSwitch: boolean } },
  *   speaker?: { start: () => void, write: (pcm: Buffer) => void, end: () => void, stop: () => void, onIdle?: (fn: () => void) => void },
  *   log?: { info: Function, warn: Function }, finalMs?: number, turnIdleMs?: number, maxVoiceMs?: number, audioTailMs?: number, playMarginMs?: number,
  * }} deps
@@ -63,8 +73,11 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
    *  `sent`: ya se llamó a gw.send; hasta entonces ningún turn_start puede ser el nuestro (un push).
    *  `voice`: turno por voz, en `rec` (llega audio), `wait` (tras vend, esperando la final) o `sent`; `cap` y `wait` son sus plazos.
    *  `heard`: ya sonó algún frame suyo. `maybeGhost`: su turn_start puede ser el de un turno parado antes de tenerlo.
+   *  `cards`: ids de sus llamadas a herramienta que la vista pinta como ficha (solo esas reciben toolEnd).
+   *  `held`: eventos `tool` que llegan mientras `maybeGhost` (aún puede ser el parado): a la vista solo si el turno resulta nuestro.
    *  @type {null | { ws: any, turnId: string | null, sent: boolean, reply: string, timer: any, finish: (r: object) => void,
-   *    voice?: 'rec' | 'wait' | 'sent', out?: string, seq?: number, mode?: string, who?: string, cap?: any, waitTimer?: any, heard?: boolean, maybeGhost?: boolean }} */
+   *    voice?: 'rec' | 'wait' | 'sent', out?: string, seq?: number, mode?: string, who?: string, cap?: any, waitTimer?: any, heard?: boolean, maybeGhost?: boolean,
+   *    cards?: Set<string>, held?: any[] }} */
   let turn = null;
   /** La cola del audio: el TTS puede seguir llegando tras turn_end. Con el `seq` del turno acabado, sigue sonando hasta que pasan
    *  audioTailMs sin frames (entonces `speaker.end()`); un turno nuevo o una caída la cortan al momento.
@@ -72,8 +85,13 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   let tail = null;
   /** «Jota habla»: desde el primer frame que suena hasta el fin de la reproducción. @type {null | Play} */
   let play = null;
-  /** El móvil del intercambio que la tele enseña ahora (recibe `hidden` cuando se quita, o cuando otro móvil la ocupa). */
+  /** El móvil del intercambio que la tele enseña ahora (recibe `hidden` cuando se quita, o cuando otro móvil la ocupa, y
+   *  el formato de la capa). Si ese móvil se reconecta (pantalla bloqueada, cambio de red), su conexión nueva lo sustituye
+   *  (greet). */
   let viewWs = null;
+  /** El mismo móvil: la misma conexión o el mismo dispositivo (`devId`; con el token maestro no hay, y solo vale la
+   *  conexión). @param {any} a @param {any} b */
+  const sameDev = (a, b) => a === b || (!!a && !!b && !!a.devId && a.devId === b.devId);
   /** @param {any} ws */
   function own(ws) { if (viewWs && viewWs !== ws) tell(viewWs, { ev: 'hidden' }); viewWs = ws; }
   /** Turno parado con su id ya conocido (lo que llegue de él se ignora) o sin él (el siguiente turn_start puede ser suyo). */
@@ -90,6 +108,8 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   const tell = (ws, o) => { if (ws && ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'talk', ...o })); };
 
   if (typeof view.onHide === 'function') view.onHide(() => tell(viewWs, { ev: 'hidden' }));
+  // formato de la capa en la tele (diseño nuevo): el móvil pinta con esto su control de ampliar / hacer píldora
+  if (typeof view.onForm === 'function') view.onForm((form, canSwitch) => tell(viewWs, { ev: 'form', form, canSwitch }));
   if (idleAware) /** @type {any} */ (speaker).onIdle(() => { if (play && play.out === 'tv' && play.ending) playEnded(); });
 
   /** Acaba «Jota habla» (por fin de reproducción o porque se corta); si la tele lo esperaba, done. */
@@ -195,7 +215,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   function may(ws, mode) {
     if (!turn && !play) return true;
     const owner = turn ? turn.ws : /** @type {Play} */ (play).ws;
-    return (!!owner && owner === ws) || mode === 'full';
+    return (!!owner && sameDev(owner, ws)) || mode === 'full';   // reconectado, el mismo móvil sigue pudiendo
   }
   /** Antes de un turno nuevo: con un turno en vuelo o Jota hablando, `interrupt` lo para (si puede); si no, BUSY.
    *  @param {any} ws @param {string} mode @param {any} interrupt @returns {null | { error: string }} */
@@ -232,6 +252,34 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     clearTimeout(turn.timer);
     turn.timer = setTimeout(() => { log.warn('talk: turno sin eventos'); fail(DOWN); }, turnIdleMs);
     if (turn.timer.unref) turn.timer.unref();
+  }
+
+  /** Formato de la tele para un turno nuevo: con vídeo en marcha, la isla; si no, el panel. */
+  const viewMode = () => (media() === 1 ? 'island' : 'panel');
+
+  /** Llamada a herramienta del turno en curso: ficha a la vista si la lleva; si no, solo su nombre al registro.
+   *  @param {NonNullable<typeof turn>} t @param {any} ev */
+  function onTool(t, ev) {
+    if (t.maybeGhost) { (t.held || (t.held = [])).push(ev); return; }   // hasta saber si es el parado
+    const id = String(ev.id || '').slice(0, TOOL_ID_MAX);
+    if (!id) return;                                       // sin id no se puede cerrar su ficha
+    if (ev.phase === 'start') {
+      const lay = layoutOf(ev.name, ev.args);              // Jota elige el formato de la página que abre
+      if (lay) v('agentLayout', lay.layout, lay.url);
+      const card = toolCard(ev.name, ev.args);
+      if (!card) { log.info('talk: herramienta sin ficha ' + toolName(ev.name)); return; }
+      (t.cards || (t.cards = new Set())).add(id);
+      v('tool', { id, ...card, ...(opensPage(ev.name, ev.args) ? { opens: true } : {}) });   // opens: pone otra página
+    } else if (ev.phase === 'end' && t.cards && t.cards.has(id)) v('toolEnd', { id, ok: ev.ok === true });
+  }
+
+  /** El turno con `maybeGhost` es el nuestro (ya trae respuesta): sus herramientas retenidas van a la vista, en orden.
+   *  @param {NonNullable<typeof turn>} t */
+  function confirmTurn(t) {
+    if (!t.maybeGhost) return;
+    const held = t.held || [];
+    t.maybeGhost = false; t.held = undefined;
+    for (const ev of held) onTool(t, ev);
   }
 
   /** Eventos del Gateway de un turno por voz que aún no se ha enviado: frase parcial y final. @param {any} ev */
@@ -287,13 +335,19 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
       case 'token':
         if (turn.turnId !== ev.turnId) return;
         turn.reply += ev.text;                             // el token es un trozo: se acumula
+        if (turn.reply) confirmTurn(turn);                 // antes que el texto: las fichas van delante de la respuesta
         tell(turn.ws, { ev: 'token', text: turn.reply });
         v('jota', turn.reply);
+        return;
+      case 'tool':
+        if (turn.turnId !== ev.turnId) return;
+        onTool(turn, ev);
         return;
       case 'turn_end':
         if (turn.turnId !== ev.turnId) return;
         if (turn.maybeGhost && !turn.reply) {              // era el cierre del turno parado (sin respuesta): se sigue esperando el nuestro
           ghostId = turn.turnId; turn.turnId = null; turn.seq = undefined; turn.maybeGhost = false;
+          turn.held = undefined;                           // sus herramientas no eran nuestras: nunca llegaron a la vista
           if (turn.heard) { turn.heard = false; silence(); }
           return;
         }
@@ -318,7 +372,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     const mine = turn = { ws, turnId: null, sent: /** @type {boolean} */ (false), reply: '', timer: null, finish, out: OUTS.includes(out) ? out : 'none' };
     silence();                                             // una respuesta anterior que aún suene se corta
     // la tele abre el intercambio ya, como vstart: un error al conectar va en él y no en la conversación anterior
-    own(ws); v('turn', media() === 1 ? 'island' : 'panel'); v('you', text, true);
+    own(ws); v('turn', viewMode(), { voice: false }); v('you', text, true);
     let ok = false;
     try { ok = await gw.ensure(); } catch (e) { log.warn('talk: ensure con error', e); }
     if (turn !== mine) return /** @type {any} */ (result);   // el turno se cerró mientras se conectaba (down, stop)
@@ -343,7 +397,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     clearTimeout(dropTimer); dropTimer = null;             // la ventana de un turno cancelado no se come la final de este
     mine.cap = setTimeout(() => { if (turn === mine) { log.warn('talk: grabación sin fin'); cancel(); } }, maxVoiceMs);
     if (mine.cap.unref) mine.cap.unref();
-    own(ws); v('turn', media() === 1 ? 'island' : 'panel');
+    own(ws); v('turn', viewMode(), { voice: true });
     let ok = false;
     try { ok = await gw.ensure(); } catch (e) { log.warn('talk: ensure con error', e); }
     if (turn !== mine) return { ok: 1 };                   // cancelado o caído mientras se conectaba
@@ -367,6 +421,15 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
 
   return {
     ask,
+    /** Un mando se conecta: si es el móvil del intercambio que se ve (otra conexión del mismo dispositivo), pasa a ser el
+     *  del intercambio y recibe el formato de la capa, para volver a pintar su control de ampliar / hacer píldora.
+     *  @param {any} ws @returns {object[]} mensajes que mandarle al conectarse */
+    greet(ws) {
+      if (!viewWs || viewWs === ws || !sameDev(viewWs, ws)) return [];
+      viewWs = ws;
+      const f = typeof view.form === 'function' ? view.form() : null;
+      return f && f.canSwitch ? [{ t: 'talk', ev: 'form', form: f.form, canSwitch: true }] : [];
+    },
     busy: () => !!turn,
     /** Jota sigue hablando la respuesta (en la tele o en el móvil). */
     speaking: () => !!play,
@@ -384,6 +447,13 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
       { t: 'stop', perm: 'agent', run: (_m, { ws, P }) => { if (!may(ws, P.agent)) return { error: BUSY }; halt(); v('hide'); return { ok: 1 }; } },
       // Quitar de la tele: solo la vista
       { t: 'hide', perm: 'agent', run: () => { v('hide'); return { ok: 1 }; } },
+      // Ampliar en la tele / hacer píldora (diseño nuevo): quien puede parar (el móvil que preguntó, también reconectado, o
+      // el agente completo). El evento `form` (que pinta el control) va al móvil del intercambio, como `hidden`
+      { t: 'talkform', perm: 'agent', run: (m, { ws, P }) => {
+        if (!may(ws, P.agent)) return { error: BUSY };
+        if (typeof view.userForm !== 'function') return { error: NO_FORMS };
+        return view.userForm(m.form);
+      } },
     ],
   };
 };

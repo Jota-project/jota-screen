@@ -31,7 +31,11 @@ body{font-family:var(--sans);color:var(--text);-webkit-font-smoothing:antialiase
 
 /* ── deriva anti-quemado: paseo aleatorio de ±32 --u, nunca el mismo recorrido (JS) */
 #dx{position:fixed;inset:0;transition:transform 150s ease-in-out}
-#dy{position:absolute;inset:0}
+#dy{position:absolute;inset:0;transform-origin:50% 50%;transition:transform 1.2s var(--ease),filter 1.2s var(--ease)}
+/* ── Jota habla (tv-agent.js pone html.tv-agent-talk): el reposo se aparta un poco, sin tocar el cristal. Va en #dy y no
+   en body ni #dx porque el host del cristal cuelga de body: un filter/transform en un ancestro suyo rompería el
+   backdrop-filter */
+html.tv-agent-talk #dy{transform:scale(.985);filter:brightness(.82)}
 
 /* ── rejilla 12×6 */
 #grid{position:absolute;inset:var(--my) var(--mx);display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:repeat(6,minmax(0,1fr));gap:var(--gap)}

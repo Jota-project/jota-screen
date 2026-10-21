@@ -10,7 +10,7 @@ const { WebSocket } = require(path.join(__dirname, '..', 'remote', 'node_modules
 
 const PERMS = { full: { agent: 'full', admin: true }, guest: { agent: 'guest' }, off: { agent: 'off' } };
 
-function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalMs, maxVoiceMs, audioTailMs = 20, playMarginMs } = {}) {
+function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalMs, maxVoiceMs, audioTailMs = 20, playMarginMs, log } = {}) {
   const subs = new Set(), sent = [], views = [], audio = [], ends = [], bins = [], spk = [], cancels = [];
   const gw = {
     ensure: async () => { if (slowEnsure) await new Promise(r => setTimeout(r, 20)); return ensure; }, send: t => sent.push(t), audio: b => audio.push(b), end: () => ends.push(1), on: fn => { subs.add(fn); return () => subs.delete(fn); },
@@ -18,15 +18,20 @@ function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalM
   };
   // la vista falsa avisa de que se oculta como la real: al momento con hide(), y por tiempo cuando la prueba llama a hidden()
   let onHide = () => {};
-  const view = Object.fromEntries(['turn', 'you', 'jota', 'done', 'error'].map(k => [k, (...a) => views.push([k, ...a])]));
+  const view = Object.fromEntries(['turn', 'you', 'jota', 'done', 'error', 'tool', 'toolEnd'].map(k => [k, (...a) => views.push([k, ...a])]));
   view.hide = () => { views.push(['hide']); onHide(); };
   view.onHide = fn => { onHide = fn; };
+  // formato (diseño nuevo): la vista falsa acepta lo que se le pida y avisa cuando la prueba llama a form()
+  let onForm = () => {};
+  view.userForm = f => { views.push(['userForm', f]); return f === 'pill' || f === 'panel' ? { ok: 1, form: f } : { error: 'formato no válido' }; };
+  view.agentLayout = (l, u) => views.push(['agentLayout', l, u]);
+  view.onForm = fn => { onForm = fn; };
   // el altavoz falso avisa de su fin como el real: al momento con stop(); tras end(), cuando la prueba llama a idle()
   let onIdle = () => {};
   const speaker = Object.fromEntries(['start', 'write', 'end', 'stop'].map(k => [k, (...a) => spk.push([k, ...a])]));
   speaker.stop = () => { spk.push(['stop']); onIdle(); };
   speaker.onIdle = fn => { onIdle = fn; };
-  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, speaker, turnIdleMs, finalMs, maxVoiceMs, audioTailMs, playMarginMs });
+  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, speaker, log, turnIdleMs, finalMs, maxVoiceMs, audioTailMs, playMarginMs });
   const msgs = [];
   const ws = { readyState: WebSocket.OPEN, send: s => (Buffer.isBuffer(s) ? bins.push(s) : msgs.push(JSON.parse(s))) };
   const perm = { current: 'full' };
@@ -35,7 +40,7 @@ function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalM
   const ask = (text, dev = { role: 'admin', name: 'Admin' }, out) => cmds.dispatch({ t: 'ask', text, out }, { dev, ws });
   const vcmd = (m, dev = { role: 'admin', name: 'Admin' }, sock = ws) => cmds.dispatch(m, { dev, ws: sock });
   const tick = () => new Promise(r => setImmediate(r));
-  return { gw, talk, sent, views, msgs, ws, perm, ask, tick, audio, ends, vcmd, bins, spk, cancels, idle: () => onIdle(), hidden: () => onHide(), make: null };
+  return { gw, talk, sent, views, msgs, ws, perm, ask, tick, audio, ends, vcmd, bins, spk, cancels, idle: () => onIdle(), hidden: () => onHide(), form: (f, can) => onForm(f, can), make: null };
 }
 
 test('ask full: send lleva askPrefix + texto; los tokens llegan acumulados y ask resuelve {ok:1, reply}', async () => {
@@ -90,7 +95,7 @@ test('Gateway no disponible (ensure false): error, el móvil lo ve y busy vuelve
   assert.equal(t.talk.busy(), false);
   assert.equal(t.sent.length, 0);
   // la tele abre su propio intercambio antes del error: no se mezcla con la conversación anterior
-  assert.deepEqual(t.views, [['turn', 'panel'], ['you', 'hola', true], ['error', 'Jota no está disponible.']]);
+  assert.deepEqual(t.views, [['turn', 'panel', { voice: false }], ['you', 'hola', true], ['error', 'Jota no está disponible.']]);
 });
 
 test('down o turn_error a mitad del turno: ev:error «Jota no está disponible.» y busy false', async () => {
@@ -132,7 +137,7 @@ test('view.turn recibe island si media() === 1 y panel si es 0 o -1', async () =
   for (const [media, mode] of [[1, 'island'], [0, 'panel'], [-1, 'panel']]) {
     const t = make({ media });
     const p = t.ask('hola'); await t.tick();
-    assert.deepEqual(t.views[0], ['turn', mode]);
+    assert.deepEqual(t.views[0], ['turn', mode, { voice: false }]);
     t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit({ type: 'token', turnId: 'a', text: 'x' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
     await p;
   }
@@ -185,7 +190,7 @@ test('vstart y luego binario: cada trozo llega tal cual a gw.audio; el de otro s
   assert.equal(t.audio.length, 0, 'sin vstart');
   assert.deepEqual(await t.vcmd({ t: 'vstart', out: 'tv' }), { ok: 1 });
   assert.equal(t.talk.busy(), true);
-  assert.deepEqual(t.views[0], ['turn', 'panel']);
+  assert.deepEqual(t.views[0], ['turn', 'panel', { voice: true }]);
   const a = frame(1), b = frame(2);
   t.talk.onBinary(a, t.ws); t.talk.onBinary(b, t.ws); t.talk.onBinary(frame(3), other());
   assert.equal(t.audio.length, 2);
@@ -770,4 +775,174 @@ test('cuando otro móvil abre un intercambio en la tele, el anterior recibe ev:h
   t.vcmd({ t: 'stop' }, undefined, sock); await t.tick();
   t.vcmd({ t: 'ask', text: 'tres' }, undefined, sock); await t.tick();
   assert.equal(t.msgs.length, n, 'el mismo móvil otra vez: nada al anterior');
+});
+
+// ───────── llamadas a herramientas (tool_call del Gateway, traducido a {type:'tool'} en gateway/client.js)
+
+/** Logs capturados: lo que se registra no puede llevar args, resultados ni texto de la conversación. */
+function logs() { const lines = []; const put = (...a) => lines.push(a.map(String).join(' ')); return { lines, log: { info: put, warn: put } }; }
+const toolEv = (phase, o = {}) => ({ type: 'tool', turnId: 'a', phase, id: 'c1', name: 'tv-canvas__tv_volume', ...(phase === 'start' ? { args: { action: 'set', level: 30 } } : { ok: true }), ...o });
+
+test('tool con ficha: la vista recibe tool al start y toolEnd al end; y la ficha sale de agent-ui', async () => {
+  const t = make();
+  const p = t.ask('baja el volumen'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  t.gw.emit(toolEv('start'));
+  t.gw.emit(toolEv('end', { ok: false }));
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'Listo.' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await p;
+  assert.deepEqual(t.views.filter(v => v[0] === 'tool' || v[0] === 'toolEnd'), [
+    ['tool', { id: 'c1', kind: 'volume', title: 'Volumen', detail: 'Volumen 30 %' }],
+    ['toolEnd', { id: 'c1', ok: false }],
+  ]);
+  assert.ok(!t.msgs.some(m => m.ev === 'tool'), 'al móvil no se le manda nada nuevo');
+});
+
+test('tool sin ficha: nada a la vista y el log lleva solo el nombre saneado (ni args ni resultado)', async () => {
+  const { lines, log } = logs();
+  const t = make({ log });
+  const p = t.ask('qué hay en la tele'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  t.gw.emit(toolEv('start', { name: 'tv_state\n<b>', args: { secreto: 'clave-xyz' } }));
+  t.gw.emit(toolEv('end', { name: 'tv_state' }));
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'Una peli.' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  await p;
+  assert.ok(!t.views.some(v => v[0] === 'tool' || v[0] === 'toolEnd'));
+  assert.deepEqual(lines, ['talk: herramienta sin ficha tv_stateb']);
+  assert.doesNotMatch(lines.join('\n'), /clave-xyz|qué hay|Una peli/);
+});
+
+test('tool de otro turno, de un turno parado (fantasma) o sin turno enviado: se ignora', async () => {
+  const t = make();
+  t.gw.emit(toolEv('start'));                                  // sin turno nuestro (un push)
+  const p = t.ask('uno'); await t.tick();
+  t.gw.emit(toolEv('start'));                                  // aún sin turn_start: no es del turno
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  t.gw.emit(toolEv('start', { turnId: 'b' }));                 // de otro turno
+  t.vcmd({ t: 'stop' }); await p;                              // parado: «a» pasa a fantasma
+  const q = t.ask('dos'); await t.tick();
+  t.gw.emit(toolEv('start'));                                  // lo que quede del parado
+  t.gw.emit({ type: 'turn_start', turnId: 'c', seq: 2 });
+  t.gw.emit(toolEv('start', { turnId: 'c', id: 'c9' }));
+  t.gw.emit(toolEv('end', { turnId: 'c', id: 'otro' }));       // end de una llamada sin ficha: no llega
+  t.gw.emit({ type: 'token', turnId: 'c', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'c' });
+  await q;
+  assert.deepEqual(t.views.filter(v => v[0] === 'tool' || v[0] === 'toolEnd').map(v => v[1].id), ['c9']);
+});
+
+test('parado antes de su turn_start: las herramientas del fantasma no llegan a la vista; las del turno nuestro sí, antes del texto', async () => {
+  const tools = t => t.views.filter(v => v[0] === 'tool' || v[0] === 'toolEnd');
+  // el fantasma (g) trae una herramienta que falla y acaba sin respuesta; luego llega el nuestro (b)
+  const t = make();
+  const p = t.ask('uno'); await t.tick();
+  t.vcmd({ t: 'stop' }); await p;                              // sin turn_start: el siguiente puede ser el suyo
+  const q = t.ask('dos'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'g', seq: 1 });
+  t.gw.emit(toolEv('start', { turnId: 'g', id: 'g1', name: 'tv_open', args: { url: 'https://youtube.com' } }));
+  t.gw.emit(toolEv('end', { turnId: 'g', id: 'g1', ok: false }));
+  t.gw.emit({ type: 'turn_end', turnId: 'g' });
+  t.gw.emit({ type: 'turn_start', turnId: 'b', seq: 2 });
+  t.gw.emit({ type: 'token', turnId: 'b', text: 'Hecho.' }); t.gw.emit({ type: 'turn_end', turnId: 'b' });
+  assert.deepEqual(await q, { ok: 1, reply: 'Hecho.' });
+  assert.deepEqual(tools(t), [], 'ni la ficha ni su fallo');
+  // el turn_start sí era el nuestro: lo retenido sale con el primer token, en orden y antes de la respuesta
+  const u = make();
+  const r = u.ask('uno'); await u.tick();
+  u.vcmd({ t: 'stop' }); await r;
+  const w = u.ask('dos'); await u.tick();
+  u.gw.emit({ type: 'turn_start', turnId: 'b', seq: 1 });
+  u.gw.emit(toolEv('start', { turnId: 'b' })); u.gw.emit(toolEv('end', { turnId: 'b' }));
+  assert.deepEqual(tools(u), [], 'aún puede ser el parado');
+  u.gw.emit({ type: 'token', turnId: 'b', text: '' });         // un token vacío no confirma nada
+  assert.deepEqual(tools(u), []);
+  u.gw.emit({ type: 'token', turnId: 'b', text: 'Listo.' }); u.gw.emit({ type: 'turn_end', turnId: 'b' });
+  assert.deepEqual(await w, { ok: 1, reply: 'Listo.' });
+  const after = u.views.slice(u.views.findIndex(v => v[0] === 'tool'));
+  assert.deepEqual(after.slice(0, 3).map(v => v[0]), ['tool', 'toolEnd', 'jota'], 'fichas delante del texto');
+  assert.deepEqual(after[1], ['toolEnd', { id: 'c1', ok: true }]);
+});
+
+test('un tool del turno rearma el plazo sin eventos (arm), como un token', async () => {
+  const t = make({ turnIdleMs: 60 });
+  const p = t.ask('hola'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  for (let i = 0; i < 4; i++) { await new Promise(r => setTimeout(r, 30)); t.gw.emit(toolEv('start', { id: 'c' + i })); }
+  assert.equal(t.talk.busy(), true, '120 ms con tools cada 30: sigue vivo');
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+  assert.equal((await p).ok, 1);
+});
+
+// ───────── formato de la capa en la tele (ronda 3): talkform, ev:'form' y el `layout` que pide Jota
+
+test('talkform: con permiso agent y solo quien puede parar (el móvil que preguntó o el agente completo); sin turno, cualquiera', async () => {
+  const t = make();
+  assert.deepEqual(await t.vcmd({ t: 'talkform', form: 'panel' }, undefined, other()), { ok: 1, form: 'panel' }, 'sin nada en vuelo');
+  const p = t.ask('hola'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  t.perm.current = 'guest';
+  assert.deepEqual(await t.vcmd({ t: 'talkform', form: 'pill' }, { role: 'guest', name: 'Ana' }, other()), BUSY_R, 'otro móvil invitado: no');
+  assert.deepEqual(await t.vcmd({ t: 'talkform', form: 'pill' }, { role: 'guest', name: 'Ana' }), { ok: 1, form: 'pill' }, 'el que preguntó: sí');
+  t.perm.current = 'full';
+  assert.deepEqual(await t.vcmd({ t: 'talkform', form: 'panel' }, undefined, other()), { ok: 1, form: 'panel' }, 'agente completo: sí');
+  assert.deepEqual(await t.vcmd({ t: 'talkform', form: 'gigante' }), { error: 'formato no válido' });
+  t.perm.current = 'off';
+  assert.ok((await t.vcmd({ t: 'talkform', form: 'pill' })).error, 'sin permiso agent: no');
+  assert.deepEqual(t.views.filter(v => v[0] === 'userForm').map(v => v[1]), ['panel', 'pill', 'panel', 'gigante']);
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' }); await p;
+});
+
+test('ev:form al móvil que preguntó cuando la tele cambia de formato (y canSwitch false al cerrarse)', async () => {
+  const t = make();
+  const p = t.ask('hola'); await t.tick();
+  t.form('panel', true); t.form('pill', true); t.form('pill', false);
+  assert.deepEqual(t.msgs.filter(m => m.ev === 'form'), [
+    { t: 'talk', ev: 'form', form: 'panel', canSwitch: true }, { t: 'talk', ev: 'form', form: 'pill', canSwitch: true },
+    { t: 'talk', ev: 'form', form: 'pill', canSwitch: false }]);
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' }); await p;
+});
+
+test('tool_call de tv_open / tv_open_app con layout: la vista recibe agentLayout con la página que se abre; sin layout, nada', async () => {
+  const t = make();
+  const p = t.ask('enséñame las fotos'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  t.gw.emit(toolEv('start', { id: 'o1', name: 'tv-canvas__tv_open', args: { url: 'fotos.example/album', layout: 'pill' } }));
+  t.gw.emit(toolEv('start', { id: 'o2', name: 'tv_open_app', args: { app: 'netflix', layout: 'panel' } }));
+  t.gw.emit(toolEv('start', { id: 'o3', name: 'tv_open', args: { url: 'https://x.example/' } }));
+  t.gw.emit(toolEv('start', { id: 'o4', name: 'tv_open', args: { url: 'https://x.example/', layout: 'grande' } }));
+  t.gw.emit(toolEv('start', { id: 'o5', name: 'tv_volume', args: { action: 'up', layout: 'pill' } }));
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); t.gw.emit({ type: 'turn_end', turnId: 'a' }); await p;
+  assert.deepEqual(t.views.filter(v => v[0] === 'tool').map(v => [v[1].id, v[1].opens === true]),
+    [['o1', true], ['o2', true], ['o3', true], ['o4', true], ['o5', false]], 'opens: la ficha pone otra página');
+  assert.deepEqual(t.views.filter(v => v[0] === 'agentLayout'), [
+    ['agentLayout', 'pill', 'https://fotos.example/album'], ['agentLayout', 'panel', 'https://www.netflix.com/']]);
+});
+
+test('el móvil del intercambio se reconecta (otra conexión, mismo dispositivo): recibe el formato al conectarse, lo sigue recibiendo y puede cambiarlo', async () => {
+  /** Conexión de un móvil (devId: su dispositivo; sin él, el token maestro). @param {string} [devId] */
+  const sock = devId => { const msgs = []; return { readyState: WebSocket.OPEN, devId, msgs, send: x => msgs.push(JSON.parse(x)) }; };
+  const subs = new Set();
+  const gw = { ensure: async () => true, send() {}, audio() {}, end() {}, cancel() {}, on: f => { subs.add(f); return () => subs.delete(f); }, emit: ev => subs.forEach(f => f(ev)) };
+  let onForm = () => {}, can = true, now = 'panel';
+  const view = { turn() {}, you() {}, jota() {}, done() {}, error() {}, onForm: fn => { onForm = fn; }, form: () => ({ form: now, canSwitch: can }),
+    userForm: f => ({ ok: 1, form: f }) };
+  const talk = createTalk({ gw, cfg: { NAME: 'S' }, media: () => 0, view });
+  const cmds = createCommands({ permsOf: () => PERMS.guest }); cmds.register(talk.commands);
+  const guest = { role: 'guest', name: 'Ana' };
+  const A = sock('d1');
+  const p = cmds.dispatch({ t: 'ask', text: 'pon netflix' }, { dev: guest, ws: A });
+  await new Promise(r => setImmediate(r));
+  gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  onForm('panel', true);
+  A.readyState = WebSocket.CLOSED; talk.onClose(A);   // bloquea la pantalla / cambia de red
+  const B = sock('d1'), C = sock('d2'), M = sock();
+  assert.deepEqual(talk.greet(C), [], 'otro dispositivo: nada');
+  assert.deepEqual(talk.greet(M), [], 'token maestro (sin dispositivo): nunca es «el mismo»');
+  assert.deepEqual(talk.greet(B), [{ t: 'talk', ev: 'form', form: 'panel', canSwitch: true }], 'al reconectarse, el formato');
+  now = 'pill'; onForm('pill', true);
+  assert.deepEqual(B.msgs.filter(m => m.ev === 'form'), [{ t: 'talk', ev: 'form', form: 'pill', canSwitch: true }], 'los cambios llegan a la conexión nueva');
+  assert.deepEqual(await cmds.dispatch({ t: 'talkform', form: 'panel' }, { dev: guest, ws: B }), { ok: 1, form: 'panel' }, 'reconectado, puede cambiarlo');
+  assert.deepEqual(await cmds.dispatch({ t: 'talkform', form: 'panel' }, { dev: guest, ws: C }), BUSY_R, 'otro móvil invitado, no');
+  can = false;
+  assert.deepEqual(talk.greet(sock('d1')), [], 'la tele ya no deja cambiarlo: nada que mandar');
+  gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); gw.emit({ type: 'turn_end', turnId: 'a' }); await p;
 });

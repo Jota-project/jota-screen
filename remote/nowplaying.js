@@ -7,6 +7,7 @@
 // «me gusta» y colores se piden una vez por canción (también si fallan) y la cola solo cuando cambia algo.
 // El progreso lo interpolan los clientes con `progress` + `at`.
 const jpeg = require('jpeg-js');
+const { hslHex } = require('./src/core/color');
 
 // cada cuánto se consulta según quién mira (watching(): 0 nadie, 1 solo el reposo, 2 el panel del mando)
 const EVERY = { 1: { playing: 10_000, paused: 30_000 }, 2: { playing: 5_000, paused: 15_000 } };
@@ -50,11 +51,6 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
     const h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
     return [h * 60, s, l];
   }
-  function hex(h, s, l) {
-    const k = n => (n + h / 30) % 12, a = s * Math.min(l, 1 - l);
-    const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, 9 - k(n), 1))));
-    return '#' + [f(0), f(8), f(4)].map(x => x.toString(16).padStart(2, '0')).join('');
-  }
   async function palette(url) {
     if (!url) return null;
     if (colors.has(url)) return colors.get(url);
@@ -85,10 +81,10 @@ module.exports = function createNow({ spApi, spReady, watching, onChange, log = 
       while (out.length < 4) { const b = out[0]; out.push([(b[0] + 24 * out.length) % 360, b[1] * .8, Math.max(.15, b[2] * .7)]); }
       const p = {
         hsl: out.map(c => c.map(v => +v.toFixed(3)).slice(0, 3)),                   // [h, s, l] para ajustar luminosidad al gusto
-        swatches: out.map(c => hex(c[0], c[1], c[2])),                               // tal cual
-        bg: hex(out[0][0], Math.min(.7, Math.max(.25, out[0][1])), .16),              // fondo oscuro para paneles
-        accent: hex(out[0][0], Math.min(.85, Math.max(.45, out[0][1])), .62),         // color de acento legible sobre oscuro
-        avg: hex(avg[0], avg[1], avg[2]),
+        swatches: out.map(c => hslHex(c[0], c[1], c[2])),                            // tal cual
+        bg: hslHex(out[0][0], Math.min(.7, Math.max(.25, out[0][1])), .16),           // fondo oscuro para paneles
+        accent: hslHex(out[0][0], Math.min(.85, Math.max(.45, out[0][1])), .62),      // color de acento legible sobre oscuro
+        avg: hslHex(avg[0], avg[1], avg[2]),
       };
       colors.set(url, p); if (colors.size > 50) colors.delete(colors.keys().next().value);
       return p;

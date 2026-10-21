@@ -3,12 +3,14 @@
 // por el WebSocket (`talk`: partial y final de la voz, token con lo acumulado, done, error, stopped, hidden).
 // «Parar» mientras piensa, escribe o la respuesta suena (en la tele o aquí: hasta `silent`); «Quitar de la tele» tras la
 // respuesta, ya en silencio, mientras la tele aún la enseña (hasta `hidden`; si no sonó en la tele, como mucho QUIT_MS).
+// Mientras la tele enseña la conversación, su formato (panel o píldora) se cambia desde aquí: ver talkform.js (`form`).
 import { $, el } from '../core/dom.js';
 import { cmd, rpc, onWs } from '../core/api.js';
 import { buzz } from '../ui/haptics.js';
 import { openSheet, closeSheet } from '../ui/sheets.js';
 import { voice, audioCtx, ensureAudioCtx, outSel, interruptOn } from './voice.js';
 import { createPcmPlayer } from './pcm-player.js';
+import { talkForm } from './talkform.js';
 
 const QUIT_MS = 5000;                                   // lo que tarda la tele en quitar la respuesta cuando no sonó allí
 const STOPPED = 'Parado.';
@@ -67,6 +69,7 @@ function ask(text) {
   });
 }
 function onTalk(j) {
+  if (j.ev === 'form') { talkForm.got(j); return; }   // el formato de la conversación en la tele (y si se puede cambiar)
   const rep = $('#rep');
   // la parcial es la frase acumulada mientras se habla: sustituye sin animar (las palabras animadas, para la final)
   if (j.ev === 'partial') { const q = $('#agQ'); q.classList.remove('said'); q.textContent = j.text || ''; return; }
@@ -86,7 +89,7 @@ function onTalk(j) {
     acts();
     return;
   }
-  if (j.ev === 'hidden') { noQuit(); acts(); }
+  if (j.ev === 'hidden') { noQuit(); talkForm.got(null); acts(); }
 }
 /** Parar: el turno y el audio (aquí y en la tele) y la tele se limpia. */
 function stop() {
@@ -111,6 +114,7 @@ export const agent = {
   init() {
     const agin = $('#agin');
     stage('idle');
+    talkForm.init();
     agin.addEventListener('keydown', e => {
       if (e.key !== 'Enter' || e.isComposing) return;
       e.preventDefault(); const v = agin.value.trim();

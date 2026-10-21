@@ -7,6 +7,9 @@
     "solapes": "node reposo-solapes.js",
     "mando": "node mando-capturas.js",
     "mando:compara": "python3 mando-compara.py",
+    "agente": "node agente-capturas.js",
+    "agente:serie": "node agente-serie.js",
+    "agente:pestanas": "node agente-pestanas.js",
     "postinstall": "playwright install chromium"
   },
   "devDependencies": {

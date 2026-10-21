@@ -25,6 +25,8 @@ const { createGatewayClient } = require('./src/gateway/client');
 const createTalk = require('./src/features/talk');
 const { createSpeaker } = require('./src/tv/speaker');
 const { createTalkView } = require('./src/tv/talk-view');
+const { FORM_BINDING } = require('./src/tv/agent-contract');
+const { stageOf } = require('./src/tv/agent-form');
 const createStage = require('./src/features/stage');
 const createKeyboard = require('./src/features/keyboard');
 const createControl = require('./src/features/control');
@@ -61,30 +63,43 @@ const { state, publicState, broadcast } = tv;
 // ───────────────────────── Chrome (CDP): lo que pasa en la pestaña activa se reparte entre las capacidades
 // (los ganchos solo se disparan tras cdp.connect(), al final, cuando todas las capacidades ya existen)
 cdp = createCdp({ port: CDP_PORT, log, hooks: {
-  onDown() { tv.clearPage(); keyboard.focusSet(null); talkView.reset(); broadcast(); },
+  onDown() { tv.clearPage(); pagePoll.reset(); keyboard.focusSet(null); talkView.reset(); broadcast(); },
   onActivating() { keyboard.focusSet(null); },
-  onAttached(t) {
+  onAttached(t, from) {
     if (t && t.url !== state.url) idle.onNav(t.url); // otra pestaña delante (Netflix o la de siempre): la isla y el ambiente se repasan
     if (t) { state.title = t.title; state.url = t.url; }
-    talkView.reset(); // otra pestaña: la conversación se vuelve a inyectar en ella
+    pagePoll.reset(); // otra pestaña: la reproducción se mide desde cero…
+    // …y la conversación se vuelve a inyectar en ella: con la capa a la vista, ya, tal como se ve en la que se deja (`from`,
+    // desde cdp.show, que espera a que esté pintada antes de traer la pestaña al frente)
+    const painted = talkView.reset({ tab: true, from });
     spotify.page.attached();
     keyboard.watchFocus();
     broadcast();
+    return painted;
   },
+  onLeft(call) { return talkView.leave(call); }, // la pestaña que se deja (ya detrás): su capa se quita en seco
   onPage(t) {
-    if (t.url !== state.url) { idle.onNav(t.url); talkView.reset(); }
-    state.title = t.title; state.url = t.url; broadcast();
+    const moved = t.url !== state.url;
+    state.title = t.title; state.url = t.url;  // antes de los avisos: la conversación decide su formato con la URL nueva
+    if (moved) {
+      if (!t.url.startsWith(SELF + '/')) stage.leave(); // fuera del escenario (también por «atrás» o un clic): ni su cierre programado
+      idle.onNav(t.url); pagePoll.reset(); talkView.reset();
+    }
+    broadcast();
     spotify.page.changed(t.url); // al cambiar de página dentro de Spotify (o llegar a él) se repasa el retoque
   },
   onActiveGone(hasNext) { keyboard.focusSet(null); if (!hasNext) broadcast(); },
   onDetached() { keyboard.focusSet(null); broadcast(); },
-  onBinding(name, payload) { // aviso de foco desde la página (solo de la sesión activa)
+  onBinding(name, payload) { // avisos desde la página (solo de la sesión activa)
     if (name === '__tvFocus') { try { keyboard.focusSet(JSON.parse(payload)); } catch {} }
+    if (name === FORM_BINDING) talkView.fromPage(payload); // la capa del agente arrastrada con el puntero de la tele
   },
 } });
 const pointer = createPointer({ script: path.join(ROOT, 'pointer.py'), display: CFG.DISPLAY, disabled: NO_POINTER, log });
 const audio = createAudio({ runtimeDir: CFG.XDG_RUNTIME_DIR });
-const pagePoll = createPagePoll({ cdp, state, broadcast, watched: () => ws.clients().size > 0 });
+// con la capa del agente (diseño nuevo) a la vista sondea también sin mandos: de ahí sale el paso del panel a la píldora
+const pagePoll = createPagePoll({ cdp, state, broadcast, watched: () => ws.clients().size > 0,
+  active: () => talkView.watching(), onPlayback: on => talkView.playback(on) });
 
 // ───────────────────────── acceso: token maestro, dispositivos, roles y emparejamiento
 const tvPair = createPairScreen(cdp); // el código de emparejar se pinta encima de lo que haya en la tele
@@ -98,7 +113,10 @@ const netflix = createNetflix({ cdp, cfg: CFG, store: createJsonStore(CFG.FILES.
 // «Seguir viendo» e historial de Netflix: lo lee una pestaña oculta de vez en cuando; lo usan el reposo y el agente
 const nfxWatch = createWatch({ cdp, netflix, store: createJsonStore(CFG.FILES.watching, { fallback: {} }), log: log.info, onChange: () => idle.nfxChanged() });
 netflix.extend(nfxWatch.ops);
-const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave(), netflix });
+// tv_open / tv_open_app con `layout`: Jota elige el formato de la conversación para la página que abre. Abrir la misma
+// URL (o recargar) es un documento nuevo sin cambio de URL: onPage no lo ve y se avisa desde aquí
+const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave(), netflix,
+  onLayout: (url, layout) => talkView.agentLayout(layout, url), onNavigate: () => talkView.navigating(), onReload: () => { pagePoll.reset(); talkView.reset(); } });
 const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: () => idle });
 const idle = createIdle({
   PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
@@ -109,13 +127,28 @@ const gw = CFG.GATEWAY_URL
   ? createGatewayClient({ url: CFG.GATEWAY_URL, key: CFG.GATEWAY_KEY, agent: CFG.AGENT, log })
   : { ensure: async () => false, send() {}, on: () => () => {}, audio() {}, end() {}, isReady: () => false, close() {} };
 const speaker = createSpeaker({ runtimeDir: CFG.XDG_RUNTIME_DIR, cmd: CFG.SPEAKER_CMD, log });
-// la conversación en la tele: isla con vídeo, panel sin él (se inyecta una vez por página)
-const talkView = createTalkView({ cdp, pub: PUB, log: log.info });
+// la conversación en la tele: isla con vídeo, panel sin él (se inyecta una vez por página). `context` se lee en cada
+// pintada: el diseño (v1 tv-talk.js, v2 tv-agent.js, interruptor `agentDesign` del reposo) y el contexto de la página.
+// v2: `page` (URL, escenario, reposo) decide el formato (src/tv/agent-form.js: app de contenido → píldora) y `playback`
+// (vídeo grande que avanza, de page-poll; no `media`, que salta con un tráiler) es la reserva y el tinte. El escenario
+// sale de la URL (stageOf), no de stage.kind: se sale de él también sin control.nav («atrás», un clic)
+const agentCtx = () => {
+  const a = idle.agentContext(), pb = state.playback === true;
+  return { design: a.design, ctx: pb ? 'video' : a.idle ? (a.music ? 'music' : 'idle') : 'web', playback: pb,
+    page: { url: state.url || '', stage: stageOf(state.url, SELF), idle: a.idle },
+    night: a.night, calm: a.calm, glass: a.glass, colors: a.colors };
+};
+const talkView = createTalkView({ cdp, pub: PUB, log: log.info, context: agentCtx });
 const talk = createTalk({ gw, cfg: CFG, media: () => state.media, view: talkView, speaker, log });
 
 // ───────────────────────── órdenes: cada una con su permiso al lado, en su capacidad
 const commands = createCommands({ permsOf: acc.permsOf, onUse: () => idle.touch(), log });
-for (const list of [talk.commands, netflix.commands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
+// abrir Netflix o poner un título cambia de pestaña sin pasar por control.nav: la conversación espera igual a verla pintada
+const netflixCommands = netflix.commands.map(c => ({ ...c, run: (/** @type {any} */ m, /** @type {any} */ ctx) => {
+  if (m && (m.op === 'open' || m.op === 'play')) talkView.navigating();
+  return c.run(m, ctx);
+} }));
+for (const list of [talk.commands, netflixCommands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
   createAccessCommands({ acc, meOf }), tv.commands]) commands.register(list);
 
 /** Una orden del mando (sock), de la API o del MCP (ctx.dev), con los permisos de su dispositivo. */
@@ -153,7 +186,7 @@ const onUpgrade = ws.wire({
     pointer.line(s);                                 // "m dx dy", "w dx dy", "c 1", "b 1 1"...
   },
   greet: sock => [
-    publicState(), meOf(sock), keyboard.focusFor(sock),
+    publicState(), meOf(sock), keyboard.focusFor(sock), ...talk.greet(sock), // el móvil del intercambio que vuelve: su control de formato
     ...(acc.permsOf(devOf(sock)).admin ? acc.pairing.pendingAsks().map(p => ({ t: 'pairreq', ...p })) : []), // peticiones de acceso pendientes
   ],
 });

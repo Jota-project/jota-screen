@@ -18,10 +18,12 @@ function getJSON(url) {
 
 /**
  * @typedef {{ targetId: string, type: string, url: string, title: string }} TargetInfo
+ * @typedef {(method: string, params?: object) => Promise<any>} Call
  * @typedef {{
  *   onDown?: () => void,                                  // se perdió la conexión con Chrome
  *   onActivating?: () => void,                            // se va a enganchar otra pestaña
- *   onAttached?: (t: TargetInfo | undefined) => void,     // pestaña activa enganchada (sesión lista)
+ *   onAttached?: (t: TargetInfo | undefined, from?: Call | null) => any, // pestaña activa enganchada (sesión lista); su promesa, show() la espera
+ *   onLeft?: (call: Call) => any,                         // show() trajo otra al frente: call va a la que se deja
  *   onPage?: (t: TargetInfo) => void,                     // la pestaña activa cambió de URL o título
  *   onActiveGone?: (hasNext: boolean) => void,            // se cerró la pestaña activa
  *   onDetached?: () => void,                              // la sesión de la pestaña activa se soltó
@@ -31,11 +33,25 @@ function getJSON(url) {
 
 const BG_MARK = 'about:blank#tv-bg'; // así nace una pestaña de fondo (bgTab): se reconoce desde el primer aviso
 
+// onAttached puede devolver una promesa (pintar en la pestaña aún detrás): show() la espera, como mucho frontWaitMs, antes de
+// traerla al frente; desde show() recibe además `from`, una llamada a la pestaña que se va a dejar (aún enganchada y a la
+// vista: lo que se ve en ella). onLeft recibe esa misma llamada ya con la nueva al frente; luego se suelta.
+// show(): lo que espera como mucho a quien escucha onAttached (pintar en la pestaña antes de que se vea) y a onLeft (quitar
+// lo suyo de la que se deja). Corto: el cambio de pestaña nunca se cuelga por una página que no contesta
+const FRONT_WAIT_MS = 300;
+
+/** La promesa `p` o, como mucho, `ms` (nunca rechaza). @param {any} p @param {number} ms */
+function capped(p, ms) {
+  if (!p || typeof p.then !== 'function') return Promise.resolve();
+  let t;
+  return Promise.race([Promise.resolve(p).catch(() => {}), new Promise(r => { t = setTimeout(r, ms); })]).finally(() => clearTimeout(t));
+}
+
 /**
- * @param {{ port: number, log: { info: Function, error: Function }, hooks?: Hooks, retryMs?: number, timeoutMs?: number }} o
+ * @param {{ port: number, log: { info: Function, error: Function }, hooks?: Hooks, retryMs?: number, timeoutMs?: number, frontWaitMs?: number }} o
  */
-function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) {
-  const h = { onDown() {}, onActivating() {}, onAttached() {}, onPage() {}, onActiveGone() {}, onDetached() {}, onBinding() {}, ...hooks };
+function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000, frontWaitMs = FRONT_WAIT_MS }) {
+  const h = { onDown() {}, onActivating() {}, onAttached() {}, onLeft() {}, onPage() {}, onActiveGone() {}, onDetached() {}, onBinding() {}, ...hooks };
   const cdp = {
     /** @type {WebSocket | null} */ ws: null, id: 0, pending: new Map(), stopped: false,
     /** @type {string | null} */ session: null,
@@ -43,7 +59,7 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
     /** @type {Map<string, TargetInfo>} */ pages: new Map(),
     /** contextos de los mundos aislados con nombre del marco principal (p. ej. «tv») */ worlds: new Map(),
     ready: false,
-    /** @type {Promise<void> | null} enganche en curso (activate) */ attaching: null,
+    /** @type {Promise<{ ready: any } | undefined> | null} enganche en curso (activate) */ attaching: null,
     /** pestañas de fondo (bgTab): ni se enganchan, ni se cuentan entre las pestañas, ni se traen al frente */ bg: new Set(),
 
     async connect() {
@@ -80,23 +96,20 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
       return id;
     },
 
-    /**
-     * Llamada con respuesta: en la pestaña activa, al navegador (browser = true) o en otra sesión (su id, p. ej. una
-     * pestaña de fondo).
-     * @param {string} method @param {any} [params] @param {boolean | string} [browser]
-     */
+    /** Llamada con respuesta, en la pestaña activa (o al navegador con browser = true). */
     call(method, params = {}, browser = false) {
+      return this.request(method, params, browser ? undefined : this.session, browser);
+    },
+    /**
+     * Llamada con respuesta a una sesión dada (la de la pestaña que se deja, en show; una pestaña de fondo, en bgTab) o al
+     * navegador (browser). `ms`: tiempo máximo (leer una web en una pestaña de fondo lleva su rato).
+     */
+    request(method, params = {}, /** @type {string | null | undefined} */ sid = undefined, browser = false, ms = timeoutMs) {
       return new Promise((res, rej) => {
         if (!this.ready || !this.ws || this.ws.readyState !== WebSocket.OPEN) return rej(new Error('cdp'));
-        if (typeof browser === 'string') {
-          const id = this.send(method, params, browser);
-          const t = setTimeout(() => { this.pending.delete(id); rej(new Error('timeout')); }, Math.max(timeoutMs, 30000)); // leer una web lleva su rato
-          return this.pending.set(id, { res, rej, t });
-        }
-        const sid = browser ? undefined : this.session;
         if (!browser && !sid) return rej(new Error('nopage'));
         const id = this.send(method, params, sid || undefined);
-        const t = setTimeout(() => { this.pending.delete(id); rej(new Error('timeout')); }, timeoutMs);
+        const t = setTimeout(() => { this.pending.delete(id); rej(new Error('timeout')); }, ms);
         this.pending.set(id, { res, rej, t });
       });
     },
@@ -154,23 +167,32 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
       }
     },
 
-    /** Engancha una pestaña como activa (suelta la anterior, que si no sigue mandando eventos). */
-    async activate(id) {
+    /** Suelta una sesión (nunca rechaza; quien quiera, espera la respuesta). @param {string | null} sid */
+    detach(sid) { return sid ? this.call('Target.detachFromTarget', { sessionId: sid }, true).catch(() => {}) : Promise.resolve(); },
+
+    /**
+     * Engancha una pestaña como activa (suelta la anterior, que si no sigue mandando eventos). Devuelve { ready } con lo
+     * que devolvió onAttached (o nada si no hubo enganche nuevo). `keep`: la anterior no se suelta aquí (show() la suelta
+     * tras traer la nueva al frente); sus eventos ya no cuentan (no es la sesión activa).
+     * @param {string} id @param {{ keep?: boolean }} [o] @returns {Promise<{ ready: any } | undefined>}
+     */
+    async activate(id, o = {}) {
       if (this.targetId === id && this.session) return;
       if (this.targetId === id && this.attaching) return this.attaching; // ya se está enganchando: no abrir otra sesión
       const old = this.session;
       this.targetId = id; this.session = null; this.worlds.clear();
       h.onActivating();
-      if (old) this.call('Target.detachFromTarget', { sessionId: old }, true).catch(() => {});
+      if (!o.keep) this.detach(old);
+      /** @type {Call | null} */ const from = o.keep && old ? (method, params = {}) => this.request(method, params, old) : null;
       const p = this.attaching = (async () => {
         try {
           const r = await this.call('Target.attachToTarget', { targetId: id, flatten: true }, true);
-          if (this.targetId !== id) { this.call('Target.detachFromTarget', { sessionId: r.sessionId }, true).catch(() => {}); return; } // ya se activó otra
+          if (this.targetId !== id) { this.detach(r.sessionId); return; } // ya se activó otra
           this.session = r.sessionId;
-          h.onAttached(this.pages.get(id));
+          return { ready: h.onAttached(this.pages.get(id), from) };   // objeto: la promesa del gancho no retrasa el enganche
         } catch {}
       })();
-      try { await p; } finally { if (this.attaching === p) this.attaching = null; }
+      try { return await p; } finally { if (this.attaching === p) this.attaching = null; }
     },
 
     /**
@@ -192,11 +214,21 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
       }
     },
 
-    /** Trae una pestaña al frente (en el kiosco se ve al instante) y la engancha como activa. */
+    /**
+     * Trae una pestaña al frente (en el kiosco se ve al instante) y la engancha como activa. Primero la engancha (aún
+     * detrás) y deja que quien escucha onAttached pinte en ella (espera su promesa, como mucho frontWaitMs): así ya se
+     * ve con lo suyo. Luego Target.activateTarget; después onLeft con la pestaña que se deja (aún enganchada), y se suelta.
+     * @param {string} id
+     */
     async show(id) {
       if (!this.pages.has(id)) throw new Error('nopage');
-      await this.call('Target.activateTarget', { targetId: id }, true);
-      await this.activate(id);
+      const old = this.targetId !== id ? this.session : null;
+      try {
+        const r = await this.activate(id, { keep: true });
+        if (r) await capped(r.ready, frontWaitMs);
+        await this.call('Target.activateTarget', { targetId: id }, true);
+        if (old) await capped(h.onLeft((method, params = {}) => this.request(method, params, old)), frontWaitMs);
+      } finally { await capped(this.detach(old), frontWaitMs); }
       if (this.targetId !== id || !this.session) throw new Error('nopage');
     },
 
@@ -211,7 +243,7 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
       const close = () => this.call('Target.closeTarget', { targetId }, true).catch(() => {});
       try {
         const { sessionId } = await this.call('Target.attachToTarget', { targetId, flatten: true }, true);
-        const on = (m, p) => this.call(m, p, sessionId);
+        const on = (m, p) => this.request(m, p, sessionId, false, Math.max(timeoutMs, 30000));
         // muda: todo vídeo o audio sale silenciado antes de sonar, y se pausa en cuanto arranca
         await on('Page.addScriptToEvaluateOnNewDocument', { source: 'const P=HTMLMediaElement.prototype,p=P.play;P.play=function(){this.muted=true;return p.apply(this,arguments)};document.addEventListener("play",e=>{try{e.target.muted=true;e.target.pause()}catch(_){}},true)' });
         await on('Emulation.setFocusEmulationEnabled', { enabled: true });
@@ -249,4 +281,4 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
   return cdp;
 }
 
-module.exports = { createCdp, getJSON };
+module.exports = { createCdp, getJSON, FRONT_WAIT_MS };
