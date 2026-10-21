@@ -420,7 +420,8 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
   const hasBackdrop = () => { try { return window.CSS.supports('backdrop-filter', 'blur(1px)') || window.CSS.supports('-webkit-backdrop-filter', 'blur(1px)'); } catch { return false; } };
 
   // ── Foto: se sanea todo lo que llega (viene del servidor, pero la capa no debe romperse con un dato raro)
-  // tarjeta de contenido del turno (Netflix): `list` (lo que se está viendo) o `play` (lo que se va a poner, con su ▶)
+  // tarjeta de contenido del turno (Netflix, YouTube): `list` (lo que se está viendo) o `play` (lo que se va a poner, con su ▶)
+  const BRANDS = { netflix: 'Netflix', youtube: 'YouTube' };   // de quién es la tarjeta (su antetítulo)
   function cleanMedia(m) {
     if (!m || typeof m !== 'object' || (m.kind !== 'list' && m.kind !== 'play')) return null;
     const str = (x, n) => (typeof x === 'string' ? x.slice(0, n) : '');
@@ -428,7 +429,7 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     const items = (Array.isArray(m.items) ? m.items : []).slice(0, 4).filter(i => i && typeof i === 'object' && typeof i.title === 'string' && i.title).map(i => ({
       title: str(i.title, 120), sub: str(i.sub, 160), left: str(i.left, 60), frac: Math.min(1, Math.max(0, Number(i.frac) || 0)), img: url(i.img), still: url(i.still),
     }));
-    return items.length ? { key: str(m.key, 80) || m.kind, kind: m.kind, state: m.state === 'press' ? 'press' : 'idle', items } : null;
+    return items.length ? { key: str(m.key, 80) || m.kind, kind: m.kind, state: m.state === 'press' ? 'press' : 'idle', brand: Object.hasOwn(BRANDS, m.brand) ? m.brand : 'netflix', items } : null;
   }
   function clean(o) {
     const s = o && typeof o === 'object' ? o : {};
@@ -774,7 +775,7 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     return b;
   }
   function syncMedia(v, m) {
-    const sig = m ? JSON.stringify([m.key, m.kind, m.items]) : '';
+    const sig = m ? JSON.stringify([m.key, m.kind, m.brand, m.items]) : '';
     if (sig !== v.media) {
       v.media = sig;
       v.md.replaceChildren();
@@ -783,7 +784,7 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
         const card = el('div', restoring ? 'mp sd' : 'mp');
         const art = picture('mpi', it.img);
         const cap = el('div', 'mpc');
-        const k = el('div', 'mk'); k.append(el('i'), el('span', '', 'Netflix'));
+        const k = el('div', 'mk'); k.append(el('i'), el('span', '', BRANDS[m.brand]));
         cap.append(k, el('div', 'mt', it.title));
         const row = el('div', 'mr');
         if (it.still) row.appendChild(picture('ms', it.still));

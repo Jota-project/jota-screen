@@ -88,7 +88,7 @@ test('YouTube: «pon en YouTube música lofi» busca detrás, enseña la tarjeta
   assert.deepEqual(r.candidates.map(c => c.id), ['rFZHOHl-L8A', 'CFGLoQIhmow']);
   assert.deepEqual(log, ['bg', 'bg:/results?search_query=m%C3%BAsica%20lofi', 'bg:close', 'card', 'nav:https://www.youtube.com/watch?v=n61ULEU7CO0', 'key:f'],
     'la búsqueda no se ve; la tarjeta antes de irse; una sola navegación');
-  assert.deepEqual(cards[0], { key: 'yt-play-n61ULEU7CO0', kind: 'play', items: [{ title: 'Best of lofi hip hop 2021', sub: 'Lofi Girl · 6:10:58', left: '', frac: 0,
+  assert.deepEqual(cards[0], { key: 'yt-play-n61ULEU7CO0', kind: 'play', brand: 'youtube', items: [{ title: 'Best of lofi hip hop 2021', sub: 'Lofi Girl · 6:10:58', left: '', frac: 0,
     img: 'http://127.0.0.1:8787/yt/img?id=n61ULEU7CO0' }] });
 });
 

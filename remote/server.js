@@ -154,8 +154,8 @@ netflix.extend({ ...nfxWatch.ops,
 const youtube = createYoutube({ cdp, nav: u => control.nav(u), key: k => keyboard.key(k), self: SELF, log: log.info,
   beforePlay: async card => {
     if (!talkView.media(card)) return;
-    setTimeout(() => talkView.mediaState('press'), 700).unref?.();
-    await pause(400);
+    setTimeout(() => talkView.mediaState('press'), 650).unref?.();
+    await pause(900);   // con menos no llega a verse en el reposo (probado en la tele: con 400 ms salió ya sobre YouTube)
   } });
 // tv_open / tv_open_app con `layout`: Jota elige el formato de la conversación para la página que abre. Abrir la misma
 // URL (o recargar) es un documento nuevo sin cambio de URL: onPage no lo ve y se avisa desde aquí

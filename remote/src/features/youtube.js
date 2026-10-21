@@ -113,7 +113,7 @@ module.exports = function createYoutube({ cdp, nav, key = () => {}, self = '', l
   } }];
 
   /** Tarjeta para la conversación (talk-view.js: media). @param {{ id: string, title: string, channel?: string, len?: string, live?: boolean }} v */
-  const card = v => ({ key: 'yt-play-' + v.id, kind: 'play', items: [{
+  const card = v => ({ key: 'yt-play-' + v.id, kind: 'play', brand: 'youtube', items: [{
     title: v.title || 'YouTube', sub: [v.channel, v.live ? 'En directo' : v.len].filter(Boolean).join(' · ') || 'YouTube',
     left: '', frac: 0, img: self ? `${self}/yt/img?id=${v.id}` : '',
   }] });
@@ -139,18 +139,20 @@ module.exports = function createYoutube({ cdp, nav, key = () => {}, self = '', l
       if (!candidates.length) return { error: `No encuentro «${q}» en YouTube` };
       pick = candidates[0];
     }
+    const tFound = now() - t0;
     thumb(pick.id).catch(() => {});        // que la miniatura ya esté cuando la tarjeta la pida
     try { await beforePlay(card(pick)); } catch (e) { log('youtube: ' + e.message); }
+    const tNav = now() - t0;
     const r = await nav(`${ORIGIN}/watch?v=${pick.id}`);
     if (r && r.error) return r;
     let st = await until(PLAYING(pick.id), v => v && v.st === 2, 12000);
-    const playing = !!st && st.st === 2;
+    const playing = !!st && st.st === 2, tPlay = now() - t0;
     // pantalla completa: la «f» del reproductor, cuando ya suena (antes la web aún no la atiende); si no entra, otra vez
     for (let i = 0; playing && i < 2 && !(st && st.fs); i++) {
       key('f');
       st = { ...st, ...(await until(PLAYING(pick.id), v => v && v.fs, 1500)) };
     }
-    log(`youtube: «${q || pick.id}» → ${pick.id} «${pick.title}» ${playing ? 'suena' : 'no arranca'}${st && st.ad ? ' (anuncio)' : ''}, ${now() - t0} ms`);
+    log(`youtube: «${q || pick.id}» → ${pick.id} «${pick.title}» ${playing ? 'suena' : 'no arranca'}${st && st.ad ? ' (anuncio)' : ''}, ${now() - t0} ms (encontrado ${tFound}, navega ${tNav}, suena ${tPlay})`);
     return {
       ok: 1, id: pick.id, title: (st && st.title) || pick.title, playing, ...(st && st.ad ? { ad: true } : {}), ms: now() - t0,
       ...(candidates.length > 1 ? { candidates: candidates.slice(1, 5).map(c => ({ id: c.id, title: c.title, channel: c.channel })) } : {}),

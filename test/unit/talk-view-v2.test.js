@@ -934,7 +934,7 @@ test('tarjeta de contenido (Netflix): solo en v2, con el panel y un turno abiert
   assert.equal(v.media({ kind: 'raro', items: [{ title: 'x' }] }), false, 'lo que no es una tarjeta, no');
   assert.equal(v.media(card), true);
   await step(t);
-  assert.deepEqual(last(cdp).turns.at(-1).media, { key: 'nfx-play-1', kind: 'play', state: 'idle',
+  assert.deepEqual(last(cdp).turns.at(-1).media, { key: 'nfx-play-1', kind: 'play', state: 'idle', brand: 'netflix',
     items: [{ title: 'La serie', sub: 'T1 · E2 · Uno', left: '', frac: 0.5, img: 'http://127.0.0.1:8787/idle/nfx?u=x', still: '' }] }, 'saneada: sin direcciones raras');
   v.mediaState('press');
   await step(t);
@@ -948,7 +948,7 @@ test('tarjeta de contenido (Netflix): solo en v2, con el panel y un turno abiert
 
 test('tarjeta de contenido: puesta en el reposo, al pasar a una web ajena sigue sin sus imágenes (nada de 127.0.0.1 desde la web)', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
-  const card = { key: 'yt-play-x', kind: 'play', items: [{ title: 'Lofi', sub: 'Lofi Girl', frac: 0, img: 'http://127.0.0.1:8787/yt/img?id=n61ULEU7CO0' }] };
+  const card = { key: 'yt-play-x', kind: 'play', brand: 'youtube', items: [{ title: 'Lofi', sub: 'Lofi Girl', frac: 0, img: 'http://127.0.0.1:8787/yt/img?id=n61ULEU7CO0' }] };
   const m = make({ page: IDLE });
   m.v.turn('panel', { voice: true });
   assert.equal(m.v.media(card), true);
@@ -959,6 +959,7 @@ test('tarjeta de contenido: puesta en el reposo, al pasar a una web ajena sigue 
   await step(t);
   assert.equal(last(m.cdp).turns.at(-1).media.items[0].img, '', 'en la web, sin ella');
   assert.equal(last(m.cdp).turns.at(-1).media.items[0].title, 'Lofi', 'el resto de la tarjeta sigue');
+  assert.equal(last(m.cdp).turns.at(-1).media.brand, 'youtube', 'con su marca');
 });
 
 test('asked(): lo preguntado en el turno en curso (y nada sin turno)', () => {

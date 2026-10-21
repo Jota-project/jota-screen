@@ -144,10 +144,10 @@ const hideOnly = d => `try{window.${LAYERS[d].global}&&window.${LAYERS[d].global
 /** @typedef {{ id: string, kind: string, title: string, detail: string, status: 'run' | 'ok' | 'fail' }} Tool */
 /** @typedef {{ id: number, you: string, youFinal: boolean, jota: string, tools: Tool[], error: boolean, hint: string, media?: Media | null }} Turn */
 /**
- * Tarjeta de contenido del turno (la pone el servidor, no el Gateway): Netflix, por ahora. `list`: lo que se está viendo;
+ * Tarjeta de contenido del turno (la pone el servidor, no el Gateway): Netflix o YouTube (`brand`). `list`: lo que se está viendo;
  * `play`: el título que se va a poner, con su ▶ (`state`: 'idle' → 'press' al pulsarlo). Imágenes por URL absoluta.
  * @typedef {{ title: string, sub: string, frac: number, img: string, still?: string, left?: string }} MediaItem
- * @typedef {{ key: string, kind: 'list' | 'play', state: 'idle' | 'press', items: MediaItem[] }} Media
+ * @typedef {{ key: string, kind: 'list' | 'play', state: 'idle' | 'press', brand: 'netflix' | 'youtube', items: MediaItem[] }} Media
  */
 /** playback: hay una reproducción de verdad (page-poll); null si context() no lo dice. page: la página de la tele
  * (`url`, `stage` = tipo de escenario o null, `idle` = el reposo) para decidir el formato; null si context() no la trae
@@ -214,6 +214,7 @@ function within(p, ms) {
 const newTurn = id => ({ id, you: '', youFinal: false, jota: '', tools: [], error: false, hint: '' }); // media: solo si la hay
 
 const MEDIA_MAX = 4;
+const BRANDS = ['netflix', 'youtube'];   // de quién es la tarjeta (la capa pone su nombre)
 /** ¿La tele está en una página nuestra (el reposo)? Solo ahí van las imágenes de las tarjetas. @param {Look} l */
 const ourPage = l => l.ctx === 'idle' || l.ctx === 'music' || !!(l.page && l.page.idle);
 /** La tarjeta sin sus imágenes. @param {Media} m @returns {Media} */
@@ -228,7 +229,7 @@ function cleanMedia(m) {
     img: url(i.img), still: url(i.still),
   }));
   if (!items.length) return null;
-  return { key: str(m.key, 80) || m.kind, kind: m.kind, state: m.state === 'press' ? 'press' : 'idle', items };
+  return { key: str(m.key, 80) || m.kind, kind: m.kind, state: m.state === 'press' ? 'press' : 'idle', brand: BRANDS.includes(m.brand) ? m.brand : 'netflix', items };
 }
 /** Un turno que algo dijo o hizo (uno cancelado sin nada no se guarda). @param {Turn} t */
 const said = t => !!(t.you || t.jota || t.tools.length || t.media);
