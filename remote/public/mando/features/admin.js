@@ -84,7 +84,7 @@ export const admin = {
       if (r.error) { box.textContent = r.error; return; }
       box.textContent = '';
       const b = document.createElement('b'); b.textContent = r.code;
-      box.append('Código ', b, ` · caduca en ${r.minutes} min y sirve una vez. Ábrelo en el otro dispositivo o escribe el código en «¿Tienes un código de administrador?» de sus Ajustes.`);
+      box.append('Código ', b, ` · caduca en ${r.minutes} min y sirve una vez. Ábrelo en el otro dispositivo o escribe el código en «Tengo un código de administrador» (si ya tiene acceso, en «¿Tienes un código de administrador?» de sus Ajustes).`);
       try { if (navigator.share) await navigator.share({ title: document.title + ' (admin)', url: r.url }); else { await navigator.clipboard.writeText(r.url); pill('Enlace copiado'); } } catch {}
     });
     $('#kickG').addEventListener('click', async () => {
