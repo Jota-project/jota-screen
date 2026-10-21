@@ -198,3 +198,21 @@ test('Netflix: la pestaña adoptada tras reiniciar dice en qué perfil está (si
   await n.profileInfo();
   assert.deepEqual(calls, [], 'ya sabido: no se vuelve a preguntar');
 });
+
+test('Netflix: si la pestaña de fondo está en «¿Quién eres?», entra en el perfil antes de enseñarla', async () => {
+  const order = [];
+  let page = { cur: 'GA', gate: true, u: 'https://www.netflix.com/browse' };
+  const cdp = {
+    pages: new Map([['MAIN', { url: 'http://127.0.0.1:8787/idle.html' }], ['NF', { url: 'https://www.netflix.com/browse' }]]), targetId: 'MAIN',
+    show: async id => { order.push('show:' + id + (page.gate ? ':CON-PANTALLA-DE-PERFILES' : '')); cdp.targetId = id; },
+    newTab: async () => 'X',
+    call: async (m, p) => { if (m === 'Runtime.evaluate') return { result: { value: cdp.targetId === 'NF' ? { u: page.u, old: false, gate: page.gate, cur: page.cur, ps: PROFILES } : undefined } }; if (m === 'Target.attachToTarget') return { sessionId: 'S' }; return {}; },
+    request: async (m, p) => {
+      if (m === 'Page.navigate') { order.push('switch'); page = { cur: 'GA', gate: false, u: 'https://www.netflix.com/browse' }; return {}; }
+      return { result: { value: { ...page, ps: PROFILES } } };
+    },
+  };
+  const n = createNetflix({ cdp, cfg: { NETFLIX_PROFILE: 'Alfonso' }, store: memStore({ profiles: PROFILES }), ...fast });
+  assert.deepEqual(await n.open(), { ok: 1, profile: 'Alfonso' });
+  assert.deepEqual(order, ['switch', 'show:NF'], 'nunca se ve «¿Quién eres?»');
+});

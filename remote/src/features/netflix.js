@@ -106,12 +106,38 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
     if (!ok) await load(ORIGIN + path);
   }
 
+  /**
+   * Antes de enseñar la pestaña de fondo: si está en «¿Quién eres?» (Netflix la vuelve a sacar tras un rato) o en otro
+   * perfil, se entra en el pedido mientras sigue detrás (sesión aparte), así nunca se ve esa pantalla.
+   * @param {string} id @param {string} want
+   */
+  async function ready(id, want) {
+    const g = guidOf(want);
+    if (!g || !cdp.request) return;
+    const req = /** @type {Function} */ (cdp.request);
+    let sid = null;
+    try {
+      ({ sessionId: sid } = await cdp.call('Target.attachToTarget', { targetId: id, flatten: true }, true));
+      const probe = async () => { try { return (await req('Runtime.evaluate', { expression: PROBE, returnByValue: true }, sid))?.result?.value; } catch { return null; } };
+      const p = await probe();
+      if (!p || (!p.gate && p.cur === g)) return;
+      await req('Page.navigate', { url: `${ORIGIN}/SwitchProfile?tkn=${g}` }, sid);
+      const t0 = now();
+      for (;;) {
+        await wait(150);
+        const q = await probe();
+        if ((q && !q.gate && q.cur === g && q.u && !/SwitchProfile/i.test(q.u)) || now() - t0 > 10000) break;
+      }
+      tabGuid = g;
+    } catch {} finally { if (sid) cdp.call('Target.detachFromTarget', { sessionId: sid }, true).catch(() => {}); }
+  }
+
   /** Deja la pestaña de Netflix delante, con la web cargada y en el perfil pedido. */
   async function front(profile) {
     const want = (profile || defaultProfile()).trim();
     let p = null;
     if (alive()) {
-      if (!isActive()) await cdp.show(/** @type {string} */ (tab));
+      if (!isActive()) { await ready(/** @type {string} */ (tab), want); await cdp.show(/** @type {string} */ (tab)); }
       try { await ev(UNHIDE); p = await ev(PROBE); } catch {}
       if (!p || !isNetflix(p.u)) p = null;                       // congelada o fuera de Netflix: se recarga
     } else {
