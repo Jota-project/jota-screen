@@ -147,10 +147,17 @@ module.exports = function createYoutube({ cdp, nav, key = () => {}, self = '', l
     if (r && r.error) return r;
     let st = await until(PLAYING(pick.id), v => v && v.st === 2, 12000);
     const playing = !!st && st.st === 2, tPlay = now() - t0;
-    // pantalla completa: la «f» del reproductor, cuando ya suena (antes la web aún no la atiende); si no entra, otra vez
-    for (let i = 0; playing && i < 2 && !(st && st.fs); i++) {
-      key('f');
-      st = { ...st, ...(await until(PLAYING(pick.id), v => v && v.fs, 1500)) };
+    // pantalla completa: la «f» del reproductor, cuando ya suena (antes la web aún no la atiende); si no entra, otra vez.
+    // Sin esperarla: el agente contesta en cuanto suena
+    if (playing && !st.fs) {
+      (async () => {
+        for (let i = 0; i < 2; i++) {
+          key('f');
+          const f = await until(PLAYING(pick.id), v => v && v.fs, 1500);
+          if (f && f.fs) return;
+        }
+        log('youtube: no ha entrado la pantalla completa');
+      })().catch(() => {});
     }
     log(`youtube: «${q || pick.id}» → ${pick.id} «${pick.title}» ${playing ? 'suena' : 'no arranca'}${st && st.ad ? ' (anuncio)' : ''}, ${now() - t0} ms (encontrado ${tFound}, navega ${tNav}, suena ${tPlay})`);
     return {
