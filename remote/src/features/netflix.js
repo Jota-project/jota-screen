@@ -24,8 +24,9 @@ const GO = p => `(()=>{if(location.origin!==${JSON.stringify(ORIGIN)}||!window.n
 const CARDS = q => `(()=>{const n=s=>String(s||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();const out=[];for(const a of document.querySelectorAll('a[data-uia="standard-card"][href*="jbv="]')){const u=new URL(a.getAttribute('href'),location.href);if(n(u.searchParams.get('q'))!==${JSON.stringify(norm(q))})continue;const id=u.searchParams.get('jbv');if(id&&!out.some(x=>x.id===id))out.push({id,title:a.getAttribute('aria-label')||''});if(out.length>=8)break}return out})()`;
 // 2 = vídeo en marcha, 1 = hay vídeo (si está listo y en pausa, se le da a play), 0 = aún no hay vídeo
 const PLAYING = `(()=>{const v=document.querySelector('video');if(!v)return 0;if(v.currentTime>0&&!v.paused)return 2;if(v.paused&&v.readyState>=3)v.play().catch(()=>{});return 1})()`;
-// al dejarla en segundo plano: pausa lo que suene y no deja que nada vuelva a sonar hasta que se enseñe otra vez
-const HIDE = `(()=>{window.__tvHidden=true;if(!window.__tvGuard){window.__tvGuard=1;document.addEventListener('play',e=>{const m=e.target;if(window.__tvHidden&&m&&m.pause)m.pause()},true)}for(const m of document.querySelectorAll('video,audio'))m.pause();return 1})()`;
+// al dejarla en segundo plano: pausa lo que suene (con el reproductor de Netflix; si no, el <video>) y no deja que nada
+// vuelva a sonar hasta que se enseñe otra vez
+const HIDE = `(()=>{window.__tvHidden=true;if(!window.__tvGuard){window.__tvGuard=1;document.addEventListener('play',e=>{const m=e.target;if(window.__tvHidden&&m&&m.pause)m.pause()},true)}try{const vp=netflix.appContext.state.playerApp.getAPI().videoPlayer;for(const id of vp.getAllPlayerSessionIds())vp.getVideoPlayerBySessionId(id).pause()}catch{}for(const m of document.querySelectorAll('video,audio'))m.pause();return 1})()`;
 const UNHIDE = 'window.__tvHidden=false';
 
 /**
@@ -224,7 +225,7 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
     commands: [{
       t: 'netflix',
       perm: (m, P, ctx) => (!P.web ? 'Abrir webs no está permitido'
-        : m.op === 'setprofile' && ctx.dev && ctx.dev.role === 'guest' ? 'Los invitados no pueden cambiar el perfil' : null),
+        : (m.op === 'setprofile' || m.profile) && ctx.dev && ctx.dev.role === 'guest' ? 'Los invitados no pueden elegir el perfil' : null),
       run: m => run(m),
     }],
   };

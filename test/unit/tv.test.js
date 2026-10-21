@@ -100,6 +100,21 @@ test('CDP: varias pestañas: traer una al frente, abrir otra y un solo enganche 
   cdp.stop(); await fake.close();
 });
 
+test('CDP: al conectar con Netflix cargada detrás, se engancha la pestaña que se ve', async () => {
+  const fake = await startFakeCdp({
+    pages: [{ targetId: 'P1', type: 'page', url: 'http://127.0.0.1:8787/idle.html', title: 'Salón' }, { targetId: 'P2', type: 'page', url: 'https://www.netflix.com/browse', title: 'Netflix' }],
+    evaluate: (e, m) => (e === 'document.visibilityState' ? (m.sessionId === 'S-P2' ? 'hidden' : 'visible') : undefined),
+  });
+  const cdp = createCdp({ port: fake.port, log: { info() {}, error() {} }, timeoutMs: 500, retryMs: 50 });
+  try {
+    cdp.connect();
+    await fake.waitFor(m => m.method === 'Target.attachToTarget' && m.params.targetId === 'P2');
+    for (let i = 0; i < 100 && cdp.session !== 'S-P1'; i++) await new Promise(r => setTimeout(r, 10));
+    await new Promise(r => setTimeout(r, 50));
+    assert.equal(cdp.targetId, 'P1'); assert.equal(cdp.session, 'S-P1');
+  } finally { cdp.stop(); await fake.close(); }
+});
+
 test('tokens de la tele: la isla los lleva delante y tv-island.js no repite sus colores', () => {
   const fs = require('node:fs');
   const os = require('node:os');

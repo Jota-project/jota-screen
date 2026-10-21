@@ -108,7 +108,7 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
           const t = pr.targetInfo;
           if (!t || t.type !== 'page' || /^(devtools|chrome-extension):/.test(t.url)) return;
           this.pages.set(t.targetId, t);
-          if (m.method === 'Target.targetCreated' || !this.targetId) this.activate(t.targetId);
+          if (m.method === 'Target.targetCreated' || !this.targetId) this.autoActivate(t.targetId);
           if (t.targetId === this.targetId) h.onPage(t);
           break;
         }
@@ -156,6 +156,25 @@ function createCdp({ port, log, hooks = {}, retryMs = 2000, timeoutMs = 5000 }) 
         } catch {}
       })();
       try { await p; } finally { if (this.attaching === p) this.attaching = null; }
+    },
+
+    /**
+     * Enganche automático (al conectar, Chrome avisa de todas las pestañas; o se abre una nueva). Si la enganchada no se
+     * ve (p. ej. Netflix cargada detrás), se busca la que se ve: la tele no debe quedar mandando a una pestaña oculta.
+     */
+    async autoActivate(id) {
+      const hidden = async () => {
+        try { return (await this.call('Runtime.evaluate', { expression: 'document.visibilityState', returnByValue: true }))?.result?.value === 'hidden'; }
+        catch { return false; }
+      };
+      await this.activate(id);
+      if (this.targetId !== id || !this.session || !(await hidden())) return;
+      for (const other of [...this.pages.keys()]) {
+        if (other === id || this.targetId !== id) continue;
+        await this.activate(other);
+        if (this.targetId !== other || !this.session || !(await hidden())) return;
+        id = other;
+      }
     },
 
     /** Trae una pestaña al frente (en el kiosco se ve al instante) y la engancha como activa. */
