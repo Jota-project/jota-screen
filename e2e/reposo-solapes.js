@@ -41,7 +41,7 @@ const ART = '<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600"><d
 const TYPES = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8' };
 const srv = http.createServer((q, r) => {
   const u = q.url.split('?')[0];
-  if (u.startsWith('/idle/art')) { r.writeHead(200, { 'content-type': 'image/svg+xml' }); return r.end(ART); }
+  if (u.startsWith('/idle/art') || u.startsWith('/idle/nfx')) { r.writeHead(200, { 'content-type': 'image/svg+xml' }); return r.end(ART); }
   const f = path.join(PUB, u === '/' ? 'idle.html' : u);
   if (!f.startsWith(PUB) || !fs.existsSync(f) || !fs.statSync(f).isFile()) { r.writeHead(404); return r.end(); }
   r.writeHead(200, { 'content-type': TYPES[path.extname(f)] || 'application/octet-stream', ...(IDLE_CSP && f.endsWith('.html') ? { 'content-security-policy': IDLE_CSP } : {}) });
@@ -60,6 +60,12 @@ const VARIANTS = [
   { n: 'tarde', now: at('2026-09-30T20:48:00+02:00'), d: now => ({ profile: 'evening', weather: wx(now, { code: 61, temp: 18, rainNext: 60 }),
     music: song(now, { title: 'Un título de canción muy largo que no cabe de ninguna manera', artist: 'Florence + The Machine' }), acts: [timer(now), wash(now)] }) },
   { n: 'noche', now: at('2026-10-19T23:16:00+02:00'), d: now => ({ profile: 'night', weather: wx(now), music: song(now, { playing: false }), acts: [] }) },
+  // «Seguir viendo» de Netflix (sus propias escenas): títulos y capítulos largos, una película y dos actividades
+  { n: 'netflix', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ profile: 'evening', weather: wx(now), music: null, acts: [timer(now), wash(now)], watching: { items: [
+    { id: 1, kind: 'show', title: 'Una serie con un título larguísimo que no cabe en una línea', pos: 1200, dur: 3300, ep: { s: 12, e: 104, title: 'Un capítulo con un título también muy largo para ver si parte bien', still: '/idle/nfx?u=1' }, card: '/idle/nfx?u=2', story: '/idle/nfx?u=3' },
+    { id: 2, kind: 'show', title: 'Otra serie de prueba con nombre largo', pos: 0, dur: 1500, ep: { s: 1, e: 2, title: 'Dos', still: '/idle/nfx?u=4' }, card: '/idle/nfx?u=5', story: null },
+    { id: 3, kind: 'movie', title: 'Una película', pos: 3000, dur: 6000, ep: null, card: '/idle/nfx?u=6', story: '/idle/nfx?u=7' },
+  ] } }) },
 ];
 const LAYOUTS = ['margen', 'zonas', 'apilada'];
 
@@ -92,7 +98,7 @@ function measure() {
       const s = getComputedStyle(el);
       if (s.visibility === 'hidden') continue;
       const texts = [...el.childNodes].filter(n => n.nodeType === 3 && n.textContent.trim());
-      const solid = el.matches('.art, .act svg, .pb .tr');
+      const solid = el.matches('.art, .act svg, .pb .tr, .nf-hero, .nf-still, .nf-cimg');
       if (!texts.length && !solid) continue;
       let b = box(el.getBoundingClientRect());
       if (texts.length) {

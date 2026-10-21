@@ -303,7 +303,7 @@ function watching() {
     const bar = document.createElement('span'); bar.className = 'nf-bar';
     const f = document.createElement('i'); f.style.transform = `scaleX(${frac(o).toFixed(3)})`; bar.append(f);
     im.append(bar);
-    const cs = document.createElement('div'); cs.className = 'nf-cs'; cs.textContent = o.title + ' · ' + epLabel(o);
+    const cs = document.createElement('div'); cs.className = 'nf-cs'; cs.textContent = o.title + (o.ep ? ' · ' + epLabel(o) : '');
     c.append(im, cs); row.append(c);
     swapImg(im, o.card || o.story);
   }
