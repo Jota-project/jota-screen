@@ -149,11 +149,13 @@ netflix.extend({ ...nfxWatch.ops,
     return r;
   } });
 // YouTube: el vídeo se busca en una pestaña de fondo y se pone en la de siempre (por control.nav); con la conversación en
-// el panel, antes su tarjeta con la miniatura y su ▶ (más corto que en Netflix: la búsqueda ya ha llevado su rato)
+// el panel, antes su tarjeta con la miniatura y su ▶. La búsqueda ya ha llevado su rato: se navega en cuanto la tarjeta
+// se ve, y el ▶ se pulsa mientras YouTube carga (el reposo, con la tarjeta, sigue a la vista hasta que se pinta)
 const youtube = createYoutube({ cdp, nav: u => control.nav(u), key: k => keyboard.key(k), self: SELF, log: log.info,
   beforePlay: async card => {
     if (!talkView.media(card)) return;
-    await pause(700); talkView.mediaState('press'); await pause(300);
+    setTimeout(() => talkView.mediaState('press'), 700).unref?.();
+    await pause(400);
   } });
 // tv_open / tv_open_app con `layout`: Jota elige el formato de la conversación para la página que abre. Abrir la misma
 // URL (o recargar) es un documento nuevo sin cambio de URL: onPage no lo ve y se avisa desde aquí

@@ -143,10 +143,13 @@ module.exports = function createYoutube({ cdp, nav, key = () => {}, self = '', l
     try { await beforePlay(card(pick)); } catch (e) { log('youtube: ' + e.message); }
     const r = await nav(`${ORIGIN}/watch?v=${pick.id}`);
     if (r && r.error) return r;
-    let st = await until(PLAYING(pick.id), v => v && v.st >= 1, 8000);
-    if (st && st.st >= 1 && !st.fs) key('f');                                // pantalla completa (la «f» del reproductor)
-    if (!st || st.st !== 2) st = await until(PLAYING(pick.id), v => v && v.st === 2, 8000);
+    let st = await until(PLAYING(pick.id), v => v && v.st === 2, 12000);
     const playing = !!st && st.st === 2;
+    // pantalla completa: la «f» del reproductor, cuando ya suena (antes la web aún no la atiende); si no entra, otra vez
+    for (let i = 0; playing && i < 2 && !(st && st.fs); i++) {
+      key('f');
+      st = { ...st, ...(await until(PLAYING(pick.id), v => v && v.fs, 1500)) };
+    }
     log(`youtube: «${q || pick.id}» → ${pick.id} «${pick.title}» ${playing ? 'suena' : 'no arranca'}${st && st.ad ? ' (anuncio)' : ''}, ${now() - t0} ms`);
     return {
       ok: 1, id: pick.id, title: (st && st.title) || pick.title, playing, ...(st && st.ad ? { ad: true } : {}), ms: now() - t0,
