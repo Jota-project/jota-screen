@@ -72,11 +72,18 @@ async function pgContinue() {
   });
 }
 
-/** Imágenes grandes de cada título: ambiente (StoryArt) y fotograma del episodio. Consultas persistidas de la web. */
-async function pgArt(items) {
-  const js = performance.getEntriesByType('resource').map(e => e.name).find(u => /akiraClient.*\.js/.test(u));
-  const src = js ? await (await fetch(js)).text() : '';
-  const qid = name => { const m = src.match(new RegExp('\\.' + name + 'Document=\\{__meta__:\\{q:"([0-9a-f-]{36})"')); return m ? m[1] : null; };
+/**
+ * Imágenes grandes de cada título: ambiente (StoryArt) y fotograma del episodio. Consultas persistidas de la web: sus id
+ * salen del código de la web nueva (akiraClient); `known` los trae de una pasada anterior (la página de Actividad es de
+ * la web vieja y no lo carga).
+ */
+async function pgArt(items, known) {
+  let qid = name => (known && known[name]) || null;
+  if (!known) {
+    const js = performance.getEntriesByType('resource').map(e => e.name).find(u => /akiraClient.*\.js/.test(u));
+    const src = js ? await (await fetch(js)).text() : '';
+    qid = name => { const m = src.match(new RegExp('\\.' + name + 'Document=\\{__meta__:\\{q:"([0-9a-f-]{36})"')); return m ? m[1] : null; };
+  }
   const gql = async (op, id, variables) => {
     if (!id) return null;
     const r = await fetch('/graphql', { method: 'POST', credentials: 'include', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ operationName: op, variables, extensions: { persistedQuery: { id, version: 102 } } }) });
@@ -103,7 +110,7 @@ async function pgArt(items) {
       if (node) { const s = imgs(node.artwork ? { a: node.artwork } : node).sort((x, y) => y.width - x.width)[0]; if (s) it.ep.still = s.url; if (!it.dur && node.displayRuntimeSec) it.dur = node.displayRuntimeSec; }
     } catch {}
   }));
-  return { items, ids: { art: !!qArt, eps: !!qEps } };
+  return { items, ids: { art: !!qArt, eps: !!qEps }, known: { VideoDetailModalCachedArtworkQuery: qArt, PreviewModalEpisodeSelectorSeasonEpisodes: qEps } };
 }
 
 /** Historial de la página «Actividad»: fecha (dd/mm/aa), id del episodio o la película, serie, temporada y capítulo. */
@@ -171,7 +178,7 @@ async function readAll(tab, { name = '', guid = null, learn = () => {}, canSwitc
   }
   if (extra.length) {
     try {
-      const got = (await tab.ev(pgArt, extra)).items;
+      const got = (await tab.ev(pgArt, extra, art.known)).items;
       for (const g of got) for (const h of history) if (norm(h.title) === norm(g.title)) { h.card = g.card || null; h.story = g.story || null; }
     } catch {}
   }
