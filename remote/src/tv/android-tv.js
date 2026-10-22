@@ -34,48 +34,62 @@ const TV_KEYS = Object.freeze({
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-/** Conecta al puerto local de monkey; arranca en 1-3 s, así que se reintenta. @param {number} port */
-async function connectRetry(port) {
-  for (let i = 0; ; i++) {
-    try { return await new Promise((res, rej) => { const s = net.connect(port, '127.0.0.1', () => res(s)); s.once('error', rej); }); }
-    catch (e) { if (i >= 8) throw e; await sleep(500); }
-  }
-}
-
 /** Sesión monkey: `press KEYCODE_X` por un socket (~10 ms) en vez de `input keyevent` (1-2 s). Se rehace en la siguiente tecla si cae. */
 function monkeySession(/** @type {(args: string[]) => Promise<string>} */ run, /** @type {string} */ addr) {
-  /** @type {Promise<{ sock: net.Socket, proc: import('node:child_process').ChildProcess, waiting: Array<(l: string) => void> }> | null} */
+  /** @typedef {{ sock: net.Socket | null, proc: import('node:child_process').ChildProcess, waiting: Array<(l: string | null) => void>, dead: boolean, ready: boolean, kill: () => void }} Sess */
+  /** @type {Promise<Sess> | null} */
   let sess = null;
+  /** @type {Sess | null} */
+  let cur = null;
   let tail = Promise.resolve();
-  const close = () => { const s = sess; sess = null; s?.then(x => { x.sock.destroy(); x.proc.kill(); }, () => {}); };
   const open = async () => {
     const port = (await run(['forward', 'tcp:0', 'tcp:1080'])).trim();
     const proc = spawn('adb', ['-s', addr, 'shell', 'monkey', '--port', '1080'], { stdio: 'ignore' });
-    proc.on('exit', close);
-    try {
-      const sock = await connectRetry(Number(port));
-      const x = { sock, proc, waiting: /** @type {Array<(l: string) => void>} */ ([]) };
+    /** @type {Sess} */
+    const s = { sock: null, proc, waiting: [], dead: false, ready: false, kill() {
+      if (s.dead) return;
+      s.dead = true; s.sock?.destroy(); proc.kill();
+      run(['forward', '--remove', 'tcp:' + port]).catch(() => {});
+      for (const f of s.waiting.splice(0)) f(null);   // las teclas pendientes fallan ya
+      if (cur === s) { cur = null; sess = null; }
+    } };
+    cur = s;
+    proc.on('exit', s.kill); proc.on('error', s.kill);
+    // El puerto local acepta TCP en cuanto existe el forward, aunque monkey no escuche aún: solo vale cuando contesta a una sonda.
+    for (const end = Date.now() + 15000; !s.dead; await sleep(400)) {
+      if (Date.now() > end) break;
+      const sock = await new Promise(res => { const c = net.connect(Number(port), '127.0.0.1', () => res(c)); c.once('error', () => res(null)); });
+      if (!sock) continue;
+      s.sock = sock;
       let buf = '';
-      sock.on('data', d => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { x.waiting.shift()?.(buf.slice(0, i)); buf = buf.slice(i + 1); } });
-      sock.on('close', close);
-      return x;
-    } catch (e) { proc.kill(); throw e; }
+      sock.on('data', d => { buf += d; let i; while ((i = buf.indexOf('\n')) >= 0) { s.waiting.shift()?.(buf.slice(0, i)); buf = buf.slice(i + 1); } });
+      sock.on('error', () => { if (s.ready) s.kill(); });
+      sock.on('close', () => { if (s.ready) s.kill(); });
+      const probe = new Promise(res => s.waiting.push(res));
+      sock.write('getvar build.version.release\n');
+      const l = await Promise.race([probe, sleep(1000).then(() => null)]);
+      if (typeof l === 'string' && l.startsWith('OK')) { s.ready = true; return s; }
+      s.waiting.length = 0; sock.destroy(); s.sock = null;   // monkey aún arrancando
+    }
+    s.kill();
+    throw new Error('monkey no arranca');
   };
   return {
     /** @param {string} code */
     press(code) {
       const go = async () => {
-        const x = await (sess ||= open());
+        const x = await (sess ||= open().catch(e => { sess = null; throw e; }));
+        if (x.dead || !x.sock) throw new Error('sesión caída');
         const reply = new Promise(res => x.waiting.push(res));
         x.sock.write(`press ${code}\n`);
         const l = await Promise.race([reply, sleep(2000).then(() => 'ERROR timeout')]);
-        if (!/^OK/.test(String(l))) { close(); throw new Error(String(l)); }
+        if (!/^OK/.test(String(l))) { x.kill(); throw new Error(String(l)); }
       };
       const r = tail.then(go, go);
       tail = r.catch(() => {});
       return r;
     },
-    close,
+    close() { cur?.kill(); },
   };
 }
 
@@ -115,7 +129,8 @@ function createAndroidTv({ addr, input, log, adb }) {
     toggleMute: () => sh('input keyevent KEYCODE_VOLUME_MUTE'),
     async step(/** @type {number} */ n, max = 100) {
       const { vol } = await status();
-      return set(Math.max(0, Math.min(max, (vol ?? 0) + n)));
+      if (vol === null) throw new Error('La tele no responde');   // sin volumen conocido no se fija nada
+      return set(Math.max(0, Math.min(max, vol + n)));
     },
     set,
     status,
@@ -123,6 +138,7 @@ function createAndroidTv({ addr, input, log, adb }) {
     toJ,
     toTv: () => key('home'),
     key,
+    close: () => a.keys.close(),
   };
 }
 

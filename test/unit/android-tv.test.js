@@ -111,3 +111,21 @@ test('tele: unauthorized deja el aviso en el registro', async () => {
   await assert.rejects(tv.status(), /La tele no responde/);
   assert.match(logs[0], /ADB sin autorizar/);
 });
+
+test('tele: step con volumen desconocido lanza y no fija nada', async () => {
+  const t = mk(22, '  mWakefulness=Awake\n');
+  await assert.rejects(t.tv.step(1), /La tele no responde/);
+  assert.deepEqual(sets(t.adb), []);
+});
+
+test('tele: órdenes de mute, set, home y toJ, y close() cierra las teclas', async () => {
+  const { adb, tv } = mk(22);
+  let closed = 0; adb.keys.close = () => closed++;
+  await tv.toggleMute(); await tv.set(40); await tv.toJ(); await tv.toTv(); tv.close();
+  assert.deepEqual(adb.runs.map(r => r[1]), [
+    'input keyevent KEYCODE_VOLUME_MUTE',
+    'cmd media_session volume --stream 3 --set 40 --show',
+    'am start -a android.intent.action.VIEW -d ' + passthroughUri(TV_INPUT)]);
+  assert.deepEqual(adb.pressed, ['KEYCODE_HOME']);
+  assert.equal(closed, 1);
+});
