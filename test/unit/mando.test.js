@@ -175,7 +175,7 @@ test('mando: hoja de ajustes: cada #id de settings, idle y admin existe, cada fi
   assert.doesNotMatch(html, /idAgDes|Diseño nuevo|aria-disabled/);
   // todos los segmentos: radiogroup con nombre y radios (aria-pressed en un radio no es ARIA válido)
   const groups = [...sheet.matchAll(/<div class="(?:seg|pick)" id="(\w+)" role="radiogroup" aria-label="[^"]+">([\s\S]*?)<\/div>/g)];   // dentro de un grupo no hay <div>
-  assert.deepEqual(groups.map(g => g[1]).sort(), ['acAgent', 'acMusic', 'acWho', 'idGlass', 'idLay', 'idMode', 'segIntr', 'segTheme']);
+  assert.deepEqual(groups.map(g => g[1]).sort(), ['acAgent', 'acMusic', 'acWho', 'idGlass', 'idLay', 'idMode', 'segIntr', 'segTheme', 'sgLook', 'sgMax']);
   for (const [, id, body] of groups) {
     const bs = body.match(/<button[^>]*>/g);
     assert.ok(bs.every(b => b.includes('role="radio"') && !b.includes('aria-pressed')), id);

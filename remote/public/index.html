@@ -368,8 +368,10 @@
       <option value="0">Nunca</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="60">1 h</option></select></div>
     <div class="fld"><span>Menos movimiento<small>Las luces del fondo se quedan quietas</small></span><button class="sw" id="idCalm" aria-pressed="false" aria-label="Menos movimiento"></button></div>
     <div class="sh">Seguir viendo</div>
-    <div class="fld"><span>Música<small>Lo que suena en Spotify</small></span><button class="sw" id="idMus" aria-pressed="true" aria-label="Música en el reposo"></button></div>
-    <div class="fld"><span>Netflix<small>Las series a medias, con sus imágenes</small></span><button class="sw" id="idNfx" aria-pressed="false" aria-label="Seguir viendo de Netflix"></button></div>
+    <div class="fld"><span>En el reposo<small>Lo que tienes a medias. El orden es la prioridad</small></span><button class="sw" id="sgOn" aria-pressed="false" aria-label="Seguir viendo"></button></div>
+    <div class="sgSrc" id="sgSrc" role="list" aria-label="Fuentes, por orden de prioridad"></div>
+    <div class="fld"><span>A la vez<small>Cuántas fuentes salen juntas</small></span><div class="seg" id="sgMax" role="radiogroup" aria-label="Fuentes a la vez"><button role="radio" data-v="1">1</button><button role="radio" data-v="2">2</button><button role="radio" data-v="3">3</button></div></div>
+    <div class="fld"><span>Aspecto<small id="sgLookH"></small></span><div class="seg" id="sgLook" role="radiogroup" aria-label="Aspecto de Seguir viendo"><button role="radio" data-v="discreto">Discreto</button><button role="radio" data-v="destacado">Destacado</button><button role="radio" data-v="auto">Según el momento</button></div></div>
     <div class="sh">Horario y tiempos</div>
     <div class="fld wrap"><span>Hora de dormir<small>Acostarse · levantarse. De noche el reposo queda en negro y tenue</small></span>
       <div class="tms"><input type="time" class="tm" id="idBed" aria-label="Acostarse"><input type="time" class="tm" id="idWake" aria-label="Levantarse"></div></div>

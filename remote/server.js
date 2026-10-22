@@ -34,6 +34,7 @@ const createSpotify = require('./src/features/spotify');
 const createIdle = require('./src/features/idle');
 const createNetflix = require('./src/features/netflix');
 const { createWatch, intentOf } = require('./src/features/netflix-watch');
+const createYoutube = require('./src/features/youtube');
 const { createJsonStore } = require('./src/core/json-store');
 const { createCommands } = require('./src/transport/commands');
 const { createSessions } = require('./src/transport/sessions');
@@ -147,6 +148,15 @@ netflix.extend({ ...nfxWatch.ops,
     log.info(`netflix: «ponme lo último»: ${r.error || r.last}`);
     return r;
   } });
+// YouTube: el vídeo se busca en una pestaña de fondo y se pone en la de siempre (por control.nav); con la conversación en
+// el panel, antes su tarjeta con la miniatura y su ▶. La búsqueda ya ha llevado su rato: se navega en cuanto la tarjeta
+// se ve, y el ▶ se pulsa mientras YouTube carga (el reposo, con la tarjeta, sigue a la vista hasta que se pinta)
+const youtube = createYoutube({ cdp, nav: u => control.nav(u), key: k => keyboard.key(k), self: SELF, log: log.info,
+  beforePlay: async card => {
+    if (!talkView.media(card)) return;
+    setTimeout(() => talkView.mediaState('press'), 650).unref?.();
+    await pause(900);   // con menos no llega a verse en el reposo (probado en la tele: con 400 ms salió ya sobre YouTube)
+  } });
 // tv_open / tv_open_app con `layout`: Jota elige el formato de la conversación para la página que abre. Abrir la misma
 // URL (o recargar) es un documento nuevo sin cambio de URL: onPage no lo ve y se avisa desde aquí
 const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave(), netflix,
@@ -154,7 +164,7 @@ const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio,
 const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: () => idle });
 const idle = createIdle({
   PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
-  stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info, nfx: () => nfxWatch.forIdle(),
+  stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info, nfx: () => nfxWatch.forIdle(), nfxDominant: d => nfxWatch.dominant(d),
 });
 // J Gateway (voz): sin TV_GATEWAY_URL el cliente no se crea y todo se comporta como un Gateway caído
 const gw = CFG.GATEWAY_URL
@@ -189,7 +199,7 @@ const netflixCommands = netflix.commands.map(c => ({ ...c, run: (/** @type {any}
   if (m && (m.op === 'open' || m.op === 'play')) talkView.navigating();
   return c.run(m, ctx);
 } }));
-for (const list of [talk.commands, netflixCommands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
+for (const list of [talk.commands, netflixCommands, youtube.commands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
   createAccessCommands({ acc, meOf }), tv.commands]) commands.register(list);
 
 /** Una orden del mando (sock), de la API o del MCP (ctx.dev), con los permisos de su dispositivo. */
@@ -212,6 +222,7 @@ const handler = createHttp({
     ...stage.routes,
     ...idle.routes,
     ...nfxWatch.routes,
+    ...youtube.routes,
   ],
   fallback: statics.serve,
 });

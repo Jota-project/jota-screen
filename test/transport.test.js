@@ -119,7 +119,7 @@ test('escenario: la página del agente solo la puede pedir la propia tele, con s
   const page = await s.get(p);
   assert.equal(page.status, 200);
   const html = await page.text();
-  assert.match(html, /^<script src="\/tv-stage\.js"><\/script><h1>Hola salón<\/h1>/);
+  assert.match(html, /^<script src="\/tv-stage\.js"><\/script><link rel="icon" href="data:,"><h1>Hola salón<\/h1>/);
   assert.match(page.headers.get('content-security-policy'), /connect-src 'self'/);
   assert.equal((await s.get(p, { headers: viaProxy })).status, 403);
   assert.equal((await s.get('/stage/pnoexiste.html')).status, 404);

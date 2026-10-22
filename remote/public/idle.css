@@ -178,3 +178,54 @@ body.night,body.cinema{--text:#808080;--clock:#7a7a7a;--clock2:#767676;--soft:#7
 .nf-cs{font-size:calc(24 * var(--s));color:var(--soft);margin-top:calc(12 * var(--s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nf-more:empty,.nf-row:empty{display:none}
 .night #wNfx,.cinema #wNfx,.dim #wNfx{opacity:0!important}
+
+/* ── «Seguir viendo» con varias fuentes: un bloque por fuente. La imagen mide --iw px de la tele (nunca más que su
+   original: lo calcula el JS), el texto se adapta; delante (lead) la imagen grande con el texto encima o al lado */
+.sg>.wi{display:flex;max-width:100%}
+.sg-c{--dot:#888;display:flex;align-items:center;gap:calc(32 * var(--s));min-width:0;max-width:100%}
+.sg[data-dir=rev] .sg-c{flex-direction:row-reverse;text-align:right}
+.sg-c[data-size=side]{flex-direction:column;align-items:flex-start;gap:calc(26 * var(--s))}
+.sg[data-dir=rev] .sg-c[data-size=side]{flex-direction:column;align-items:flex-end}
+.sg-c[data-cap=over]{position:relative}
+.sg-img{flex:none;position:relative;width:calc(var(--iw) * var(--s));max-width:100%;border-radius:calc(22 * var(--s));overflow:hidden;background:var(--tv-veil);
+  box-shadow:0 calc(22 * var(--s)) calc(56 * var(--s)) rgba(0,0,0,.42),0 0 0 1px rgba(246,243,240,.06)}
+.sg-c[data-size=lead] .sg-img{border-radius:calc(28 * var(--s))}
+.sg-c[data-shape=wide] .sg-img{aspect-ratio:16/9}
+.sg-c[data-shape=square] .sg-img{aspect-ratio:1}
+.sg-img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:opacity 1.2s}
+.sg-c[data-cap=over] .sg-img::after{content:"";position:absolute;inset:0;background:linear-gradient(to top,rgba(18,14,24,.94) 0%,rgba(18,14,24,.7) 32%,rgba(18,14,24,0) 64%)}
+.sg-c[data-cap=over] .sg-m{text-align:left;position:absolute;z-index:1;left:calc(44 * var(--s));right:calc(44 * var(--s));bottom:calc(38 * var(--s))}
+.sg-m{min-width:0;flex:1 1 auto;max-width:calc(640 * var(--s))}
+.sg-c[data-size=side] .sg-m{max-width:100%;width:calc(var(--iw) * var(--s))}
+.sg-k{display:flex;align-items:center;gap:calc(12 * var(--s));font-size:calc(24 * var(--s));font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--soft);white-space:nowrap}
+.sg[data-dir=rev] .sg-k{justify-content:flex-end}
+.sg-c[data-cap=over] .sg-k{justify-content:flex-start}
+.sg-k span{overflow:hidden;text-overflow:ellipsis}
+.sg-k i{flex:none;width:calc(12 * var(--s));height:calc(12 * var(--s));border-radius:50%;background:var(--dot);box-shadow:0 0 calc(14 * var(--s)) var(--dot)}
+.sg-t{font-family:var(--serif);font-weight:420;font-variation-settings:'opsz' 144;font-size:calc(46 * var(--s));line-height:1.08;letter-spacing:-.01em;margin-top:calc(12 * var(--s));
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;text-wrap:balance}
+.sg-c[data-size=lead] .sg-t{font-size:calc(72 * var(--s));line-height:1}
+.sg-c[data-size=row] .sg-t{font-size:calc(40 * var(--s))}
+.sg-s{font-size:calc(28 * var(--s));color:var(--soft);margin-top:calc(14 * var(--s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sg-c[data-size=row] .sg-s{font-size:calc(26 * var(--s))}
+.sg-bar{display:block;height:calc(6 * var(--s));border-radius:var(--tv-track-radius);background:var(--track);overflow:hidden}
+.sg-img .sg-bar{position:absolute;z-index:1;left:0;right:0;bottom:0;border-radius:0;height:calc(5 * var(--s));background:rgba(246,243,240,.22)}
+.sg-m .sg-bar{margin-top:calc(20 * var(--s));max-width:calc(300 * var(--s))}
+.sg-bar i{display:block;height:100%;background:var(--dot);transform-origin:left;transform:scaleX(0)}
+.night .sg,.cinema .sg,.dim .sg{opacity:0!important}
+
+/* aspecto discreto: fila de tarjetas pequeñas de Netflix y piezas pequeñas (tile: en vertical; mini: en fila) */
+.sg-shelf{display:flex;flex-direction:column;gap:calc(18 * var(--s));min-width:0}
+.sg[data-dir=rev] .sg-shelf{align-items:flex-end}
+.sg-cards{display:flex;gap:calc(32 * var(--s))}
+.sg-card{flex:none;width:calc(var(--iw) * var(--s));min-width:0}
+.sg-card .sg-img{border-radius:calc(16 * var(--s));aspect-ratio:16/9}
+.sg-ct{font-size:calc(28 * var(--s));font-weight:500;margin-top:calc(12 * var(--s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sg-cs{font-size:calc(24 * var(--s));color:var(--soft);margin-top:calc(4 * var(--s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sg-c[data-size=tile]{flex-direction:column;align-items:flex-start;gap:calc(20 * var(--s))}
+.sg[data-dir=rev] .sg-c[data-size=tile]{flex-direction:column;align-items:flex-end}
+.sg-c[data-size=tile] .sg-m{max-width:100%}
+.sg-c[data-size=tile] .sg-t,.sg-c[data-size=mini] .sg-t{font-size:calc(36 * var(--s))}
+.sg-c[data-size=tile] .sg-s,.sg-c[data-size=mini] .sg-s{font-size:calc(24 * var(--s))}
+.sg-c[data-size=mini]{gap:calc(24 * var(--s))}
+.sg-c[data-size=mini] .sg-img{border-radius:calc(16 * var(--s))}

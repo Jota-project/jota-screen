@@ -19,11 +19,17 @@ La tele es un Chrome en modo kiosco en el servidor de jota-screen. Se maneja con
 - Consúltalo cada vez que pregunten, aunque ya lo hayas dicho antes: el dato cambia y, con la conversación en la tele, la consulta enseña la tarjeta con las imágenes. Si parece viejo (mira `at`), `action: refresh` y vuelve a preguntar. Es lo del perfil por defecto, también lo visto en el móvil.
 - `watching`, `history` y `play_last` son personales del dueño: no los uses ni los cuentes cuando habla un invitado.
 - Un capítulo concreto todavía no: pon la serie y, si hace falta, termina con `tv_links` / `tv_click_text`.
-- En el reposo puede salir un «Seguir viendo» grande con las imágenes: `tv_idle` `op: set` con `cfg: {netflix: "on"}` (o `"off"`).
+- En el reposo puede salir un «Seguir viendo» con Netflix y Spotify (YouTube más adelante): `tv_idle` `op: set` con `cfg: {suggest: {on: true}}`. Se ordenan las fuentes con `sources` y se elige el aspecto con `look`: `discreto` (una fila de series pequeñas, el de por defecto), `destacado` (una en grande) o `auto` (en grande si una serie manda). `netflix: "on"` sigue valiendo como atajo.
 Si dice que Netflix pide iniciar sesión, no escribas contraseñas: díselo al usuario.
 
-## Cómo reproducir algo en YouTube (u otras webs)
-1. `tv_open_app` con `app` y `query` (abre los resultados de búsqueda).
+## YouTube
+`tv_youtube` pone un vídeo en una llamada (unos 3-4 s), sin capturas ni clics:
+- «Pon en YouTube X», «ponme un vídeo de X» → `action: play` con `query` tal como lo ha dicho (p. ej. `música lofi`), directamente: busca, elige el primer vídeo de verdad (ni anuncios ni Shorts), lo pone a pantalla completa y espera a que suene. No hagas `tv_open_app` ni `search` antes.
+- Contesta con el `title` que devuelve («Hecho, suena …»). Si quiere otro, ofrece los de `candidates` y ponlo con `id`. Si viene `ad: true`, antes sale un anuncio: dilo y ya empieza solo.
+- `action: search` solo da los resultados, sin poner nada.
+
+## Otras webs de vídeo
+1. `tv_open_app` con `app` y `query` (abre los resultados de búsqueda) o `tv_open` con la dirección.
 2. `tv_screenshot` o `tv_links` (con filtro, p. ej. el título) para ver los resultados.
 3. `tv_click_text` con el título (regex, sin distinguir mayúsculas) o `tv_click_at` con las coordenadas de `tv_links`.
 4. Comprueba con `tv_state` (`media: 1` = se está reproduciendo). Si no, repite desde 2 o usa `tv_key` con `Enter`.

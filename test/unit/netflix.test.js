@@ -89,6 +89,21 @@ test('Netflix: volver a abrirlo no recarga (la pestaña se queda cargada detrás
   assert.equal(nf.hidden, false, 'delante, puede volver a sonar');
 });
 
+test('Netflix: el botón del mando la trae como estaba; con Netflix ya delante, otra pulsación lleva al inicio', async () => {
+  const { cdp, log } = fakeTv();
+  const n = createNetflix({ cdp, cfg: { NETFLIX_PROFILE: 'Alfonso' }, store: memStore({ profiles: PROFILES }), ...fast });
+  await n.play({ id: '80100172' });
+  await n.leave(); log.length = 0;
+  await n.open({ url: 'https://www.netflix.com' });
+  assert.deepEqual(log, ['show:NF'], 'primera pulsación: donde estaba (la serie)');
+  log.length = 0;
+  await n.open({ url: 'https://www.netflix.com' });
+  assert.deepEqual(log, ['spa:/browse'], 'segunda: al inicio');
+  log.length = 0;
+  await n.open({ url: 'https://www.netflix.com/' });
+  assert.deepEqual(log, [], 'ya en el inicio: nada');
+});
+
 test('Netflix: «ponme X» busca, elige el título exacto, lo pone y la segunda vez va directo', async () => {
   const { cdp, log } = fakeTv();
   const store = memStore({ profiles: PROFILES });

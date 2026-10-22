@@ -49,8 +49,11 @@ module.exports = function createStage({ cdp, state, cfg, nav }) {
   async function show(m) {
     let html = String(m.html || '');
     if (!html.trim() || html.length > 1_000_000) return { error: 'html vacío o demasiado grande' };
-    if (!/tv-stage\.js/.test(html)) { // el runtime va el primero, para que el HTML del agente ya pueda usar `tv`
-      const tag = '<script src="/tv-stage.js"></script>';
+    // sin icono propio, uno vacío: si no, Chrome pide /favicon.ico a 127.0.0.1 al irse a otra web y lo hace desde ella
+    // (Chrome 155: la web ajena «quiere acceder a otras aplicaciones y servicios de este dispositivo»)
+    const icon = /<link[^>]+rel=["']?(shortcut )?icon/i.test(html) ? '' : '<link rel="icon" href="data:,">';
+    if (!/tv-stage\.js/.test(html) || icon) { // el runtime va el primero, para que el HTML del agente ya pueda usar `tv`
+      const tag = (/tv-stage\.js/.test(html) ? '' : '<script src="/tv-stage.js"></script>') + icon;
       html = /<head[^>]*>/i.test(html) ? html.replace(/<head[^>]*>/i, h => h + tag)
         : /^\s*<!doctype[^>]*>/i.test(html) ? html.replace(/^\s*<!doctype[^>]*>/i, h => h + tag) : tag + html;
     }

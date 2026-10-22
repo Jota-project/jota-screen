@@ -15,6 +15,14 @@ const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const MODES = ['auto', 'day', 'evening', 'night', 'cinema'];
 const LAYOUTS = ['rotar', 'margen', 'zonas', 'apilada']; // distribuciones del reposo v2
 const GLASS = ['auto', 'A', 'B', 'C'];                   // cristal del agente: auto (según lo que aguante la tele), completo, ligero, opaco
+// «Seguir viendo»: las fuentes que se conocen (YouTube también, aunque aún no tenga datos: así guarda su sitio en el orden),
+// cómo se ve (discreto: fila de series pequeñas; destacado: una en grande; auto: en grande si una serie manda) y el orden
+const SUGGEST_SOURCES = ['netflix', 'spotify', 'youtube'];
+const SUGGEST_LOOKS = ['discreto', 'destacado', 'auto'];
+const SUGGEST_MODES = ['fijo', 'contexto'];             // contexto: reservado hasta decidir los momentos (hoy, como fijo)
+const SPOTIFY_RESUME_MS = 3 * 3600e3;                    // «seguir escuchando»: hasta 3 h después de que deje de sonar
+const SUGGEST_HOLD_MS = 5 * 60e3;                        // un cambio de fuentes espera 5 min seguidos: pausar no recoloca todo
+const AUTO_DAYS = 14, AUTO_SHARE = 0.7;                  // «según el momento»: en grande si una serie es el 70 % de 14 días
 // colores de la carátula para el orbe y los brillos del agente: saturación y luz acotadas para que se lean sobre el cristal oscuro
 const AGENT_COLOR_SAT = [0.35, 0.85];
 const AGENT_COLOR_LIGHT = [0.55, 0.75];
@@ -29,7 +37,11 @@ const DEFAULTS = {
   layout: 'rotar',              // rotar | margen | zonas | apilada
   rearrangeMin: 20,             // minutos entre reacomodos de los widgets (0 = nunca); también evita el quemado
   calm: false,                  // movimiento reducido: luces y ecualizador quietos
-  netflix: 'off',               // «Seguir viendo» de Netflix en el reposo: off | on (cuándo sale solo, más adelante: wantNetflix)
+  netflix: 'off',               // espejo de suggest para mandos viejos: on si el apartado y Netflix están encendidos
+  suggest: {                    // «Seguir viendo» en el reposo (wantSuggestions). La fila de Spotify es `music`
+    on: false, max: 2, look: 'discreto', mode: 'fijo',
+    sources: [{ id: 'netflix', on: true }, { id: 'spotify', on: true }, { id: 'youtube', on: false }],
+  },
   glass: 'auto',                // auto | A | B | C: nivel del cristal del agente (src/tv/talk-view.js)
 };
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -42,22 +54,24 @@ const validTz = tz => { try { new Intl.DateTimeFormat('en-GB', { timeZone: tz })
  *   place?: { city?: string, lat?: number | null, lon?: number | null, tz?: string },
  *   cdp: { call: Function, session: string | null }, nav: (url: string) => Promise<any>, state: { url: string },
  *   stageKind: () => string | null, onWatch?: () => void, onAmbient?: () => void, log?: (...a: any[]) => void,
- *   fetch?: typeof fetch, nfx?: () => any[] | null,
- * }} IdleDeps   nfx: «Seguir viendo» de Netflix para el reposo (src/features/netflix-watch.js), con las imágenes ya por /idle/nfx
+ *   fetch?: typeof fetch, nfx?: () => any[] | null, nfxDominant?: (days: number) => { title: string, share: number, n: number } | null,
+ *   now?: () => number,
+ * }} IdleDeps   nfx: «Seguir viendo» de Netflix para el reposo (src/features/netflix-watch.js), con las imágenes ya por /idle/nfx;
+ *              nfxDominant: la serie que más se ha visto en los últimos días (aspecto «según el momento»)
  */
 /** @param {IdleDeps} o */
 function createIdle(o) {
-  const { PUB, SELF, cdp, nav, state, stageKind, log = () => {}, fetch: get = fetch } = o;
+  const { PUB, SELF, cdp, nav, state, stageKind, log = () => {}, fetch: get = fetch, now = Date.now } = o;
   const URL_IDLE = SELF + '/idle.html';
   const CFG_FILE = o.file;
   const BASE = sanitize({ ...DEFAULTS, ...(o.place || {}) }, DEFAULTS); // valores iniciales: TV_CITY, TV_LAT, TV_LON, TV_TZ
   let cfg = { ...BASE };
-  try { cfg = sanitize({ ...BASE, ...JSON.parse(fs.readFileSync(CFG_FILE, 'utf8')) }); } catch {}
+  try { const f = JSON.parse(fs.readFileSync(CFG_FILE, 'utf8')); cfg = sanitize(legacy({ ...BASE, ...f }, BASE)); } catch {}
   const save = () => writeJson(CFG_FILE, cfg, { pretty: true }); // atómico y 0600 (src/core/json-store.js)
 
   const isIdle = u => typeof u === 'string' && u.startsWith(URL_IDLE);
   let lastUse = Date.now();
-  let weather = null, music = null, profile = 'day';
+  let weather = null, music = null, profile = 'day', lastMusic = null;
   const acts = new Map(); let actSeq = 0;
   const timers = new Map();
   const clients = new Set();
@@ -87,9 +101,43 @@ function createIdle(o) {
     if (LAYOUTS.includes(c.layout)) out.layout = c.layout;
     if (Number.isFinite(+c.rearrangeMin)) out.rearrangeMin = Math.min(120, Math.max(0, Math.round(+c.rearrangeMin)));
     if (c.calm !== undefined) out.calm = !!c.calm;
-    if (c.netflix === 'on' || c.netflix === 'off') out.netflix = c.netflix;
+    out.suggest = sanitizeSuggest(c.suggest, base.suggest);
     if (GLASS.includes(c.glass)) out.glass = c.glass;
+    // un solo interruptor para Spotify (music) y el espejo de Netflix para los mandos de antes
+    for (const x of out.suggest.sources) if (x.id === 'spotify') x.on = out.music;
+    out.netflix = out.suggest.on && out.suggest.sources.some(x => x.id === 'netflix' && x.on) ? 'on' : 'off';
     return out;
+  }
+  /** Fuentes conocidas, sin repetir y en el orden dado; las que falten, al final y apagadas. */
+  function sanitizeSuggest(s, base) {
+    const out = { ...base, sources: base.sources.map(x => ({ ...x })) };
+    if (!s || typeof s !== 'object') return out;
+    if (s.on !== undefined) out.on = !!s.on;
+    if ([1, 2, 3].includes(+s.max)) out.max = +s.max;
+    if (SUGGEST_LOOKS.includes(s.look)) out.look = s.look;
+    if (SUGGEST_MODES.includes(s.mode)) out.mode = s.mode;
+    if (Array.isArray(s.sources)) {
+      const seen = new Set(), list = [];
+      for (const x of s.sources) {
+        const id = x && typeof x === 'object' ? x.id : x;
+        if (!SUGGEST_SOURCES.includes(id) || seen.has(id)) continue;
+        seen.add(id); list.push({ id, on: x && typeof x === 'object' ? !!x.on : true });
+      }
+      for (const id of SUGGEST_SOURCES) if (!seen.has(id)) list.push({ id, on: false });
+      out.sources = list;
+    }
+    return out;
+  }
+  /**
+   * Un mando de antes solo conoce `netflix: on|off`. Si llega distinto de lo guardado, viene de él: se pasa a suggest
+   * (encenderlo enciende también el apartado). Así sirve en los dos sentidos mientras quede alguna PWA vieja.
+   */
+  function legacy(c, prev) {
+    if ((c.netflix !== 'on' && c.netflix !== 'off') || c.netflix === prev.netflix) return c;
+    const on = c.netflix === 'on', s = sanitizeSuggest(c.suggest, prev.suggest);
+    s.sources = s.sources.map(x => (x.id === 'netflix' ? { ...x, on } : x));
+    if (on) s.on = true;
+    return { ...c, suggest: s };
   }
 
   // ───────── momento del día
@@ -158,6 +206,7 @@ function createIdle(o) {
       next: n.queue?.[0] ? { name: n.queue[0].name, artist: n.queue[0].artist } : null,
       artistImage: n.artistInfo?.image?.m || null,
     };
+    if (next) lastMusic = { ...next, seen: now() };
     music = next; push();
   }
 
@@ -217,14 +266,49 @@ function createIdle(o) {
   // los tokens de shared/tokens-tv.css van delante como texto: la isla no puede cargar CSS nuestro dentro de una web ajena
   const islandSrc = () => { try { return islandSource(PUB); } catch (e) { log('isla: ' + e.message); return ''; } };
   let overlayOn = false;
-  // «Seguir viendo»: el único sitio que decide si sale. Hoy, el interruptor; más adelante, el contexto (hora, costumbre…)
-  function wantNetflix() {
-    if (cfg.netflix !== 'on' || profile === 'night' || profile === 'cinema' || !o.nfx) return null;
-    const items = o.nfx();
-    return items && items.length ? { items: items.slice(0, 6) } : null;
+  // ───────── «Seguir viendo»: el único sitio que decide qué sale, en qué orden y cómo. Hoy, los ajustes (fuentes en orden,
+  // cuántas a la vez, aspecto); más adelante, el contexto (mode: 'contexto', sin decidir: hora, costumbre, quién está…)
+  /** Netflix: lo que está a medias (con imágenes). */
+  function nfxBlock() {
+    const items = o.nfx ? o.nfx() : null;
+    return items && items.length ? { src: 'netflix', items: items.slice(0, 6) } : null;
+  }
+  /** Spotify: «suena ahora» o, hasta 3 h después, «seguir escuchando» con lo último que sonó (sin llamadas nuevas). */
+  function spotifyBlock() {
+    const m = music && music.playing ? music : lastMusic && now() - lastMusic.seen < SPOTIFY_RESUME_MS ? lastMusic : null;
+    if (!m || !m.title) return null;
+    return { src: 'spotify', state: m === music ? 'playing' : 'resume', track: m.title, artist: m.artist,
+      ctx: m.context && m.context.type !== 'album' ? m.context.name || '' : m.album || '', art: m.art || '', artW: 640,
+      progress: m.progress, duration: m.duration, at: m.at };
+  }
+  const BLOCKS = { netflix: nfxBlock, spotify: spotifyBlock, youtube: () => null }; // YouTube: cuando guarde por dónde vas
+  let shown = /** @type {any[] | null} */ (null), wantKey = '', wantSince = 0, holdTimer = null;
+  /** Histéresis: un cambio de fuentes (no de sus datos) espera SUGGEST_HOLD_MS seguidos; aparecer y desaparecer, al momento. */
+  function hold(list) {
+    const key = list.map(b => b.src).join(','), cur = shown ? shown.map(b => b.src).join(',') : '';
+    if (!list.length || !shown || !shown.length || key === cur) { shown = list; wantKey = key; return list; }
+    if (key !== wantKey) { wantKey = key; wantSince = now(); }
+    const wait = SUGGEST_HOLD_MS - (now() - wantSince);
+    if (wait <= 0) { shown = list; return list; }
+    if (!holdTimer) holdTimer = setTimeout(() => { holdTimer = null; push(); }, wait + 50);
+    const by = Object.fromEntries(list.map(b => [b.src, b]));
+    shown = shown.map(b => by[b.src] || b);                 // las de antes, con sus datos nuevos si los hay
+    return shown;
+  }
+  function wantSuggestions() {
+    const s = cfg.suggest;
+    if (!s.on || profile === 'night' || profile === 'cinema') { shown = null; return null; }
+    const list = hold(s.sources.filter(x => x.on).map(x => BLOCKS[x.id]()).filter(Boolean).slice(0, s.max));
+    if (!list.length) return null;
+    let look = s.look;
+    if (look === 'auto') {                                   // en grande si una serie manda y es la primera a medias
+      const d = list[0].src === 'netflix' && o.nfxDominant ? o.nfxDominant(AUTO_DAYS) : null;
+      look = d && d.share >= AUTO_SHARE && d.title === list[0].items[0].title ? 'destacado' : 'discreto';
+    }
+    return { look, blocks: list };
   }
   function payload() {
-    return JSON.stringify({ t: 'idle', now: Date.now(), profile, cfg: { city: cfg.city, tz: cfg.tz, dimMin: cfg.dimMin, mode: cfg.mode, music: cfg.music, layout: cfg.layout, rearrangeMin: cfg.rearrangeMin, calm: cfg.calm }, weather, music, acts: actList(), watching: wantNetflix() });
+    return JSON.stringify({ t: 'idle', now: Date.now(), profile, cfg: { city: cfg.city, tz: cfg.tz, dimMin: cfg.dimMin, mode: cfg.mode, music: cfg.music, layout: cfg.layout, rearrangeMin: cfg.rearrangeMin, calm: cfg.calm }, weather, music, acts: actList(), suggest: wantSuggestions() });
   }
   let pTimer = null;
   function push() {
@@ -322,7 +406,8 @@ function createIdle(o) {
     if (op === 'get') return { cfg, profile, weather, url: URL_IDLE, idle: isIdle(state.url), idleInMin: cfg.idleMin ? Math.max(0, Math.round((cfg.idleMin * 60e3 - (Date.now() - lastUse)) / 60e3)) : null };
     if (op === 'set') {
       const prevLoc = cfg.lat + ',' + cfg.lon;
-      cfg = sanitize({ ...cfg, ...(m.cfg || {}) });
+      cfg = sanitize(legacy({ ...cfg, ...(m.cfg || {}) }, cfg));
+      shown = null;                                          // lo que se cambia a mano se ve al momento (sin la espera)
       save();
       if (cfg.lat + ',' + cfg.lon !== prevLoc) fetchWeather();
       tick(true);
@@ -348,6 +433,7 @@ function createIdle(o) {
   return {
     URL_IDLE, isIdle, touch, onNav, run, activity, art, setMusic, ambient, watching: () => clients.size > 0 && cfg.music,
     nfxChanged: () => push(),                       // hay datos nuevos de «Seguir viendo»
+    suggest: () => wantSuggestions(),               // lo que enseña ahora «Seguir viendo» (pruebas, depuración)
     /** Lo que la capa del agente necesita del reposo (server.js le añade el contexto de la página). */
     agentContext: () => agentContextOf({ cfg, profile, idle: isIdle(state.url), music }),
     upgrade: (req, socket, head) => wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws)),

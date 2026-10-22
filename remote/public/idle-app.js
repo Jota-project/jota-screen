@@ -2,7 +2,7 @@
 // onData y TVIdle quedan globales (las capturas de e2e/ los llaman).
 const $ = id => document.getElementById(id);
 const B = document.body, BG = $('bg'), G = $('grid');
-const W = { hora: $('wHora'), ctx: $('wCtx'), mus: $('wMus'), nfx: $('wNfx') };
+const W = { hora: $('wHora'), ctx: $('wCtx'), mus: $('wMus'), nfx: $('wNfx'), s0: $('wS0'), s1: $('wS1'), s2: $('wS2') };
 let D = { profile: 'day', weather: null, music: null, acts: [], cfg: { dimMin: 20, layout: 'rotar', rearrangeMin: 20, calm: false } }, off = 0, lastEvent = Date.now();
 
 // ── distribuciones: cada escena coloca los widgets en la rejilla (fila-inicio / col-inicio / fila-fin / col-fin), sin que
@@ -32,8 +32,32 @@ L.nfx = [
   { hora: ['1/1/3/6', 'start', 'start', 'line', 'left'], ctx: ['1/8/3/13', 'end', 'start', 'col', 'right'], nfx: ['3/1/7/13', 'start', 'end', '', 'left'] },
   { nfx: ['1/1/5/13', 'end', 'start', '', 'right'], hora: ['5/7/7/13', 'end', 'end', 'line', 'right'], ctx: ['5/1/7/6', 'start', 'end', 'col', 'left'] },
 ];
-let layout = '', scene = 0, rTimer = 0, moving = false, nfxOn = false;
-const scenes = () => (nfxOn ? L.nfx : L[layout]);
+// «Seguir viendo» con varias fuentes (bloques s0, s1, s2; s0 el primero). Destacado: el primero en grande (848) y los demás
+// al lado. Discreto: la hora grande de siempre y, en la franja de abajo (3 filas), Netflix como una fila de 3–4 series
+// pequeñas y el resto en piezas pequeñas al lado. Dos escenas en espejo para cada número de fuentes.
+L.sug2 = [
+  { hora: ['1/1/3/6', 'start', 'start', 'line', 'left'], ctx: ['1/8/3/13', 'end', 'start', 'col', 'right'], s0: ['3/1/7/9', 'start', 'end', '', 'left'], s1: ['3/9/7/13', 'end', 'end', '', 'right'] },
+  { s0: ['1/5/5/13', 'end', 'start', '', 'right'], s1: ['1/1/5/5', 'start', 'start', '', 'left'], hora: ['5/8/7/13', 'end', 'end', 'line', 'right'], ctx: ['5/1/7/6', 'start', 'end', 'col', 'left'] },
+];
+L.sug3 = [
+  { hora: ['1/1/3/6', 'start', 'start', 'line', 'left'], ctx: ['1/8/3/13', 'end', 'start', 'col', 'right'], s0: ['3/1/7/8', 'start', 'end', '', 'left'], s1: ['3/8/5/13', 'end', 'center', '', 'right'], s2: ['5/8/7/13', 'end', 'end', '', 'right'] },
+  { s0: ['1/6/5/13', 'end', 'start', '', 'right'], s1: ['1/1/3/6', 'start', 'start', '', 'left'], s2: ['3/1/5/6', 'start', 'center', '', 'left'], hora: ['5/8/7/13', 'end', 'end', 'line', 'right'], ctx: ['5/1/7/6', 'start', 'end', 'col', 'left'] },
+];
+L.dis1 = [
+  { hora: ['1/1/4/8', 'start', 'start', 'line', 'left'], ctx: ['1/8/4/13', 'end', 'start', 'col', 'right'], s0: ['4/1/7/13', 'start', 'end', '', 'left'] },
+  { s0: ['1/1/4/13', 'start', 'start', '', 'left'], hora: ['4/6/7/13', 'end', 'end', 'line', 'right'], ctx: ['4/1/7/6', 'start', 'end', 'col', 'left'] },
+];
+L.dis2 = [
+  { hora: ['1/1/4/8', 'start', 'start', 'line', 'left'], ctx: ['1/8/4/13', 'end', 'start', 'col', 'right'], s0: ['4/1/7/10', 'start', 'end', '', 'left'], s1: ['4/10/7/13', 'end', 'end', '', 'right'] },
+  { s0: ['1/4/4/13', 'end', 'start', '', 'right'], s1: ['1/1/4/4', 'start', 'start', '', 'left'], hora: ['4/6/7/13', 'end', 'end', 'line', 'right'], ctx: ['4/1/7/6', 'start', 'end', 'col', 'left'] },
+];
+L.dis3 = [
+  { hora: ['1/1/3/6', 'start', 'start', 'line', 'left'], ctx: ['1/8/3/13', 'end', 'start', 'col', 'right'], s0: ['3/1/7/9', 'start', 'end', '', 'left'], s1: ['3/9/5/13', 'end', 'center', '', 'right'], s2: ['5/9/7/13', 'end', 'end', '', 'right'] },
+  { s0: ['1/5/5/13', 'end', 'start', '', 'right'], s1: ['1/1/3/5', 'start', 'start', '', 'left'], s2: ['3/1/5/5', 'start', 'center', '', 'left'], hora: ['5/8/7/13', 'end', 'end', 'line', 'right'], ctx: ['5/1/7/6', 'start', 'end', 'col', 'left'] },
+];
+// sug: '' (reposo normal), 'nfx' (solo Netflix en grande: su widget), 'sug' (destacado) o 'dis' (discreto); n: bloques
+let layout = '', scene = 0, rTimer = 0, moving = false, sug = { mode: '', n: 0 };
+const scenes = () => (sug.mode === 'nfx' ? L.nfx : sug.mode ? L[sug.mode + sug.n] : L[layout]);
 // cada widget ocupa su celda entera; su contenido (.wi) se alinea dentro con data-jx/data-jy (idle.css)
 function place(sc) {
   for (const k of Object.keys(W)) {
@@ -43,7 +67,7 @@ function place(sc) {
     const [area, jx, jy, v, ta] = sc[k];
     e.style.gridArea = area; e.dataset.jx = jx; e.dataset.jy = jy;
     e.dataset.v = D.profile === 'night' && k === 'mus' ? 'line' : v; e.dataset.ta = ta;
-    if (k === 'mus' || k === 'nfx') e.dataset.dir = ta === 'right' ? 'rev' : '';
+    if (k === 'mus' || k === 'nfx' || k[0] === 's') e.dataset.dir = ta === 'right' ? 'rev' : '';
   }
   fit();
 }
@@ -51,7 +75,7 @@ function place(sc) {
 // escala todas sus medidas (--s en idle.css). La hora no lo necesita: se ajusta a su celda con cqh/cqw.
 function fit() {
   const g = parseFloat(getComputedStyle(G).rowGap) || 0;
-  for (const e of [W.ctx, W.mus, W.nfx]) {
+  for (const e of [W.ctx, W.mus, W.nfx, W.s0, W.s1, W.s2]) {
     e.style.setProperty('--fit', '1');
     const kids = [...e.firstElementChild.children].map(c => c.getBoundingClientRect()).filter(r => r.width || r.height);
     if (!kids.length || !e.clientHeight) continue;
@@ -212,7 +236,7 @@ function timePal() {
 function applyPalette() {
   const dark = D.profile === 'night' || D.profile === 'cinema';
   let p = dark ? PAL.dark : timePal();
-  if (!dark && artPal && (D.music || nfxOn)) { const ev = D.profile === 'evening'; p = [tone(artPal[0], ev ? .32 : .36), tone(artPal[1], ev ? .28 : .34), p[2], ev ? .32 : .3]; }
+  if (!dark && artPal && (D.music || sug.mode)) { const ev = D.profile === 'evening'; p = [tone(artPal[0], ev ? .32 : .36), tone(artPal[1], ev ? .28 : .34), p[2], ev ? .32 : .3]; }
   BG.style.setProperty('--ca', p[0]); BG.style.setProperty('--cb', p[1]); BG.style.setProperty('--base', p[2]); BG.style.setProperty('--orb', p[3]);
 }
 
@@ -250,7 +274,7 @@ function progress() {
   $('pf').style.transform = `scaleX(${(p / m.duration).toFixed(4)})`;
 }
 
-// ── Seguir viendo (Netflix): el servidor manda la lista (con las imágenes ya por /idle/nfx) solo cuando toca enseñarla
+// ── Seguir viendo: el servidor manda los bloques (Netflix con las imágenes ya por /idle/nfx, Spotify…) solo cuando tocan
 const dur = sec => { const m = Math.max(1, Math.round(sec / 60)); return m >= 60 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + (m % 60) + ' min' : '') : m + ' min'; };
 const epLabel = it => (it.ep ? [it.ep.s && 'T' + it.ep.s, it.ep.e && 'E' + it.ep.e].filter(Boolean).join(' · ') : 'Película');
 const fresh = it => !it.pos || it.pos < 30;                // capítulo aún sin empezar (el siguiente de la serie)
@@ -273,12 +297,9 @@ function swapImg(box, url, onload) {
   };
   img.src = url;
 }
+/** el widget de Netflix entero (solo Netflix, en grande): destacado, fotograma del episodio y dos títulos más */
 let nfxKey = '';
-function watching() {
-  const list = (D.watching && D.watching.items) || [];
-  const on = list.length > 0 && D.profile !== 'night' && D.profile !== 'cinema';
-  if (on !== nfxOn) { nfxOn = on; scene = 0; if (layout) rearrange(0); }
-  if (!on) { nfxKey = ''; return; }
+function nfxWidget(list) {
   const k = JSON.stringify(list.slice(0, 3));
   if (k === nfxKey) return;
   nfxKey = k;
@@ -308,6 +329,85 @@ function watching() {
     swapImg(im, o.card || o.story);
   }
   $('nfMore').hidden = list.length < 2;
+}
+
+// ── bloques de varias fuentes. Ninguna imagen se pinta más grande que su tamaño real en la tele (data-w, en --u): el ancho
+// que toca según el sitio y la forma, acotado por el original (lo calcula block() en --iw)
+const SRC = { netflix: ['Netflix', '#e50914'], spotify: ['Spotify', '#1ed760'], youtube: ['YouTube', '#ff0033'] };
+const IW = { lead: { wide: 848, square: 456 }, side: { wide: 520, square: 300 }, row: { wide: 352, square: 216 }, tile: { wide: 352, square: 200 }, mini: { wide: 192, square: 160 } };
+const artSrc = u => (!u ? '' : u.startsWith('/') ? u : '/idle/art?u=' + encodeURIComponent(u)); // la carátula, por nuestra ruta
+/** lo que enseña un bloque: antetítulo, título, línea de abajo, progreso e imagen (con su ancho real) */
+function itemOf(b, size) {
+  if (b.src === 'netflix') {
+    const it = b.items[0], hero = size === 'lead' && it.story;
+    return { k: 'Seguir viendo', t: it.title, s: [epLabel(it), leftLabel(it)].filter(Boolean).join(' · '), f: frac(it), img: hero ? { u: it.story, w: 848 } : { u: it.card || it.story, w: it.card ? 665 : 848 }, shape: 'wide' };
+  }
+  if (b.src === 'spotify') {
+    const img = { u: artSrc(b.art), w: b.artW || 640 };
+    return b.state === 'playing'
+      ? { k: 'Suena ahora', t: b.track, s: b.artist + (b.ctx ? ' · ' + b.ctx : ''), f: b.duration ? b.progress / b.duration : null, img, shape: 'square' }
+      : { k: 'Seguir escuchando', t: b.ctx || b.track, s: 'Lo último: ' + b.track + ' · ' + b.artist, f: null, img, shape: 'square' };
+  }
+  const it = b.items[0]; // youtube
+  return { k: 'Seguir viendo', t: it.title, s: it.channel + (it.dur ? ' · quedan ' + dur(it.dur - it.pos) : ''), f: it.dur ? it.pos / it.dur : null, img: { u: it.thumb, w: it.thumbW }, shape: 'wide' };
+}
+const keyOf = new WeakMap();
+function block(el, b, size) {
+  const it = itemOf(b, size), [name, dot] = SRC[b.src], k = JSON.stringify([size, it]);
+  if (keyOf.get(el) === k) return;
+  keyOf.set(el, k);
+  const iw = Math.min(IW[size][it.shape], it.img.w);
+  const cap = size === 'lead' && it.shape === 'wide' && iw >= 640 ? 'over' : '';   // texto encima de la imagen grande
+  const c = document.createElement('div'); c.className = 'sg-c'; c.dataset.size = size; c.dataset.shape = it.shape; c.dataset.cap = cap; c.style.setProperty('--dot', dot);
+  const im = document.createElement('div'); im.className = 'sg-img'; im.dataset.w = it.img.w; im.style.setProperty('--iw', iw);
+  const m = document.createElement('div'); m.className = 'sg-m';
+  m.innerHTML = '<div class="sg-k"><i></i><span></span></div><div class="sg-t"></div><div class="sg-s"></div>';
+  m.querySelector('.sg-k span').textContent = size === 'lead' ? name + ' · ' + it.k : name;
+  m.querySelector('.sg-t').textContent = it.t;
+  m.querySelector('.sg-s').textContent = (size !== 'lead' && it.k !== 'Seguir viendo' ? it.k + ' · ' : '') + it.s;
+  if (it.f != null) {
+    const bar = document.createElement('span'); bar.className = 'sg-bar'; const f = document.createElement('i');
+    f.style.transform = `scaleX(${Math.min(1, Math.max(0, it.f)).toFixed(3)})`; bar.append(f); (cap ? m : im).append(bar);
+  }
+  c.append(im, m); el.firstElementChild.replaceChildren(c);
+  swapImg(im, it.img.u, size === 'lead' ? img => { if (!D.music) { try { artPal = extract(img); } catch { artPal = null; } applyPalette(); } } : null);
+}
+/** la fila de Netflix del aspecto discreto: antetítulo y 3–4 tarjetas de serie (665×375) a 300–320 px de la tele */
+function shelf(el, b, max, cw) {
+  const list = b.items.slice(0, max), k = JSON.stringify([max, cw, list]);
+  if (keyOf.get(el) === k) return;
+  keyOf.set(el, k);
+  const box = document.createElement('div'); box.className = 'sg-shelf'; box.style.setProperty('--dot', SRC.netflix[1]);
+  box.innerHTML = '<div class="sg-k"><i></i><span>Netflix · Seguir viendo</span></div><div class="sg-cards"></div>';
+  const row = box.querySelector('.sg-cards');
+  list.forEach((it, i) => {
+    const w = it.card ? 665 : 848, iw = Math.min(cw, w);
+    const c = document.createElement('div'); c.className = 'sg-card'; c.style.setProperty('--iw', iw);
+    const im = document.createElement('div'); im.className = 'sg-img'; im.dataset.w = w; im.style.setProperty('--iw', iw);
+    const bar = document.createElement('span'); bar.className = 'sg-bar'; const f = document.createElement('i'); f.style.transform = `scaleX(${frac(it).toFixed(3)})`; bar.append(f); im.append(bar);
+    const t = document.createElement('div'); t.className = 'sg-ct'; t.textContent = it.title;
+    const s = document.createElement('div'); s.className = 'sg-cs'; s.textContent = [epLabel(it), leftLabel(it)].filter(Boolean).join(' · ');
+    c.append(im, t, s); row.append(c);
+    swapImg(im, it.card || it.story, i === 0 ? img => { if (!D.music) { try { artPal = extract(img); } catch { artPal = null; } applyPalette(); } } : null);
+  });
+  el.firstElementChild.replaceChildren(box);
+}
+/** qué escenas tocan y qué va en cada bloque; si cambia el número de bloques o el aspecto, reacomodo */
+function suggest() {
+  const dark = D.profile === 'night' || D.profile === 'cinema';
+  // el servidor manda suggest: { look, blocks }; uno de antes mandaba watching: { items } (solo Netflix, en grande)
+  const sg = D.suggest || (D.watching && D.watching.items && D.watching.items.length ? { look: 'destacado', blocks: [{ src: 'netflix', items: D.watching.items }] } : null);
+  const bl = dark || !sg ? [] : (sg.blocks || []).filter(b => b && SRC[b.src]).slice(0, 3);
+  const n = bl.length, first = bl[0] && bl[0].src;
+  // solo Spotify: el reposo de siempre, con su «ahora suena»; solo Netflix en grande: su widget entero
+  const mode = !n || (n === 1 && first !== 'netflix') ? '' : first === 'netflix' && sg.look === 'discreto' ? 'dis' : n === 1 ? 'nfx' : 'sug';
+  if (mode !== sug.mode || n !== sug.n) { sug = { mode, n }; scene = 0; if (layout) rearrange(0); }
+  if (!mode) { nfxKey = ''; return; }
+  if (mode === 'nfx') nfxWidget(bl[0].items);
+  else if (mode === 'dis') {
+    shelf(W.s0, bl[0], [0, 4, 3, 3][n], n === 3 ? 300 : 320);
+    bl.slice(1).forEach((b, i) => block(W['s' + (i + 1)], b, n === 2 ? 'tile' : 'mini'));
+  } else bl.forEach((b, i) => block(W['s' + i], b, i === 0 ? 'lead' : n === 2 ? 'side' : 'row'));
   requestAnimationFrame(fit);
 }
 
@@ -330,7 +430,7 @@ function onData(m) {
   D = { ...m, cfg: { ...D.cfg, ...(m.cfg || {}) } };
   setTz(D.cfg.tz);
   if (key(D) !== prev) lastEvent = Date.now();
-  profile(); weather(); music(); acts(); watching();
+  profile(); weather(); music(); acts(); suggest();
   if (JSON.stringify(D.cfg) !== prevCfg) { setLayout(D.cfg.layout); schedule(); }
   if (!moving) place(scenes()[scene % scenes().length]);
 }
@@ -340,7 +440,7 @@ function connect() {
   ws.onclose = () => setTimeout(connect, 1500);
 }
 // para pruebas y capturas: TVIdle.scene(n) fuerza una escena con su reacomodo; TVIdle.place(n), al momento
-window.TVIdle = { scene: n => rearrange(n % scenes().length), place: n => { scene = n % scenes().length; place(scenes()[scene]); }, now: () => ({ layout, scene, moving, nfx: nfxOn }) };
+window.TVIdle = { scene: n => rearrange(n % scenes().length), place: n => { scene = n % scenes().length; place(scenes()[scene]); }, now: () => ({ layout, scene, moving, nfx: sug.mode === 'nfx', sug: sug.mode, n: sug.n }) };
 // sin servidor también funciona: reloj y ambiente según la hora
 D.profile = (h => h >= 8 && h < 20 ? 'day' : 'evening')(new Date().getHours());
 // ±32 px de la tele de 1920×1080 (la misma unidad --u que idle.css), para que la deriva no se coma el margen en pantallas pequeñas

@@ -130,10 +130,10 @@ const RESTORE_GLOBAL = '__tvAgentRestore';   // global de la página con la últ
 /** @typedef {{ id: string, kind: string, title: string, detail: string, status: 'run' | 'ok' | 'fail' }} Tool */
 /** @typedef {{ id: number, you: string, youFinal: boolean, jota: string, tools: Tool[], error: boolean, hint: string, media?: Media | null }} Turn */
 /**
- * Tarjeta de contenido del turno (la pone el servidor, no el Gateway): Netflix, por ahora. `list`: lo que se está viendo;
+ * Tarjeta de contenido del turno (la pone el servidor, no el Gateway): Netflix o YouTube (`brand`). `list`: lo que se está viendo;
  * `play`: el título que se va a poner, con su ▶ (`state`: 'idle' → 'press' al pulsarlo). Imágenes por URL absoluta.
  * @typedef {{ title: string, sub: string, frac: number, img: string, still?: string, left?: string }} MediaItem
- * @typedef {{ key: string, kind: 'list' | 'play', state: 'idle' | 'press', items: MediaItem[] }} Media
+ * @typedef {{ key: string, kind: 'list' | 'play', state: 'idle' | 'press', brand: 'netflix' | 'youtube', items: MediaItem[] }} Media
  */
 /** playback: hay una reproducción de verdad (page-poll); null si context() no lo dice. page: la página de la tele
  * (`url`, `stage` = tipo de escenario o null, `idle` = el reposo) para decidir el formato; null si context() no la trae
@@ -199,6 +199,11 @@ function within(p, ms) {
 const newTurn = id => ({ id, you: '', youFinal: false, jota: '', tools: [], error: false, hint: '' }); // media: solo si la hay
 
 const MEDIA_MAX = 4;
+const BRANDS = ['netflix', 'youtube'];   // de quién es la tarjeta (la capa pone su nombre)
+/** ¿La tele está en una página nuestra (el reposo)? Solo ahí van las imágenes de las tarjetas. @param {Look} l */
+const ourPage = l => l.ctx === 'idle' || l.ctx === 'music' || !!(l.page && l.page.idle);
+/** La tarjeta sin sus imágenes. @param {Media} m @returns {Media} */
+const noImages = m => ({ ...m, items: m.items.map(it => ({ ...it, img: '', still: '' })) });
 /** Tarjeta saneada (viene de otra capacidad del servidor; la capa la vuelve a sanear). @param {any} m @returns {Media | null} */
 function cleanMedia(m) {
   if (!m || typeof m !== 'object' || (m.kind !== 'list' && m.kind !== 'play')) return null;
@@ -209,7 +214,7 @@ function cleanMedia(m) {
     img: url(i.img), still: url(i.still),
   }));
   if (!items.length) return null;
-  return { key: str(m.key, 80) || m.kind, kind: m.kind, state: m.state === 'press' ? 'press' : 'idle', items };
+  return { key: str(m.key, 80) || m.kind, kind: m.kind, state: m.state === 'press' ? 'press' : 'idle', brand: BRANDS.includes(m.brand) ? m.brand : 'netflix', items };
 }
 /** Un turno que algo dijo o hizo (uno cancelado sin nada no se guarda). @param {Turn} t */
 const said = t => !!(t.you || t.jota || t.tools.length || t.media);
@@ -301,7 +306,10 @@ function createTalkView({ cdp, pub, batchMs = 100, log = () => {}, context, onAs
   /** Lo que recibe render (el tinte sigue a la página actual). @param {Look} l @param {'open' | 'restore'} [enter] */
   function payload(l, enter = 'open') {
     const form = mode === 'island' ? 'pill' : 'panel';
-    return snapshot({ form, ctx: l.ctx || (form === 'pill' ? 'video' : 'web'), state, live, look: l, turns: [...history, cur], enter });
+    // una tarjeta puesta en el reposo sigue en su turno al pasar a una web ajena: allí, sin sus imágenes (son de
+    // 127.0.0.1: desde la web, Chrome pediría permiso para «acceder a otras aplicaciones y servicios de este dispositivo»)
+    const turns = [...history, cur].map(t => (t.media && !ourPage(l) ? { ...t, media: noImages(t.media) } : t));
+    return snapshot({ form, ctx: l.ctx || (form === 'pill' ? 'video' : 'web'), state, live, look: l, turns, enter });
   }
 
   // ── scripts de documento nuevo: en cola (nunca dos cambios a la vez) y siempre contra la sesión que los registró
@@ -595,8 +603,7 @@ function createTalkView({ cdp, pub, batchMs = 100, log = () => {}, context, onAs
       if (!c || !open || muted || formNow() !== 'panel') return false;
       // las imágenes solo sobre una página nuestra (el reposo): la CSP de una web ajena las bloquearía (y ensuciaría su
       // consola); allí la tarjeta va sin ellas, con su texto y su progreso
-      if (!(l.ctx === 'idle' || l.ctx === 'music' || (l.page && l.page.idle))) for (const it of c.items) { it.img = ''; it.still = ''; }
-      cur.media = c;
+      cur.media = ourPage(l) ? c : noImages(c);
       schedule();
       return true;
     },
