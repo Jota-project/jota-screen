@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { parseStatus, passthroughUri, TV_KEYS, createAndroidTv } = require(path.join(__dirname, '..', '..', 'remote', 'src', 'tv', 'android-tv'));
+const { parseStatus, passthroughUri, TV_KEYS, createAndroidTv, monkeySession } = require(path.join(__dirname, '..', '..', 'remote', 'src', 'tv', 'android-tv'));
 
 const TV_INPUT = 'com.mediatek.tvinput/.hdmi.HDMIInputService/HW4';
 const OUT = `  mWakefulness=Awake
@@ -128,4 +128,17 @@ test('tele: órdenes de mute, set, home y toJ, y close() cierra las teclas', asy
     'am start -a android.intent.action.VIEW -d ' + passthroughUri(TV_INPUT)]);
   assert.deepEqual(adb.pressed, ['KEYCODE_HOME']);
   assert.equal(closed, 1);
+});
+
+test('monkey: pkill antes de arrancar y otra vez al cerrar', async () => {
+  const ev = [];
+  const run = async a => { ev.push(a.includes('pkill') ? 'pkill' : a[0]); return '1'; };
+  const proc = Object.assign(new (require('node:events'))(), { kill: () => ev.push('proc.kill') });
+  const m = monkeySession(run, 'x:5555', () => { ev.push('spawn'); return proc; });
+  const p = m.press('KEYCODE_HOME').catch(() => {});
+  await new Promise(r => setTimeout(r, 100));
+  m.close();
+  await p;
+  assert.deepEqual(ev.slice(0, 3), ['pkill', 'forward', 'spawn']);
+  assert.ok(ev.indexOf('pkill', 1) > ev.indexOf('spawn'));
 });

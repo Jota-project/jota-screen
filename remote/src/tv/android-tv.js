@@ -35,7 +35,9 @@ const TV_KEYS = Object.freeze({
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 /** Sesión monkey: `press KEYCODE_X` por un socket (~10 ms) en vez de `input keyevent` (1-2 s). Se rehace en la siguiente tecla si cae. */
-function monkeySession(/** @type {(args: string[]) => Promise<string>} */ run, /** @type {string} */ addr) {
+function monkeySession(/** @type {(args: string[]) => Promise<string>} */ run, /** @type {string} */ addr, /** @type {typeof spawn} */ spawnFn = spawn) {
+  // matar el `adb shell` local no para monkey en la tele: se mata allí
+  const pkill = () => run(['shell', 'pkill', '-f', 'com.android.commands.monkey']).catch(() => {});
   /** @typedef {{ sock: net.Socket | null, proc: import('node:child_process').ChildProcess, waiting: Array<(l: string | null) => void>, dead: boolean, ready: boolean, kill: () => void }} Sess */
   /** @type {Promise<Sess> | null} */
   let sess = null;
@@ -43,12 +45,13 @@ function monkeySession(/** @type {(args: string[]) => Promise<string>} */ run, /
   let cur = null;
   let tail = Promise.resolve();
   const open = async () => {
+    await pkill();   // restos de un arranque anterior del servidor
     const port = (await run(['forward', 'tcp:0', 'tcp:1080'])).trim();
-    const proc = spawn('adb', ['-s', addr, 'shell', 'monkey', '--port', '1080'], { stdio: 'ignore' });
+    const proc = spawnFn('adb', ['-s', addr, 'shell', 'monkey', '--port', '1080'], { stdio: 'ignore' });
     /** @type {Sess} */
     const s = { sock: null, proc, waiting: [], dead: false, ready: false, kill() {
       if (s.dead) return;
-      s.dead = true; s.sock?.destroy(); proc.kill();
+      s.dead = true; s.sock?.destroy(); proc.kill(); pkill();
       run(['forward', '--remove', 'tcp:' + port]).catch(() => {});
       for (const f of s.waiting.splice(0)) f(null);   // las teclas pendientes fallan ya
       if (cur === s) { cur = null; sess = null; }
@@ -142,4 +145,4 @@ function createAndroidTv({ addr, input, log, adb }) {
   };
 }
 
-module.exports = { STATUS_CMD, parseStatus, passthroughUri, TV_KEYS, createAndroidTv };
+module.exports = { STATUS_CMD, parseStatus, passthroughUri, TV_KEYS, createAndroidTv, monkeySession };
