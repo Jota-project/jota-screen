@@ -42,11 +42,14 @@ module.exports = function createTele({ tv, state, broadcast, watched, pause, log
   }
   // nunca dos lecturas a la vez, y cada una empieza después de lo que la pidió
   let chain = Promise.resolve();
-  const readNow = () => (chain = chain.then(read));
+  // un fallo fuera de la lectura (broadcast, log) no puede dejar la cadena rechazada: el sondeo se pararía
+  const readNow = () => (chain = chain.then(read).catch(() => {}));
 
   function tick() {
-    readNow().then(() => { setTimeout(tick, watched() ? WATCHED_MS : IDLE_MS).unref?.(); });
+    readNow().finally(() => { setTimeout(tick, watched() ? WATCHED_MS : IDLE_MS).unref?.(); });
   }
+  // apagada, o sin responder después de verla apagada (reposo profundo): hay que encenderla
+  const asleep = () => state.tv.power === 'off' || (state.tv.power === null && lastPower === 'off');
 
   /** Hace `fn`, lee el estado al momento y devuelve la tele o el error. */
   async function act(/** @type {() => Promise<any>} */ fn, readAfter = true) {
@@ -79,7 +82,7 @@ module.exports = function createTele({ tv, state, broadcast, watched, pause, log
     const ok = () => state.tv.power === 'on' && state.tv.src === 'j';
     if (ok()) return true;
     try {
-      if (state.tv.power === 'off') { own = true; await tv.power(true); } else if (state.tv.src === 'tv') await tv.toJ();
+      if (asleep()) { own = true; await tv.power(true); } else if (state.tv.src === 'tv') await tv.toJ();
     } catch { own = false; }
     for (const end = Date.now() + ENSURE_MS; Date.now() < end;) {
       await sleep(ENSURE_STEP_MS);
@@ -97,9 +100,11 @@ module.exports = function createTele({ tv, state, broadcast, watched, pause, log
    */
   function withScreen(cmds, types) {
     return cmds.map(c => (types.has(c.t) || [...types].some(x => x.startsWith(c.t + ':')) ? { ...c, run: async (m, ctx) => {
-      const needs = types.has(m.t) || types.has(m.t + ':' + m.op);
-      // con la tele sin responder (null) no se espera: la orden va directa
-      if (needs && (state.tv.power === 'off' || state.tv.src === 'tv') && !(await ensureJ())) log.info('tele: no llegó a J-Screen a tiempo');
+      if (types.has(m.t) || types.has(m.t + ':' + m.op)) {
+        await readNow();   // el estado guardado puede tener 15 s: la tele pudo apagarse con el mando original
+        // sin responder y sin haberla visto apagada no se espera: la orden va directa
+        if ((asleep() || state.tv.src === 'tv') && !(await ensureJ())) log.info('tele: no llegó a J-Screen a tiempo');
+      }
       return c.run(m, ctx);
     } } : c));
   }

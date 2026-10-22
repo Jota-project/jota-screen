@@ -195,10 +195,13 @@ const talkView = createTalkView({ cdp, pub: PUB, log: log.info, context: agentCt
   const shown = !!card && talkView.media(card);
   log.info(`netflix: pregunta reconocida (${i.kind}): tarjeta en la conversación: ${shown ? 'sí' : card ? 'no, la capa no la admite ahora' : 'no, sin datos'}`);
 } });
-// al apagar o pasar a Tele: el vídeo de la página y Spotify, en pausa (si suenan; los errores no cuentan)
+// al apagar o pasar a Tele: el vídeo de la página y Spotify en la tele, en pausa (si suenan; los errores no cuentan)
 async function pauseMedia() {
   await cdp.call('Runtime.evaluate', { expression: '(()=>{const v=document.querySelector("video");if(v&&!v.paused)v.pause()})()' }).catch(() => {});
-  try { if ((await spotify.now.poll(3000))?.playing) await spotify.spotify({ a: 'pause' }); } catch {}
+  try {   // solo si suena en la tele (spotifyd), no en el móvil de nadie
+    const n = await spotify.now.poll(3000);
+    if (n?.playing && n.device?.name === CFG.SP_DEVICE) await spotify.spotify({ a: 'pause' });
+  } catch {}
 }
 const tele = androidTv ? createTele({ tv: androidTv, state, broadcast, watched: () => ws.clients().size > 0, pause: pauseMedia, log }) : null;
 const talk = createTalk({ gw, cfg: CFG, media: () => state.media, view: talkView, speaker, log });

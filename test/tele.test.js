@@ -30,9 +30,10 @@ function setup(t, { watched = false } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   const tv = fakeTv();
   const state = { vol: null, muted: false, tv: null };
-  const seen = { bc: 0, logs: [] };
+  const seen = { bc: 0, logs: /** @type {string[]} */ ([]), throwOnce: false };
   const tele = createTele({
-    tv, state, broadcast: () => seen.bc++, watched: () => watched,
+    tv, state, watched: () => watched,
+    broadcast: () => { seen.bc++; if (seen.throwOnce) { seen.throwOnce = false; throw new Error('difusión rota'); } },
     pause: async () => { tv.calls.push('pause'); }, log: { info: m => seen.logs.push(m) },
   });
   const step = async ms => { t.mock.timers.tick(ms); await flush(); };
@@ -104,6 +105,50 @@ test('un sondeo con otro volumen lo pone en el estado y difunde', async t => {
   tv.st = { ...tv.st, vol: 30 }; await step(15000);
   assert.equal(state.vol, 30);
   assert.equal(seen.bc, bc + 1);
+});
+
+test('un fallo al difundir no para el sondeo', async t => {
+  const { tv, state, seen, tele, step } = setup(t);
+  seen.throwOnce = true;
+  tele.start(); await flush();
+  assert.equal(seen.throwOnce, false, 'la primera difusión falló');
+  tv.st = { ...tv.st, vol: 40 }; await step(15000);
+  assert.equal(state.vol, 40);
+  tv.st = { ...tv.st, vol: 41 }; await step(15000);
+  assert.equal(state.vol, 41, 'sigue sondeando');
+});
+
+test('withScreen lee al momento: guardada encendida, apagada de verdad → enciende', async t => {
+  const { tv, tele, step } = setup(t);
+  tele.start(); await flush();                    // guardado: on / j
+  tv.st = { ...tv.st, power: 'off', src: null };  // apagada con el mando original, sin sondeo todavía
+  const [nav] = tele.withScreen([{ t: 'nav', run: () => ({ ok: 1 }) }], new Set(['nav']));
+  const p = nav.run({ t: 'nav' }, /** @type {any} */ ({}));
+  await flush();
+  assert.deepEqual(tv.calls, ['power:true']);
+  tv.st = { ...tv.st, src: 'j' }; await step(500);
+  assert.deepEqual(await p, { ok: 1 });
+});
+
+test('withScreen en reposo profundo (off y luego sin responder): intenta encender', async t => {
+  const { tv, tele, step } = setup(t);
+  tv.st = { ...tv.st, power: 'off', src: null };
+  tele.start(); await flush();
+  tv.st = { ...tv.st, power: null, src: null }; await step(15000);
+  const [nav] = tele.withScreen([{ t: 'nav', run: () => ({ ok: 1 }) }], new Set(['nav']));
+  const p = nav.run({ t: 'nav' }, /** @type {any} */ ({}));
+  await flush();
+  assert.deepEqual(tv.calls, ['power:true']);
+  tv.st = { ...tv.st, src: 'j' }; await step(500);
+  assert.deepEqual(await p, { ok: 1 });
+});
+
+test('withScreen sin estado previo y sin respuesta: no espera', async t => {
+  const { tv, tele } = setup(t);
+  tv.st = { ...tv.st, power: null, src: null };
+  const [nav] = tele.withScreen([{ t: 'nav', run: () => ({ ok: 1 }) }], new Set(['nav']));
+  assert.deepEqual(await nav.run({ t: 'nav' }, /** @type {any} */ ({})), { ok: 1 });
+  assert.deepEqual(tv.calls, []);
 });
 
 test('tele caída: estado desconocido y la orden da error', async t => {
