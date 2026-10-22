@@ -15,6 +15,9 @@ function addManifest() {
 }
 function useToken(r) { state.token = r.token; persist.set('token', state.token); persist.set('devid', r.id); addManifest(); }
 export async function settle() { // antes de conectar: canjea el código de admin o el token maestro y renueva la cookie
+  // el acceso directo arranca con el ?t= con el que se instaló; si ese ya no vale (dispositivo quitado), manda el guardado
+  const saved = persist.get('token', '');
+  if (state.token && saved && saved !== state.token && !(await post('/pair/me', { t: state.token })).ok) state.token = saved;
   if (state.adminCode) {
     const r = await post('/pair/admin', { code: state.adminCode, name: persist.get('pname', '') || uaName(), cur: state.token });
     if (r.token) { useToken(r); setTimeout(() => pill('Ya eres administrador'), 600); return; }
