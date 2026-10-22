@@ -21,6 +21,7 @@ const createPairRoutes = require('./src/auth/pair-http');
 const { createCdp } = require('./src/tv/cdp');
 const { createPointer, createAudio, createPairScreen } = require('./src/tv/devices');
 const { createPagePoll } = require('./src/tv/page-poll');
+const { createAndroidTv } = require('./src/tv/android-tv');
 const { createGatewayClient } = require('./src/gateway/client');
 const createTalk = require('./src/features/talk');
 const { createSpeaker } = require('./src/tv/speaker');
@@ -35,6 +36,7 @@ const createIdle = require('./src/features/idle');
 const createNetflix = require('./src/features/netflix');
 const { createWatch, intentOf } = require('./src/features/netflix-watch');
 const createYoutube = require('./src/features/youtube');
+const createTele = require('./src/features/tele');
 const { createJsonStore } = require('./src/core/json-store');
 const { createCommands } = require('./src/transport/commands');
 const { createSessions } = require('./src/transport/sessions');
@@ -97,7 +99,10 @@ cdp = createCdp({ port: CDP_PORT, log, hooks: {
   },
 } });
 const pointer = createPointer({ script: path.join(ROOT, 'pointer.py'), display: CFG.DISPLAY, disabled: NO_POINTER, log });
-const audio = createAudio({ runtimeDir: CFG.XDG_RUNTIME_DIR });
+const pipewire = createAudio({ runtimeDir: CFG.XDG_RUNTIME_DIR });
+// con TV_ADB la tele Google TV por ADB: su volumen es el único (PipeWire se deja al 100 % al arrancar)
+const androidTv = CFG.ADB ? createAndroidTv({ addr: CFG.ADB, input: CFG.INPUT, log }) : null;
+const audio = androidTv || pipewire;
 // con la capa del agente a la vista sondea también sin mandos: de ahí sale el paso del panel a la píldora
 const pagePoll = createPagePoll({ cdp, state, broadcast, watched: () => ws.clients().size > 0,
   active: () => talkView.watching(), onPlayback: on => talkView.playback(on) });
@@ -190,6 +195,12 @@ const talkView = createTalkView({ cdp, pub: PUB, log: log.info, context: agentCt
   const shown = !!card && talkView.media(card);
   log.info(`netflix: pregunta reconocida (${i.kind}): tarjeta en la conversación: ${shown ? 'sí' : card ? 'no, la capa no la admite ahora' : 'no, sin datos'}`);
 } });
+// al apagar o pasar a Tele: el vídeo de la página y Spotify, en pausa (si suenan; los errores no cuentan)
+async function pauseMedia() {
+  await cdp.call('Runtime.evaluate', { expression: '(()=>{const v=document.querySelector("video");if(v&&!v.paused)v.pause()})()' }).catch(() => {});
+  try { if ((await spotify.now.poll(3000))?.playing) await spotify.spotify({ a: 'pause' }); } catch {}
+}
+const tele = androidTv ? createTele({ tv: androidTv, state, broadcast, watched: () => ws.clients().size > 0, pause: pauseMedia, log }) : null;
 const talk = createTalk({ gw, cfg: CFG, media: () => state.media, view: talkView, speaker, log });
 
 // ───────────────────────── órdenes: cada una con su permiso al lado, en su capacidad
@@ -199,8 +210,11 @@ const netflixCommands = netflix.commands.map(c => ({ ...c, run: (/** @type {any}
   if (m && (m.op === 'open' || m.op === 'play')) talkView.navigating();
   return c.run(m, ctx);
 } }));
+// con la tele por ADB, lo que necesita la pantalla pone antes J-Screen delante (encender o volver de Tele)
+const SCREEN = new Set(['nav', 'home', 'youtube', 'present', 'show', 'netflix:open', 'netflix:play', 'idle:show']);
+const screen = tele ? (/** @type {any[]} */ l) => tele.withScreen(l, SCREEN) : (/** @type {any[]} */ l) => l;
 for (const list of [talk.commands, netflixCommands, youtube.commands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
-  createAccessCommands({ acc, meOf }), tv.commands]) commands.register(list);
+  createAccessCommands({ acc, meOf }), tv.commands, ...(tele ? [tele.commands] : [])]) commands.register(screen(list));
 
 /** Una orden del mando (sock), de la API o del MCP (ctx.dev), con los permisos de su dispositivo. */
 async function run(m, sock, ctx = {}) {
@@ -252,4 +266,5 @@ cdp.connect();
 nfxWatch.start();                                     // primera lectura al minuto; después, cada 3 h y tras ver Netflix
 pointer.start();
 control.volRead();
-process.on('SIGTERM', () => process.exit(0));
+if (tele) { pipewire.set(100); tele.start(); }
+process.on('SIGTERM', () => { androidTv?.close(); process.exit(0); });

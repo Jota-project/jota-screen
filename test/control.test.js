@@ -4,6 +4,7 @@ const { test, before, after } = require('node:test');
 const assert = require('node:assert/strict');
 const { start } = require('./helpers/server');
 const { startFakeCdp } = require('./helpers/fake-cdp');
+const createControl = require('../remote/src/features/control');
 
 let s, cdp, adminTok, fieldReply = { ok: 1 };
 const SID = 'S-P1';
@@ -184,4 +185,19 @@ test('si Chrome se cae, el estado se vacía y vuelve a conectarse solo', async (
     await new Promise(r => setTimeout(r, 50));
   }
   await cdp.waitFor(m => m.method === 'Target.attachToTarget' && cdp.calls.filter(x => x.method === 'Target.attachToTarget').length >= 2, 4000);
+});
+
+test('volumen (unidad, audio falso): dos subidas en la misma ráfaga respetan volMax', async () => {
+  let vol = 22;
+  const audio = {
+    read: async () => ({ vol, muted: false }), toggleMute: async () => {}, set: async () => {},
+    step: async (n, max = 100) => { await new Promise(r => setTimeout(r, 5)); vol = Math.min(max, vol + n); },
+  };
+  const state = { vol: 22, muted: false };
+  const control = createControl({ cdp: { call: async () => ({}) }, state, broadcast() {}, key: () => ({}), audio,
+    cfg: { HOME_URL: 'x', SELF: 'y' }, leaveStage() {} });
+  const c = control.commands.find(x => x.t === 'vol');
+  const ctx = /** @type {any} */ ({ P: { volMax: 23 } });
+  await Promise.all([c.run({ d: 'up' }, ctx), c.run({ d: 'up' }, ctx)]);
+  assert.equal(vol, 23);
 });

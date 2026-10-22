@@ -64,13 +64,15 @@ module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg
     return { playing: v === 1 };
   }
 
-  // volumen (PipeWire). Las pulsaciones seguidas se agrupan en una sola llamada.
+  // volumen (PipeWire o la tele por ADB). Las pulsaciones seguidas se agrupan en una sola llamada; `max` es el tope del
+  // dispositivo (volMax), que PipeWire ignora y la tele respeta al fijar el número final
   async function volRead() {
     const v = await audio.read();
     if (v) { state.vol = v.vol; state.muted = v.muted; }
   }
   let volQ = 0, volRun = false;
-  async function vol(d) {
+  /** @param {any} d @param {number} [max] */
+  async function vol(d, max) {
     if (d === 'mute') { await audio.toggleMute(); await volRead(); broadcast(); return { vol: state.vol, muted: state.muted }; }
     volQ += d === 'up' ? 1 : d === 'down' ? -1 : 0;
     if (!volRun) {
@@ -78,7 +80,7 @@ module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg
       try {
         while (volQ) {
           const n = volQ; volQ = 0;
-          await audio.step(n);
+          await audio.step(n, max);
         }
         await volRead();
       } finally { volRun = false; }
@@ -172,7 +174,7 @@ module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg
     { t: 'pp', run: () => playpause() },
     { t: 'seek', run: m => seek(m.s) },
     { t: 'fs', run: () => key('f') },
-    { t: 'vol', perm: (m, P) => (m.d === 'up' && state.vol !== null && state.vol >= P.volMax ? 'Volumen máximo: ' + P.volMax + ' %' : null), run: m => vol(m.d) },
+    { t: 'vol', perm: (m, P) => (m.d === 'up' && state.vol !== null && state.vol >= P.volMax ? 'Volumen máximo: ' + P.volMax + ' %' : null), run: (m, ctx) => vol(m.d, ctx.P.volMax) },
     { t: 'volset', clamp: (m, P) => ({ ...m, v: Math.min(Number(m.v) || 0, P.volMax) }), run: m => volSet(m.v) },
   ];
 
