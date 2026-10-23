@@ -4,7 +4,7 @@
 // (la tele no responde). Lo leen controls (botones a tvkey) y trackpad (gesto a la cruceta) con inTv() y padGesture().
 import { $ } from '../core/dom.js';
 import { on } from '../core/store.js';
-import { cmd, rpc } from '../core/api.js';
+import { rpc } from '../core/api.js';
 import { pill } from '../ui/pill.js';
 import { buzz } from '../ui/haptics.js';
 import { segOn, segPaint } from '../ui/seg.js';
@@ -28,10 +28,13 @@ let padLabel = '';
 /** ¿El mando está en modo Tele? (los botones y el trackpad van a la tele) */
 export const inTv = () => mode === 'tv';
 
+/** Orden a la tele con respuesta, sin esperarla (las flechas van seguidas): si falla, la píldora lo dice. */
+export function tvRpc(o) { rpc(o).then(r => { if (r && r.error) pill('La tele no responde'); }); }
+
 /** Al soltar el trackpad en modo Tele: la flecha (u OK) a la tele y el chevrón se ilumina. */
 export function padGesture(dx, dy) {
   const k = swipeDir(dx, dy), e = $(HIT[k]);
-  cmd({ t: 'tvkey', k }); buzz(9);
+  tvRpc({ t: 'tvkey', k }); buzz(9);
   e.classList.add('hit'); setTimeout(() => e.classList.remove('hit'), 260);
 }
 

@@ -4,7 +4,7 @@ import { $, el, hide } from '../core/dom.js';
 import { cfg, state, on, emit } from '../core/store.js';
 import { cmd, rpc } from '../core/api.js';
 import { paintAmbient } from './ambient.js';
-import { inTv } from './tele.js';
+import { inTv, tvRpc } from './tele.js';
 
 /* accesos del mando: salen de cfg.apps (M5 los hará configurables), con el logo de cada servicio (símbolos l-* de index.html) */
 const APPS = {
@@ -60,8 +60,9 @@ function volDigit(txt, n) {
 }
 /* ±10 s (v2): mueve el vídeo de la página; si no hay <video>, la flecha como en el v1 */
 function seek10(s) { rpc({ t: 'seek', s }).then(r => { if (r && r.error) cmd({ t: 'key', k: s < 0 ? 'ArrowLeft' : 'ArrowRight' }); }); }
-/* en modo Tele, atrás, inicio, play/pausa y ±10 s son teclas de la tele */
-const tvOr = (k, f) => () => (inTv() ? cmd({ t: 'tvkey', k }) : f());
+/* en modo Tele, atrás, inicio, play/pausa y ±10 s son teclas de la tele; el volumen, con respuesta (la tele puede no responder) */
+const tvOr = (k, f) => () => (inTv() ? tvRpc({ t: 'tvkey', k }) : f());
+const vol = d => () => (inTv() ? tvRpc : cmd)({ t: 'vol', d });
 
 export const controls = {
   name: 'controls',
@@ -70,7 +71,7 @@ export const controls = {
     home: tvOr('home', () => cmd({ t: 'home' })), back: tvOr('back', () => cmd({ t: 'back' })), fwd: () => cmd({ t: 'forward' }), reload: () => cmd({ t: 'reload' }),
     fs: () => cmd({ t: 'fs' }), pp: tvOr('pp', () => cmd({ t: 'pp' })),
     skb: () => cmd({ t: 'key', k: 'ArrowLeft' }), skf: () => cmd({ t: 'key', k: 'ArrowRight' }),
-    vd: () => cmd({ t: 'vol', d: 'down' }), vu: () => cmd({ t: 'vol', d: 'up' }), vm: () => cmd({ t: 'vol', d: 'mute' }),
+    vd: vol('down'), vu: vol('up'), vm: vol('mute'),
     s10b: tvOr('rew', () => seek10(-10)), s10f: tvOr('ff', () => seek10(10)),
   },
   init() {
