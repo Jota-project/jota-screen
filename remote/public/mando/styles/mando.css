@@ -392,27 +392,85 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .jt2 b{font:420 21px/1.1 var(--serif);font-variation-settings:"opsz" 72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .jt2 small{font-size:14px;color:var(--text-soft)}
 .jota2>svg{flex:none}
+/* ── modos de la tele (TVC Diseño - Control nativo de la tele; features/tele.js): J-Screen, Tele (:root.tv) y Apagada
+   (:root.off). Las luces de Tele (azul y verde azulado) salen de ambient.js; aquí cambian en 1,4 s si hay tele. */
+:root:has(#srcRow:not([hidden])){transition:--ca 1.4s ease,--cb 1.4s ease}
+.amb{transition:opacity 1.2s ease}
+:root.off .amb{opacity:.18}
+/* fila nueva: dónde está la tele (J-Screen | Tele) y el encendido */
+.srcRow{display:flex;align-items:center;justify-content:space-between;margin-top:2px}
+.srcRow[hidden]{display:none}
+.srcSeg{position:relative;display:flex;padding:3px;border-radius:999px;background:var(--pad)}
+.srcSeg button{position:relative;z-index:1;height:38px;padding:0 18px;border:0;border-radius:999px;background:transparent;color:var(--text-soft);font:600 14px var(--sans);cursor:pointer;touch-action:manipulation;transition:color .4s ease}
+.srcSeg button[aria-checked=true]{color:var(--text)}
+.srcSeg button:focus-visible{outline:2px solid var(--accent-text);outline-offset:2px}
+.srcSeg .ind{position:absolute;top:3px;bottom:3px;left:3px;border-radius:999px;background:var(--accent-tint);box-shadow:inset 0 0 0 1px var(--accent);transition:transform .55s var(--ease),width .55s var(--ease)}
+.pw2{width:48px;height:48px;margin-right:-8px}
+/* la tele no responde: la fila y ⏻ apagados y el punto de estado en aviso */
+.srcRow [aria-disabled=true]{opacity:.4;cursor:default}
+:root.tvq .app2 .dot{background:var(--warn)}
+/* trackpad ↔ cruceta: la misma superficie; en la tele se desliza para moverse y se toca para elegir */
+.cross{position:absolute;inset:0 0 72px 0;pointer-events:none;opacity:0;transform:scale(.9);transition:opacity .45s ease,transform .7s var(--ease)}
+:root.tv .cross{opacity:1;transform:none;transition-delay:.12s}
+.cross i{position:absolute;width:30px;height:30px;color:var(--text-faint);transition:color .3s ease,transform .3s var(--ease)}
+.cross i svg{width:30px;height:30px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.cross .cu{left:50%;top:22px;margin-left:-15px}.cross .cd{left:50%;bottom:22px;margin-left:-15px}
+.cross .cl{top:50%;left:18px;margin-top:-15px}.cross .cr{top:50%;right:18px;margin-top:-15px}
+.cross .ok{position:absolute;left:50%;top:50%;width:88px;height:88px;margin:-44px;border-radius:999px;box-shadow:inset 0 0 0 1.5px var(--line);display:grid;place-items:center;font:600 13px var(--sans);letter-spacing:.12em;color:var(--text-faint);transition:background .3s ease,color .3s ease,transform .3s var(--ease)}
+.cross i.hit{color:var(--accent-text);transform:scale(1.25)}
+.cross .ok.hit{background:var(--halo);color:var(--accent-text);transform:scale(.94)}
+.hint2{transition:opacity .4s ease,transform .6s var(--ease)}
+.hint2 .h-tv{display:none}
+:root.tv .hint2 .h-j{display:none}:root.tv .hint2 .h-tv{display:inline}
+.hint2.swap{opacity:0;transform:translateY(6px)}
+/* lo que en la tele no tiene sentido se recoge (no desaparece de golpe) */
+.nav2 .b2{transition:flex-grow .55s var(--ease),opacity .3s ease,color .2s ease}
+:root.tv .nav2 .j-only{flex-grow:0;opacity:0;pointer-events:none;overflow:hidden;width:0}
+.apps2{height:52px;transition:height .55s var(--ease),opacity .35s ease,margin .55s var(--ease)}
+:root.tv .apps2{height:0;opacity:0;margin:-5px 0;overflow:visible clip}  /* se recorta solo en alto y solo al plegarse: fuera, el anillo de foco se ve entero */
+/* apagada: el mando se aparta en cascada y queda el botón de encender */
+/* --o: orden de arriba abajo (lo pone tele.js); se van de abajo arriba y vuelven de arriba abajo */
+.app2>:not(.dock2),.dock2>*{transition:opacity .45s ease,filter .6s ease,transform .7s var(--ease),height .55s var(--ease),margin .55s var(--ease);transition-delay:calc(var(--o,0) * .06s)}
+:root.off .app2>:not(.dock2),:root.off .dock2>*{opacity:0;filter:blur(8px);transform:scale(.97);pointer-events:none;transition-delay:calc((7 - var(--o,0)) * .05s)}
+.offV{position:fixed;inset:0;z-index:3;display:grid;place-items:center;align-content:center;gap:22px;opacity:0;pointer-events:none;transition:opacity .5s ease}
+:root.off .offV{opacity:1;pointer-events:auto;transition-delay:.35s}
+.pwOrb{position:relative;width:132px;height:132px;border-radius:999px;border:0;background:transparent;color:var(--text);cursor:pointer;display:grid;place-items:center;touch-action:manipulation}
+.pwOrb:focus-visible{outline:2px solid var(--accent-text);outline-offset:4px}
+.pwOrb::before{content:"";position:absolute;inset:0;border-radius:999px;box-shadow:inset 0 0 0 1.5px var(--line),0 0 0 14px rgba(124,106,174,.08);animation:breathe 3.4s ease-in-out infinite}
+.pwOrb::after{content:"";position:absolute;inset:0;border-radius:999px;background:radial-gradient(circle at 35% 30%,#a99ad1,#7c6aae 55%,#6e8cc4 120%);opacity:0;transform:scale(.6);transition:opacity .4s ease,transform .9s var(--ease)}
+.pwOrb svg{position:relative;z-index:1;width:40px;height:40px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round}
+:root.waking .pwOrb::after{opacity:1;transform:scale(1)}
+:root.waking .pwOrb svg{color:#fff}
+.offT{text-align:center}
+.offT b{display:block;font:380 34px/1.1 var(--serif);font-variation-settings:"opsz" 144;letter-spacing:-.015em}
+.offT small{display:block;margin-top:6px;font-size:15px;color:var(--text-soft);transition:opacity .3s ease}
 /* pantallas bajas (iPhone SE, Safari con barras): todo un poco más compacto para que el trackpad no desaparezca */
 @media (orientation:portrait) and (max-height:720px){
   .app2{gap:6px}
   .nm2 b{font-size:30px}.ttl2{gap:6px}
   .vb2{width:56px;height:56px}.vol2{font-size:40px}.vol2.w3{font-size:30px}.mute2{height:48px}
   .nav2,.nav2 .b2{height:50px}.play2{height:72px;gap:32px}.sk2{width:56px;height:56px}.pp2{width:72px;height:72px}
-  .apps2 .b2{height:48px}.jota2{height:58px}.orb2{width:40px;height:40px}.jt2 b{font-size:19px}
+  .apps2,.apps2 .b2{height:48px}.jota2{height:58px}.orb2{width:40px;height:40px}.jt2 b{font-size:19px}
 }
 /* apaisado o tablet: trackpad a la izquierda; cabecera y botones en una columna a la derecha */
 @media (orientation:landscape) and (min-width:640px){
   .app2{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,36vw);grid-template-rows:auto minmax(0,1fr);column-gap:18px;row-gap:10px}
-  .mid2{grid-column:1;grid-row:1/3;margin-top:0}
+  .mid2{grid-column:1;grid-row:1/-1;margin-top:0}
   .top2{grid-column:2;grid-row:1;align-self:start}
   .dock2{grid-column:2;grid-row:2;display:flex;flex-direction:column;justify-content:flex-end;gap:8px;min-height:0}
+  /* con la fila J-Screen | Tele, debajo de la cabecera */
+  .app2:has(>.srcRow:not([hidden])){grid-template-rows:auto auto minmax(0,1fr)}
+  .srcRow{grid-column:2;grid-row:2;margin-top:0}
+  .app2:has(>.srcRow:not([hidden])) .dock2{grid-row:3}
+  :root.tv .apps2{margin:-4px 0}
 }
 @media (orientation:landscape) and (min-width:640px) and (max-height:520px){
   .app2{row-gap:6px}.dock2{gap:4px}
   .nm2 b{font-size:28px}.ttl2{gap:6px}
   .vb2{width:48px;height:48px}.vol2{font-size:36px}.vol2.w3{font-size:28px}.mute2{height:48px}
   .nav2,.nav2 .b2{height:48px}.play2{height:62px;gap:28px}.sk2{width:52px;height:52px}.pp2{width:62px;height:62px}
-  .apps2 .b2{height:48px}.jota2{height:52px}.orb2{width:36px;height:36px}.jt2 b{font-size:18px}
+  .apps2,.apps2 .b2{height:48px}.jota2{height:52px}
+  :root.tv .apps2{margin:-2px 0}.orb2{width:36px;height:36px}.jt2 b{font-size:18px}
 }
 /* ajustes: portada por alcance y una página por tema (TVC Diseño - Ajustes del mando) */
 #setS [hidden]{display:none!important}  /* .nv, .stK y compañía ponen display: hidden tiene que ganar */

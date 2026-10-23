@@ -74,6 +74,8 @@ const clean = (t, n) => (n ? t.replace(new RegExp('\\s*[-–—|·]\\s*' + n.rep
 
 /** Qué hay en la tele (título, detalle y los dos colores) a partir del mensaje «state». */
 export function contextOf(s) {
+  // en la entrada del Google TV (modo Tele) la página de J-Screen no se ve: azul y verde azulado
+  if (s && s.tv && s.tv.power === 'on' && s.tv.src === 'tv') return { t: 'Google TV', m: 'Inicio', a: '#4f78b8', b: '#3f8f94' };
   if (!s || !s.cdp) return { t: 'Navegador no disponible', m: '', a: MALVA, b: CIELO };
   const amb = s.amb;
   if (amb) {                                             // reposo: malva y cielo, o la carátula si suena algo

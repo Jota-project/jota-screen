@@ -1,14 +1,16 @@
 // Trackpad: un dedo mueve el cursor (toque: clic; doble toque y arrastre: arrastrar), dos dedos desplazan (con
-// inercia; toque con dos: clic derecho). Las rachas se juntan por fotograma.
+// inercia; toque con dos: clic derecho). Las rachas se juntan por fotograma. En modo Tele no hay puntero: el gesto
+// entero, al soltar, es una flecha u OK de la cruceta (features/tele.js).
 import { $ } from '../core/dom.js';
 import { cfg } from '../core/store.js';
 import { send } from '../core/api.js';
 import { buzz } from '../ui/haptics.js';
+import { inTv, padGesture } from './tele.js';
 
 const P = new Map();
 let ax = 0, ay = 0, sxa = 0, sya = 0, raf = 0;
 let downT = 0, moved = 0, maxN = 0, twoT = 0, twoMoved = 0, rcDone = false, dragging = false, tdArm = false, lastTap = 0;
-let svy = 0, inertia = 0;
+let svy = 0, inertia = 0, x0 = 0, y0 = 0;
 const r2 = n => Math.round(n * 100) / 100;
 /* un halo malva sigue al dedo mientras toca (en vez de la onda) y la ayuda se esconde solo mientras se toca */
 let haloId = null;
@@ -49,9 +51,10 @@ function up(e) {
   if (n === 1) {
     pad.classList.remove('on');
     if (dragging) { send('b 1 0'); dragging = false; }
+    else if (inTv()) { if (ok && maxN === 1) padGesture(e.clientX - x0, e.clientY - y0, e.timeStamp - downT); }
     else if (ok && maxN === 1 && e.timeStamp - downT < 240 && moved < 9) { click(1, p); lastTap = e.timeStamp; }
     maxN = 0;
-  } else if (n === 2) {
+  } else if (n === 2 && !inTv()) {
     if (ok && !rcDone && e.timeStamp - twoT < 280 && twoMoved < 10) { rcDone = true; click(3, p); }
     else if (twoMoved > 14) startInertia();
   }
@@ -67,13 +70,14 @@ export const trackpad = {
       P.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
       if (haloId === null) { haloId = e.pointerId; haloAt(e); halo.classList.add('on'); } hint.classList.add('off');
       if (P.size === 1) {
-        stopInertia(); downT = e.timeStamp; moved = 0; maxN = 1; dragging = false; svy = 0;
+        stopInertia(); downT = e.timeStamp; x0 = e.clientX; y0 = e.clientY; moved = 0; maxN = 1; dragging = false; svy = 0;
         tdArm = e.timeStamp - lastTap < 240; pad.classList.add('on');
       } else if (P.size === 2) { maxN = 2; twoT = e.timeStamp; twoMoved = 0; rcDone = false; svy = 0; }
     });
     pad.addEventListener('pointermove', e => {
       const p = P.get(e.pointerId); if (!p) return;
       if (e.pointerId === haloId) haloAt(e);
+      if (inTv() && !dragging) return;                // en la tele solo cuenta el gesto al soltar
       const dx = e.clientX - p.x, dy = e.clientY - p.y, dt = Math.max(1, e.timeStamp - p.t);
       p.x = e.clientX; p.y = e.clientY; p.t = e.timeStamp;
       if (P.size === 1) {

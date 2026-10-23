@@ -29,6 +29,7 @@
 <link rel="modulepreload" href="/mando/features/ambient.js">
 <link rel="modulepreload" href="/mando/features/controls.js">
 <link rel="modulepreload" href="/mando/features/trackpad.js">
+<link rel="modulepreload" href="/mando/features/tele.js">
 <link rel="modulepreload" href="/mando/features/keyboard.js">
 <link rel="modulepreload" href="/mando/features/go.js">
 <link rel="modulepreload" href="/mando/features/agent.js">
@@ -106,11 +107,31 @@
     </button>
   </header>
 
+  <!-- dónde está la tele (J-Screen o su Google TV) y el encendido; solo con la tele por ADB (features/tele.js) -->
+  <div class="srcRow" id="srcRow" hidden>
+    <div class="srcSeg" id="srcSeg" role="radiogroup" aria-label="Qué se ve en la tele">
+      <span class="ind" id="srcInd" aria-hidden="true"></span>
+      <button type="button" role="radio" aria-checked="true" data-src="j">J-Screen</button>
+      <button type="button" role="radio" aria-checked="false" data-src="tv" tabindex="-1">Tele</button>
+    </div>
+    <button class="b2 pw2" data-a="pwoff" data-click aria-label="Apagar la tele">
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M12 3.5v8"/><path d="M7 6.2a7.5 7.5 0 1 0 10 0"/></svg>
+    </button>
+  </div>
+
   <div class="mid2">
     <section class="pad2" id="pad" aria-label="Trackpad: desliza para mover el cursor de la tele, toca para elegir, desliza con dos dedos para hacer scroll">
       <i class="halo2" id="halo"></i>
       <span class="rail2" id="rail" aria-hidden="true" hidden><i id="railT"></i></span>
-      <span class="hint2" id="hint">Desliza para mover el cursor.<br>Toca para elegir. Con dos dedos, sube y baja.</span>
+      <!-- modo Tele: la misma superficie es la cruceta (deslizar = flecha, tocar = OK) -->
+      <div class="cross" aria-hidden="true">
+        <i class="cu"><svg viewBox="0 0 24 24"><path d="M6 14.5l6-6 6 6"/></svg></i>
+        <i class="cd"><svg viewBox="0 0 24 24"><path d="M6 9.5l6 6 6-6"/></svg></i>
+        <i class="cl"><svg viewBox="0 0 24 24"><path d="M14.5 6l-6 6 6 6"/></svg></i>
+        <i class="cr"><svg viewBox="0 0 24 24"><path d="M9.5 6l6 6-6 6"/></svg></i>
+        <span class="ok">OK</span>
+      </div>
+      <span class="hint2" id="hint"><span class="h-j">Desliza para mover el cursor.<br>Toca para elegir. Con dos dedos, sube y baja.</span><span class="h-tv">Desliza para moverte por la tele.<br>Toca para elegir.</span></span>
     </section>
     <div class="vcol2">
       <button class="b2 vb2" data-a="vu" data-rep aria-label="Subir volumen">
@@ -135,13 +156,13 @@
       <button class="b2" data-a="home" aria-label="Inicio">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg>
       </button>
-      <button class="b2" data-a="kb" data-click aria-label="Escribir en la tele">
+      <button class="b2 j-only" data-a="kb" data-click aria-label="Escribir en la tele">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="3"/><path d="M6.5 10h.01M10 10h.01M14 10h.01M17.5 10h.01M8 14h8"/></svg>
       </button>
-      <button class="b2" data-a="go" data-click aria-label="Abrir una dirección">
+      <button class="b2 j-only" data-a="go" data-click aria-label="Abrir una dirección">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1"/><path d="M14 10a4 4 0 0 0-5.7 0l-3 3A4 4 0 0 0 11 18.7l1-1"/></svg>
       </button>
-      <button class="b2" data-a="fs" aria-label="Pantalla completa">
+      <button class="b2 j-only" data-a="fs" aria-label="Pantalla completa">
         <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/></svg>
       </button>
     </nav>
@@ -168,6 +189,12 @@
     </button>
   </div>
 </main>
+
+<!-- tele apagada: el mando se aparta y queda el botón de encender -->
+<div class="offV" id="offV">
+  <button class="pwOrb" type="button" data-a="pwon" data-click aria-label="Encender la tele"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5v8"/><path d="M7 6.2a7.5 7.5 0 1 0 10 0"/></svg></button>
+  <div class="offT"><b>Apagada</b><small id="offS" aria-live="polite">Toca para encender</small></div>
+</div>
 
 <div class="shade" id="shade"></div>
 <div class="pill" id="pill"></div>

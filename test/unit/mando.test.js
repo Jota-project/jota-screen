@@ -50,6 +50,7 @@ test('mando: cada importación existe y la sirve el servidor (rutas relativas, .
   const { edges, bad } = graph();
   assert.deepEqual(bad, []);
   assert.ok(edges.size > 10, 'app.js importa los módulos');
+  assert.ok(edges.has('/mando/features/tele.js'), 'el modo Tele (features/tele.js) está en el grafo');
   // y no queda ningún módulo suelto (todo .js de mando/ salvo theme.js se alcanza desde app.js)
   const all = [];
   const walk = d => { for (const f of fs.readdirSync(path.join(PUB, d))) { const r = d + '/' + f; if (fs.statSync(path.join(PUB, r)).isDirectory()) walk(r); else if (f.endsWith('.js')) all.push(r); } };
