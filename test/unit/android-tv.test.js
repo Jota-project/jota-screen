@@ -3,7 +3,7 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const path = require('node:path');
-const { parseStatus, passthroughUri, TV_KEYS, createAndroidTv, monkeySession } = require(path.join(__dirname, '..', '..', 'remote', 'src', 'tv', 'android-tv'));
+const { STATUS_CMD, parseStatus, passthroughUri, TV_KEYS, createAndroidTv, monkeySession } = require(path.join(__dirname, '..', '..', 'remote', 'src', 'tv', 'android-tv'));
 
 const TV_INPUT = 'com.mediatek.tvinput/.hdmi.HDMIInputService/HW4';
 const OUT = `  mWakefulness=Awake
@@ -13,6 +13,7 @@ const OUT = `  mWakefulness=Awake
       inputId: ${TV_INPUT}
       sessionId: 100051120
       sessionToken: android.os.Binder@1483134
+  mainSessionToken: android.os.Binder@1483134
 - STREAM_MUSIC:
    Muted: false
    Muted Internally: false
@@ -43,6 +44,58 @@ test('leer la tele: encendido, silencio y salida vacía', () => {
   assert.equal(vacio.power, null); assert.equal(vacio.src, null); assert.equal(vacio.vol, null);
 });
 
+// ── la sesión principal (mainSessionToken), no la primera de la lista
+const HEAD = `  mWakefulness=Awake
+    mResumedActivity: ActivityRecord{d6c81d3 u0 com.mediatek.wwtv.tvcenter/.nav.TurnkeyUiMainActivity t5542}
+`;
+const TAIL = `- STREAM_MUSIC:
+   Muted: false
+   streamVolume:22
+`;
+// (a) captura real, despierta, J-Screen en HDMI1 (2026-10-22)
+const REAL_AWAKE = `  sessionStateMap: ITvInputSession -> SessionState
+    android.os.Binder@1483134: com.android.server.tv.TvInputManagerService$SessionState@3e14e47
+      inputId: com.mediatek.tvinput/.hdmi.HDMIInputService/HW4
+      sessionId: 100051120
+      sessionToken: android.os.Binder@1483134
+      session: android.media.tv.ITvInputSession$Stub$Proxy@b49e79d
+      hardwareSessionToken: null
+  mInputMap: ...
+  mainSessionToken: android.os.Binder@1483134
+`;
+// (b) captura real, dormida: sin sesiones y mainSessionToken null
+const REAL_ASLEEP = `  mWakefulness=Asleep
+  sessionStateMap: ITvInputSession -> SessionState
+  mCallbacks:
+    android.media.tv.ITvInputManagerCallback$Stub$Proxy@d0fadbf
+    android.media.tv.ITvInputManagerCallback$Stub$Proxy@7575c8c
+    android.media.tv.TvInputManager$2@7d5da56
+    android.media.tv.ITvInputManagerCallback$Stub$Proxy@1dab124
+  mainSessionToken: null
+`;
+const entry = (tok, input) => `    android.os.Binder@${tok}: com.android.server.tv.TvInputManagerService$SessionState@1
+      inputId: ${input}
+      sessionId: 1
+      sessionToken: android.os.Binder@${tok}
+      hardwareSessionToken: null
+`;
+const TUNER = 'com.mediatek.tvinput/.tuner.TunerInputService/HW0';
+const two = (first, second, main) => `  sessionStateMap: ITvInputSession -> SessionState\n${first}${second}  mainSessionToken: android.os.Binder@${main}\n`;
+
+test('leer la tele: la entrada es la de la sesión principal', () => {
+  assert.equal(parseStatus(HEAD + REAL_AWAKE + TAIL, TV_INPUT).src, 'j', '(a) real despierta');
+  const asleep = parseStatus(REAL_ASLEEP, TV_INPUT);
+  assert.equal(asleep.power, 'off'); assert.equal(asleep.src, null, '(b) real dormida');
+  assert.equal(parseStatus(REAL_ASLEEP.replace('Asleep', 'Awake') + HEAD, TV_INPUT).src, 'tv', '(b) mainSessionToken null');
+  assert.equal(parseStatus(HEAD + two(entry('1', TV_INPUT), entry('2', TUNER), '2') + TAIL, TV_INPUT).src, 'tv', '(c) HW4 vieja primero, la principal es TDT');
+  assert.equal(parseStatus(HEAD + two(entry('1', TUNER), entry('2', TV_INPUT), '2') + TAIL, TV_INPUT).src, 'j', '(d) la principal es HW4, segunda');
+  assert.equal(parseStatus(HEAD + two(entry('1', TV_INPUT), entry('2', TUNER), '9') + TAIL, TV_INPUT).src, 'tv', 'ninguna coincide');
+});
+
+test('STATUS_CMD lee el bloque de sesiones entero, hasta mainSessionToken', () => {
+  assert.match(STATUS_CMD, /dumpsys tv_input \| sed -n '\/sessionStateMap\/,\/mainSessionToken\/p'/);
+});
+
 test('URI de passthrough y teclas', () => {
   assert.equal(passthroughUri(TV_INPUT), 'content://android.media.tv/passthrough/com.mediatek.tvinput%2F.hdmi.HDMIInputService%2FHW4');
   for (const k of ['up', 'down', 'left', 'right', 'ok', 'back', 'home', 'pp', 'rew', 'ff']) assert.match(TV_KEYS[k], /^KEYCODE_/, k);
@@ -64,6 +117,12 @@ test('tele: step acota a 0..max y suma al volumen real', async () => {
   let t = mk(22); await t.tv.step(1); assert.deepEqual(sets(t.adb), ['23']);
   t = mk(3); await t.tv.step(-5); assert.deepEqual(sets(t.adb), ['0']);
   t = mk(22); await t.tv.step(2, 23); assert.deepEqual(sets(t.adb), ['23']);
+});
+
+test('tele: set redondea y acota a 0..100', async () => {
+  const t = mk(22);
+  await t.tv.set(33.5); await t.tv.set(150); await t.tv.set(-3);
+  assert.deepEqual(sets(t.adb), ['34', '100', '0']);
 });
 
 test('tele: power(true) despierta y luego pasa a J; power(false) duerme', async () => {

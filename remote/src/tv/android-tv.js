@@ -5,7 +5,7 @@ const { execFile, spawn } = require('node:child_process');
 const net = require('node:net');
 
 // Sondeo filtrado de una sola línea de shell (0,31 s medido en la tele real).
-const STATUS_CMD = "dumpsys power | grep -m1 mWakefulness=; dumpsys activity activities | grep -m1 mResumedActivity; dumpsys tv_input | grep -A5 -m1 sessionStateMap; dumpsys audio | grep -A5 -m1 '^- STREAM_MUSIC'";
+const STATUS_CMD = "dumpsys power | grep -m1 mWakefulness=; dumpsys activity activities | grep -m1 mResumedActivity; dumpsys tv_input | sed -n '/sessionStateMap/,/mainSessionToken/p'; dumpsys audio | grep -A5 -m1 '^- STREAM_MUSIC'";
 
 /**
  * @param {string} out salida de STATUS_CMD
@@ -17,10 +17,26 @@ function parseStatus(out, input) {
   const power = !wake ? null : /^(Awake|Dreaming)$/.test(wake[1]) ? 'on' : /^(Asleep|Dozing)$/.test(wake[1]) ? 'off' : null;
   // Dreaming sigue siendo «encendida»: el salvapantallas no apaga la tele.
   const front = /mResumedActivity:.*TurnkeyUiMainActivity/.test(out);
-  const session = /sessionStateMap[\s\S]*?inputId: (\S+)/.exec(out);
-  const src = power !== 'on' ? null : front && session && session[1] === input ? 'j' : 'tv';
+  const src = power !== 'on' ? null : front && mainInput(out) === input ? 'j' : 'tv';
   const vol = /streamVolume:(\d+)/.exec(out);
   return { power, src, vol: vol ? Number(vol[1]) : null, muted: /Muted: true/.test(out) };
+}
+
+/**
+ * inputId de la sesión principal (la de `mainSessionToken`), no la primera de la lista: en MediaTek la TDT también va en
+ * TurnkeyUiMainActivity y puede quedar una sesión HW4 vieja delante. Sin principal (`null`) o sin coincidencia, null.
+ * @param {string} out
+ */
+function mainInput(out) {
+  const main = /mainSessionToken: (\S+)/.exec(out);
+  if (!main || main[1] === 'null') return null;
+  let id = null;
+  for (const l of out.split('\n')) {
+    const m = /^\s*(inputId|sessionToken): (\S+)/.exec(l);
+    if (m && m[1] === 'inputId') id = m[2];
+    else if (m && m[2] === main[1]) return id;
+  }
+  return null;
 }
 
 /** @param {string} input */
@@ -124,7 +140,7 @@ function createAndroidTv({ addr, input, log, adb }) {
     try { await a.keys.press(TV_KEYS[k]); }
     catch (e) { log.info(`tele: monkey no responde (${/** @type {Error} */ (e).message}); tecla ${k} por input keyevent (lenta)`); await sh('input keyevent ' + TV_KEYS[k]); }
   };
-  const set = (/** @type {number} */ v) => sh(`cmd media_session volume --stream 3 --set ${v} --show`);
+  const set = (/** @type {number} */ v) => sh(`cmd media_session volume --stream 3 --set ${Math.max(0, Math.min(100, Math.round(v)))} --show`);
   const toJ = () => sh('am start -a android.intent.action.VIEW -d ' + passthroughUri(input));
   return {
     /** @returns {Promise<{ vol: number, muted: boolean } | null>} */
