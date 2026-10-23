@@ -3,12 +3,14 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const http = require('node:http');
+const fs = require('node:fs');
 const path = require('node:path');
 const sdk = path.join(__dirname, '..', 'mcp', 'node_modules', '@modelcontextprotocol', 'sdk', 'dist', 'cjs');
-const { Client } = require(sdk + '/client/index.js');
-const { StdioClientTransport } = require(sdk + '/client/stdio.js');
+const skip = !fs.existsSync(sdk) && 'falta mcp/node_modules/@modelcontextprotocol (npm --prefix mcp install)';
 
-test('tv_power y tv_source mandan su orden a /api/cmd', async () => {
+test('tv_power y tv_source mandan su orden a /api/cmd', { skip }, async () => {
+  const { Client } = require(sdk + '/client/index.js');
+  const { StdioClientTransport } = require(sdk + '/client/stdio.js');
   const got = [];
   const api = http.createServer((req, res) => {
     let b = ''; req.on('data', d => { b += d; });

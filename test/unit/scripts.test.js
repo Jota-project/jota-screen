@@ -331,6 +331,12 @@ test('doctor.sh: ADB de la tele solo con TV_ADB (✓ con device, ✗ si no)', ()
   const none = spawnSync('bash', [path.join(REPO, 'scripts/doctor.sh')],
     { env: cleanEnv(tmp(), { PATH: `${st.dir}:${process.env.PATH}`, TV_PORT: '1', TV_MDNS_NAME: '' }), encoding: 'utf8' }).stdout;
   assert.doesNotMatch(none, /ADB/);
+  // TV_INPUT vacío con TV_ADB: ✗; con TV_INPUT, no
+  const input = env => spawnSync('bash', [path.join(REPO, 'scripts/doctor.sh')],
+    { env: cleanEnv(tmp(), { PATH: `${st.dir}:${process.env.PATH}`, TV_PORT: '1', TV_MDNS_NAME: '', TV_ADB: 'tele:5555', ...env }), encoding: 'utf8' }).stdout;
+  assert.match(input({}), /✗ TV_INPUT vacío/);
+  assert.doesNotMatch(input({ TV_INPUT: 'com.mediatek.tvinput/.hdmi.HDMIInputService/HW4' }), /TV_INPUT/);
+  assert.doesNotMatch(none, /TV_INPUT/);
 });
 
 // ───────────────────────────────────────────────────────────────── cdp.js
