@@ -45,7 +45,7 @@ const out = (j, ok) => ({
 const server = new McpServer({ name: 'tv-canvas', version: '0.1.0' });
 const tool = (name, description, shape, fn) => server.registerTool(name, { description, inputSchema: shape }, fn);
 
-tool('tv_state', 'Current state of the TV browser: page title, URL, volume, whether a video is playing (media: 1 playing, 0 paused, -1 no video) and what is on the stage.', {},
+tool('tv_state', 'Current state of the TV browser: page title, URL, volume, tv: { power, src } (the TV itself over ADB: power on/off, src j = J-Screen / tv = Google TV; null when TV control is not set up), whether a video is playing (media: 1 playing, 0 paused, -1 no video) and what is on the stage.', {},
   async () => out(await api('GET', '/api/state')));
 
 // formato de la conversación en la tele para la página que se abre (lo mismo que FORMS de remote/src/tv/agent-contract.js;
@@ -103,7 +103,7 @@ tool('tv_media', 'Control the video playing on the TV: toggle play/pause, or see
   { action: z.enum(['playpause', 'seek']), seconds: z.number().optional().describe('Seconds to seek, e.g. 30 or -10') },
   async ({ action, seconds }) => out(await cmd(action === 'seek' ? { t: 'seek', s: seconds ?? 10 } : { t: 'pp' })));
 
-tool('tv_volume', 'TV volume: up/down (5% per step, optional repeat), mute toggle, or set an absolute level 0-100.',
+tool('tv_volume', "TV volume: up/down (1 point per step on the TV's own 0-100 scale when TV control is set up, 5% otherwise; optional repeat), mute toggle, or set an absolute level 0-100.",
   { action: z.enum(['up', 'down', 'mute', 'set']), level: z.number().min(0).max(100).optional(), steps: z.number().int().min(1).max(20).optional() },
   async ({ action, level, steps }) => {
     if (action === 'set') return out(await cmd({ t: 'volset', v: level ?? 50 }));
@@ -111,6 +111,14 @@ tool('tv_volume', 'TV volume: up/down (5% per step, optional repeat), mute toggl
     for (let i = 0; i < (action === 'mute' ? 1 : steps || 1); i++) r = await cmd({ t: 'vol', d: action });
     return out(r);
   });
+
+tool('tv_power', 'Turn the TV on or off. Turning it on always lands on J-Screen (HDMI). Works for guests.',
+  { state: z.enum(['on', 'off']) },
+  async ({ state }) => out(await cmd({ t: 'power', on: state === 'on' })));
+
+tool('tv_source', "Switch what the TV shows: jscreen (this canvas, HDMI) or tv (the TV's own Google TV home, for live TV). Anything opened on the canvas switches back to jscreen by itself.",
+  { source: z.enum(['jscreen', 'tv']) },
+  async ({ source }) => out(await cmd({ t: 'src', s: source === 'tv' ? 'tv' : 'j' })));
 
 tool('tv_spotify',
   'Control Spotify on the TV (the server is a Spotify Connect device, Premium account). Actions: status (short: what is playing, connected?), ' +

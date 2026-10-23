@@ -103,6 +103,8 @@ const BUILDERS = {
     const detail = a.action === 'set' ? `Volumen ${Math.round(Math.min(100, Math.max(0, Number(a.level ?? 50) || 0)))} %` : VOLUME_STEPS[a.action] || '';
     return { kind: 'volume', title: 'Volumen', detail };
   },
+  tv_power: a => ({ kind: 'screen', title: a.state === 'off' ? 'Apagar la tele' : 'Encender la tele', detail: '' }),
+  tv_source: a => ({ kind: 'screen', title: 'Cambiar de entrada', detail: a.source === 'tv' ? 'Tele' : 'J-Screen' }),
   tv_media: a => {
     if (a.action !== 'seek') return { kind: 'video', title: 'Vídeo', detail: 'Pausa o sigue' };
     const s = Math.round(Number(a.seconds ?? 10)) || 0;

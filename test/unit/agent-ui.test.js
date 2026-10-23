@@ -22,7 +22,7 @@ test('KINDS: los 7 tipos del contrato, con título e icono hecho de primitivas p
 });
 
 test('lista cerrada: las del contrato con ficha; las de lectura sin ella', () => {
-  assert.deepEqual([...CARD_TOOLS].sort(), ['tv_activity', 'tv_idle', 'tv_media', 'tv_netflix', 'tv_open', 'tv_open_app', 'tv_present', 'tv_show_html', 'tv_spotify', 'tv_volume', 'tv_youtube']);
+  assert.deepEqual([...CARD_TOOLS].sort(), ['tv_activity', 'tv_idle', 'tv_media', 'tv_netflix', 'tv_open', 'tv_open_app', 'tv_power', 'tv_present', 'tv_show_html', 'tv_source', 'tv_spotify', 'tv_volume', 'tv_youtube']);
   for (const n of ['tv_state', 'tv_links', 'tv_screenshot', 'tv_events', 'tv_key', 'tv_type', 'tv_click_text', 'tv_nav', 'tv_update', 'tv_close', 'web_search', '', null]) {
     assert.equal(toolCard(n, {}), null, String(n));
   }
@@ -67,6 +67,8 @@ test('detalle de cada herramienta', () => {
   assert.equal(c('tv_activity', { op: 'end', id: 'x' }).title, 'Quitar aviso');
   assert.deepEqual(c('tv_volume', { action: 'set', level: 30 }), { kind: 'volume', title: 'Volumen', detail: 'Volumen 30 %' });
   assert.equal(c('tv_volume', { action: 'up' }).detail, 'Subir');
+  assert.deepEqual(c('tv_power', { state: 'off' }), { kind: 'screen', title: 'Apagar la tele', detail: '' });
+  assert.deepEqual(c('tv_source', { source: 'tv' }), { kind: 'screen', title: 'Cambiar de entrada', detail: 'Tele' });
   assert.equal(c('tv_media', { action: 'seek', seconds: -10 }).detail, 'Atrás 10 s');
   assert.equal(c('tv_media', { action: 'playpause' }).kind, 'video');
   assert.deepEqual(c('tv_present', { kind: 'tasks', data: { title: 'Compra' } }), { kind: 'screen', title: 'Mostrar en la tele', detail: 'Compra' });
