@@ -6,6 +6,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const createTele = require('../remote/src/features/tele');
+const { SCREEN } = createTele;
 const { start } = require('./helpers/server');
 
 const flush = async () => { for (let i = 0; i < 5; i++) await new Promise(r => setImmediate(r)); };
@@ -125,7 +126,7 @@ test('withScreen lee al momento: guardada encendida, apagada de verdad → encie
   const [nav] = tele.withScreen([{ t: 'nav', run: () => ({ ok: 1 }) }], new Set(['nav']));
   const p = nav.run({ t: 'nav' }, /** @type {any} */ ({}));
   await flush();
-  assert.deepEqual(tv.calls, ['power:true']);
+  assert.deepEqual(tv.calls, ['pause', 'power:true'], 'el apagado de fuera también pausa');
   tv.st = { ...tv.st, src: 'j' }; await step(500);
   assert.deepEqual(await p, { ok: 1 });
 });
@@ -165,7 +166,6 @@ test('ensureJ enciende y espera a J-Screen; el sondeo no repite el salto', async
   const p = tele.ensureJ();
   await flush();
   assert.deepEqual(tv.calls, ['power:true']);
-  tv.st = { ...tv.st, src: 'tv' }; await step(500);
   tv.st = { ...tv.st, src: 'j' }; await step(500);
   assert.equal(await p, true);
   await step(15000);
@@ -206,6 +206,80 @@ test('withScreen: nav con la tele en Tele pasa por ensureJ; vol y lo que no est�
   assert.deepEqual(order, ['vol', 'netflix', 'nav']);
 });
 
+test('withScreen con SCREEN: youtube search no toca la tele; youtube play pasa por ensureJ', async t => {
+  const { tv, tele, step } = setup(t);
+  tv.st = { ...tv.st, src: 'tv' };
+  tele.start(); await flush();
+  const [yt] = tele.withScreen([{ t: 'youtube', run: () => 1 }], SCREEN);
+  await yt.run({ t: 'youtube', op: 'search' }, /** @type {any} */ ({}));
+  assert.deepEqual(tv.calls, [], 'buscar no enciende ni saca de Tele');
+  const p = yt.run({ t: 'youtube', op: 'play' }, /** @type {any} */ ({}));
+  await flush();
+  tv.st = { ...tv.st, src: 'j' }; await step(500);
+  await p;
+  assert.deepEqual(tv.calls, ['toJ']);
+});
+
+test('apagada o pasada a Tele desde fuera: el sondeo pausa una vez', async t => {
+  const { tv, tele, step } = setup(t);
+  tele.start(); await flush();                                  // on / j
+  tv.st = { ...tv.st, src: 'tv' }; await step(15000);
+  assert.deepEqual(tv.calls, ['pause'], 'j → tv');
+  await step(15000);
+  assert.deepEqual(tv.calls, ['pause'], 'sigue en tv: no repite');
+  tv.st = { ...tv.st, src: 'j' }; await step(15000);
+  tv.st = { ...tv.st, power: 'off', src: null }; await step(15000);
+  assert.deepEqual(tv.calls, ['pause', 'pause'], 'on → off');
+  await step(15000);
+  assert.equal(tv.calls.length, 2);
+});
+
+test('apagado o paso a Tele propios: una sola pausa, aunque el sondeo lo vea después', async t => {
+  const { tv, tele, step, cmd } = setup(t);
+  tele.start(); await flush();
+  tv.toTv = async () => { tv.calls.push('toTv'); };             // la tele tarda: la lectura de justo después aún es j
+  await cmd('src', { s: 'tv' });
+  tv.st = { ...tv.st, src: 'tv' }; await step(15000);
+  assert.deepEqual(tv.calls, ['pause', 'toTv']);
+  tv.st = { ...tv.st, src: 'j' }; await step(15000);
+  await cmd('power', { on: false });
+  await step(15000);
+  assert.deepEqual(tv.calls, ['pause', 'toTv', 'pause', 'power:false']);
+});
+
+test('un apagado propio que falla no se traga un apagado de fuera más tarde', async t => {
+  const { tv, tele, step, cmd } = setup(t);
+  tele.start(); await flush();
+  tv.power = async on => { tv.calls.push('power:' + on); throw new Error('La tele no responde'); };
+  await cmd('power', { on: false });
+  tv.st = { ...tv.st, power: 'off', src: null }; await step(15000);
+  assert.deepEqual(tv.calls, ['pause', 'power:false', 'pause']);
+});
+
+test('encendido propio que sale en el lanzador: una vez a J-Screen', async t => {
+  const { tv, tele, step, cmd } = setup(t);
+  tv.st = { ...tv.st, power: 'off', src: null };
+  tele.start(); await flush();
+  tv.power = async on => { tv.calls.push('power:' + on); tv.st = { ...tv.st, power: 'on', src: 'tv' }; };
+  await cmd('power', { on: true });
+  await step(15000); await step(15000);
+  assert.deepEqual(tv.calls, ['power:true', 'toJ']);
+});
+
+test('src con la tele apagada la enciende antes: j solo enciende, tv enciende y pasa a Tele', async t => {
+  for (const s of ['j', 'tv']) {
+    await t.test(s, async t2 => {
+      const { tv, tele, step, cmd } = setup(t2);
+      tv.st = { ...tv.st, power: 'off', src: null };
+      tele.start(); await flush();
+      tv.power = async on => { tv.calls.push('power:' + on); tv.st = { ...tv.st, power: 'on', src: s }; };
+      await cmd('src', { s });
+      await step(15000); await step(15000);
+      assert.deepEqual(tv.calls.filter(c => c !== 'pause'), s === 'j' ? ['power:true'] : ['power:true', 'toTv']);
+    });
+  }
+});
+
 test('servidor con la tele caída: arranca sin rechazos sueltos y /api/state da tv desconocida', async () => {
   const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-adb-'));
   fs.writeFileSync(path.join(bin, 'adb'), '#!/bin/sh\necho "error: device offline" >&2\nexit 1\n', { mode: 0o755 });
@@ -223,6 +297,35 @@ test('servidor con la tele caída: arranca sin rechazos sueltos y /api/state da 
     assert.deepEqual(await cmd({ t: 'tvkey', k: 'home' }), { error: 'La tele no responde' });
     assert.deepEqual((await (await s.api('/api/state')).json()).tv, { power: null, src: null }, 'sigue en pie tras los fallos');
     assert.doesNotMatch(s.logs(), /unhandled|UnhandledPromiseRejection/i);
+  } finally { await s.stop(); fs.rmSync(bin, { recursive: true, force: true }); }
+});
+
+test('servidor con la tele: PipeWire al 100 % y sin silencio al arrancar; sin sink lo dice', async () => {
+  for (const sink of [true, false]) {
+    const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-adb-'));
+    const calls = path.join(bin, 'calls');
+    fs.writeFileSync(path.join(bin, 'adb'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    fs.writeFileSync(path.join(bin, 'wpctl'), `#!/bin/sh\necho "$@" >> ${calls}\n${sink ? '[ "$1" = get-volume ] && echo "Volume: 1.00"' : ''}\nexit 0\n`, { mode: 0o755 });
+    const s = await start({ env: { TV_ADB: '127.0.0.1:9', TV_INPUT: 'x/HW4', PATH: bin + path.delimiter + process.env.PATH } });
+    try {
+      for (let i = 0; i < 50 && !/get-volume/.test(fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8') : ''); i++) await new Promise(r => setTimeout(r, 100));
+      await new Promise(r => setTimeout(r, 200));
+      const got = fs.readFileSync(calls, 'utf8');
+      assert.match(got, /set-volume @DEFAULT_AUDIO_SINK@ 1\.00/);
+      assert.match(got, /set-mute @DEFAULT_AUDIO_SINK@ 0/);
+      if (sink) assert.doesNotMatch(s.logs(), /PipeWire no responde/);
+      else assert.match(s.logs(), /tele: PipeWire no responde/);
+    } finally { await s.stop(); fs.rmSync(bin, { recursive: true, force: true }); }
+  }
+});
+
+test('servidor con TV_ADB y sin TV_INPUT: lo dice al arrancar', async () => {
+  const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'tvc-adb-'));
+  fs.writeFileSync(path.join(bin, 'adb'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+  const s = await start({ env: { TV_ADB: '127.0.0.1:9', TV_INPUT: '', PATH: bin + path.delimiter + process.env.PATH } });
+  try {
+    for (let i = 0; i < 30 && !/TV_INPUT vacío/.test(s.logs()); i++) await new Promise(r => setTimeout(r, 100));
+    assert.match(s.logs(), /tele: TV_ADB puesto pero TV_INPUT vacío/);
   } finally { await s.stop(); fs.rmSync(bin, { recursive: true, force: true }); }
 });
 

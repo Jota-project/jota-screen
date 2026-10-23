@@ -102,6 +102,7 @@ const pointer = createPointer({ script: path.join(ROOT, 'pointer.py'), display: 
 const pipewire = createAudio({ runtimeDir: CFG.XDG_RUNTIME_DIR });
 // con TV_ADB la tele Google TV por ADB: su volumen es el único (PipeWire se deja al 100 % al arrancar)
 const androidTv = CFG.ADB ? createAndroidTv({ addr: CFG.ADB, input: CFG.INPUT, log }) : null;
+if (androidTv && !CFG.INPUT) log.info('tele: TV_ADB puesto pero TV_INPUT vacío: nunca se verá J-Screen delante (pon TV_INPUT en screen.env)');
 const audio = androidTv || pipewire;
 // con la capa del agente a la vista sondea también sin mandos: de ahí sale el paso del panel a la píldora
 const pagePoll = createPagePoll({ cdp, state, broadcast, watched: () => ws.clients().size > 0,
@@ -166,7 +167,7 @@ const youtube = createYoutube({ cdp, nav: u => control.nav(u), key: k => keyboar
 // URL (o recargar) es un documento nuevo sin cambio de URL: onPage no lo ve y se avisa desde aquí
 const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave(), netflix,
   onLayout: (url, layout) => talkView.agentLayout(layout, url), onNavigate: () => talkView.navigating(), onReload: () => { pagePoll.reset(); talkView.reset(); } });
-const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: () => idle, tvAudio: androidTv });
+const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: () => idle, tvAudio: androidTv && { set: v => control.volSet(v) } });
 const idle = createIdle({
   PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
   stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info, nfx: () => nfxWatch.forIdle(), nfxDominant: d => nfxWatch.dominant(d),
@@ -214,8 +215,7 @@ const netflixCommands = netflix.commands.map(c => ({ ...c, run: (/** @type {any}
   return c.run(m, ctx);
 } }));
 // con la tele por ADB, lo que necesita la pantalla pone antes J-Screen delante (encender o volver de Tele)
-const SCREEN = new Set(['nav', 'home', 'youtube', 'present', 'show', 'netflix:open', 'netflix:play', 'idle:show']);
-const screen = tele ? (/** @type {any[]} */ l) => tele.withScreen(l, SCREEN) : (/** @type {any[]} */ l) => l;
+const screen = tele ? (/** @type {any[]} */ l) => tele.withScreen(l, createTele.SCREEN) : (/** @type {any[]} */ l) => l;
 for (const list of [talk.commands, netflixCommands, youtube.commands, stage.commands, keyboard.commands, control.commands, spotify.commands, idle.commands,
   createAccessCommands({ acc, meOf }), tv.commands, ...(tele ? [tele.commands] : [])]) commands.register(screen(list));
 
@@ -269,5 +269,10 @@ cdp.connect();
 nfxWatch.start();                                     // primera lectura al minuto; después, cada 3 h y tras ver Netflix
 pointer.start();
 control.volRead();
-if (tele) { pipewire.set(100); tele.start(); }
+if (tele) {
+  // PipeWire al 100 % y sin silencio (set-volume no lo quita): si no, el sonido depende de dos volúmenes
+  pipewire.set(100).then(() => pipewire.unmute()).then(() => pipewire.read())
+    .then(v => { if (!v) log.info('tele: PipeWire no responde (¿sin salida de audio?): no se ha dejado al 100 % sin silencio'); });
+  tele.start();
+}
 process.on('SIGTERM', () => { androidTv?.close(); process.exit(0); });

@@ -2,25 +2,36 @@
 // @ts-check
 // Capacidad «tele»: la tele Google TV por ADB. Sondea encendido, entrada y volumen (cada 3 s con mandos, 15 s sin ellos),
 // da las órdenes power, src y tvkey (sin permiso: también invitados) y aplica las reglas del diseño:
-//   - al encenderse la tele (off → on, también con el mando original) va a J-Screen una sola vez;
-//   - al apagar o pasar a Tele se pausa lo que suena en J-Screen;
+//   - al encenderse la tele (off → on, también con el mando original) va a J-Screen una sola vez; si la encendimos
+//     nosotros y aun así sale otra cosa (el lanzador llega después del am start), se vuelve a J-Screen una vez;
+//   - al apagar o pasar a Tele (por orden nuestra o con el mando original) se pausa lo que suena en J-Screen, una vez;
+//   - src con la tele apagada la enciende antes (j: el encendido ya va a J-Screen; tv: encender y luego Tele);
 //   - las órdenes que necesitan la pantalla esperan antes a ver J-Screen delante (ensureJ, como mucho 6 s).
 const { TV_KEYS } = require('../tv/android-tv');
 
 const WATCHED_MS = 3000, IDLE_MS = 15000;
 const ENSURE_MS = 6000, ENSURE_STEP_MS = 500;
 const QUIET_KEYS = new Set(['up', 'down', 'left', 'right', 'ok']); // la cruceta va a ráfagas: sin lectura tras cada una
+const OWN_PAUSE_MS = 30000; // la pausa de una orden propia vale para su apagado o paso a Tele si el sondeo lo ve en este tiempo
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+// órdenes que ponen algo en pantalla: antes, J-Screen delante (`t`, o `t:op` si solo cuenta esa op; buscar no enciende)
+const SCREEN = new Set(['nav', 'home', 'youtube:play', 'present', 'show', 'netflix:open', 'netflix:play', 'idle:show']);
 
 /**
  * @param {{ tv: ReturnType<typeof import('../tv/android-tv').createAndroidTv>, state: any, broadcast: () => void,
  *           watched: () => boolean, pause: () => Promise<void>, log: { info: (m: string) => void } }} o
  *   watched: ¿hay algún mando conectado?  pause: para el vídeo de la página y Spotify (los errores no cuentan)
  */
-module.exports = function createTele({ tv, state, broadcast, watched, pause, log }) {
+function createTele({ tv, state, broadcast, watched, pause, log }) {
   state.tv = { power: null, src: null };
   let lastPower = null; // último encendido conocido (sin null): de él sale el salto a J-Screen
-  let own = false;      // el encendido lo pedimos nosotros (power o ensureJ), que ya van a J-Screen
+  let lastSrc = null;   // entrada en la última lectura encendida (null tras verla apagada): de ella sale el j → tv
+  /** @type {false|'j'|'tv'} el encendido lo pedimos nosotros, con la entrada a la que va */
+  let own = false;
+  /** @type {null|'off'|'tv'} ya pausamos para este cambio (orden propia), hasta pausedUntil */
+  let pausedFor = null, pausedUntil = 0;
+  const quietPause = () => pause().catch(() => {});
 
   async function read() {
     const before = JSON.stringify([state.tv, state.vol, state.muted]);
@@ -29,14 +40,23 @@ module.exports = function createTele({ tv, state, broadcast, watched, pause, log
       state.tv = { power: s.power, src: s.src };
       if (s.vol !== null) { state.vol = s.vol; state.muted = s.muted; }
     } catch { state.tv = { power: null, src: null }; }
-    const p = state.tv.power;
+    const p = state.tv.power, src = state.tv.src;
     if (p !== null) {
       if (lastPower === 'off' && p === 'on' && !own) {
         log.info('tele: encendida, a J-Screen');
         tv.toJ().catch(() => {});
       }
-      if (p === 'on') own = false;
+      if (p === 'on' && own) {
+        if (own === 'j' && src !== 'j') { log.info('tele: encendida pero no en J-Screen, a J-Screen'); tv.toJ().catch(() => {}); }
+        own = false;
+      }
+      const change = lastPower === 'on' && p === 'off' ? 'off' : p === 'on' && lastSrc === 'j' && src === 'tv' ? 'tv' : null;
+      if (change) {
+        if (pausedFor === change && Date.now() < pausedUntil) pausedFor = null;
+        else quietPause();   // sin await: la pausa puede tardar segundos y las lecturas van en cadena
+      }
       lastPower = p;
+      lastSrc = p === 'on' ? src : null;
     }
     if (JSON.stringify([state.tv, state.vol, state.muted]) !== before) broadcast();
   }
@@ -60,20 +80,30 @@ module.exports = function createTele({ tv, state, broadcast, watched, pause, log
     if (readAfter) await readNow();
     return { tv: state.tv };
   }
-  const quietPause = () => pause().catch(() => {});
+  /** Pausa ya, y el sondeo no vuelve a pausar cuando vea este cambio. */
+  async function ownPause(/** @type {'off'|'tv'} */ change) {
+    await quietPause();
+    pausedFor = change; pausedUntil = Date.now() + OWN_PAUSE_MS;
+  }
+  /** @param {() => Promise<any>} fn */
+  const undoPause = async fn => { try { await fn(); } catch (e) { pausedFor = null; throw e; } };
 
   /** @param {boolean} on */
   function power(on) {
     return act(async () => {
-      if (!on) await quietPause();
-      own = on;
-      try { await tv.power(on); } catch (e) { own = false; throw e; }
+      if (!on) { await ownPause('off'); return undoPause(() => tv.power(false)); }
+      own = 'j';
+      try { await tv.power(true); } catch (e) { own = false; throw e; }
     });
   }
   /** @param {'j'|'tv'} s */
   function src(s) {
     return act(async () => {
-      if (s === 'tv') { await quietPause(); await tv.toTv(); } else await tv.toJ();
+      if (asleep()) {
+        own = s;
+        try { await tv.power(true); } catch (e) { own = false; throw e; }
+        if (s === 'tv') await tv.toTv();
+      } else if (s === 'tv') { await ownPause('tv'); await undoPause(() => tv.toTv()); } else await tv.toJ();
     });
   }
 
@@ -82,7 +112,7 @@ module.exports = function createTele({ tv, state, broadcast, watched, pause, log
     const ok = () => state.tv.power === 'on' && state.tv.src === 'j';
     if (ok()) return true;
     try {
-      if (asleep()) { own = true; await tv.power(true); } else if (state.tv.src === 'tv') await tv.toJ();
+      if (asleep()) { own = 'j'; await tv.power(true); } else if (state.tv.src === 'tv') await tv.toJ();
     } catch { own = false; }
     for (const end = Date.now() + ENSURE_MS; Date.now() < end;) {
       await sleep(ENSURE_STEP_MS);
@@ -121,4 +151,7 @@ module.exports = function createTele({ tv, state, broadcast, watched, pause, log
   ];
 
   return { start: tick, ensureJ, withScreen, commands };
-};
+}
+
+module.exports = createTele;
+module.exports.SCREEN = SCREEN;

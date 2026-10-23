@@ -43,6 +43,7 @@ function createAudio({ runtimeDir, exec }) {
       return m ? { vol: Math.round(parseFloat(m[1]) * 100), muted: !!m[2] } : null;
     },
     toggleMute: () => wp(['set-mute', SINK, 'toggle']),
+    unmute: () => wp(['set-mute', SINK, '0']),
     /** @param {number} n pasos de 5 % (negativo = bajar); nunca por encima del 100 % */
     step: n => wp(['set-volume', SINK, `${Math.abs(n) * 5}%${n > 0 ? '+' : '-'}`, ...(n > 0 ? ['-l', '1.0'] : [])]),
     /** @param {number} v de 0 a 100 */

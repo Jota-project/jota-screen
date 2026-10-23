@@ -43,6 +43,13 @@ test('volumen: lee, sube en pasos de 5 % con tope y fija', async () => {
   assert.equal(await silent.read(), null, 'sin wpctl no inventa un volumen');
 });
 
+test('volumen (wpctl): unmute quita el silencio del sink', async () => {
+  const runs = [];
+  const audio = createAudio({ runtimeDir: '/x', exec: async a => { runs.push(a.join(' ')); return ''; } });
+  await audio.unmute();
+  assert.deepEqual(runs, ['set-mute @DEFAULT_AUDIO_SINK@ 0']);
+});
+
 test('CDP: sin conexión o sin pestaña, las llamadas fallan al momento', async () => {
   const cdp = createCdp({ port: 1, log: { info() {}, error() {} } });
   await assert.rejects(cdp.call('Page.reload'), /cdp/);
