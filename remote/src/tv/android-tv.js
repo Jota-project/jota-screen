@@ -4,8 +4,9 @@
 const { execFile, spawn } = require('node:child_process');
 const net = require('node:net');
 
-// Sondeo filtrado de una sola línea de shell (0,31 s medido en la tele real).
-const STATUS_CMD = "dumpsys power | grep -m1 mWakefulness=; dumpsys activity activities | grep -m1 mResumedActivity; dumpsys tv_input | sed -n '/sessionStateMap/,/mainSessionToken/p'; dumpsys audio | grep -A5 -m1 '^- STREAM_MUSIC'";
+// Sondeo filtrado de una sola línea de shell (0,31 s medido en la tele real). El grep de Android (toybox) ignora -A con
+// -m1 y solo da la cabecera de STREAM_MUSIC: el bloque del volumen sale con sed, que corta en streamVolume.
+const STATUS_CMD = "dumpsys power | grep -m1 mWakefulness=; dumpsys activity activities | grep -m1 mResumedActivity; dumpsys tv_input | sed -n '/sessionStateMap/,/mainSessionToken/p'; dumpsys audio | sed -n '/^- STREAM_MUSIC:/,/streamVolume/{p;/streamVolume/q;}'";
 
 /**
  * @param {string} out salida de STATUS_CMD

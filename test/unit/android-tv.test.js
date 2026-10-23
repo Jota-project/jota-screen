@@ -96,6 +96,11 @@ test('STATUS_CMD lee el bloque de sesiones entero, hasta mainSessionToken', () =
   assert.match(STATUS_CMD, /dumpsys tv_input \| sed -n '\/sessionStateMap\/,\/mainSessionToken\/p'/);
 });
 
+test('STATUS_CMD saca el volumen con sed: el grep de la tele ignora -A con -m1 (medido en la tele real)', () => {
+  assert.match(STATUS_CMD, /dumpsys audio \| sed -n '\/\^- STREAM_MUSIC:\/,\/streamVolume\/\{p;\/streamVolume\/q;\}'/);
+  assert.doesNotMatch(STATUS_CMD, /grep -A/);
+});
+
 test('URI de passthrough y teclas', () => {
   assert.equal(passthroughUri(TV_INPUT), 'content://android.media.tv/passthrough/com.mediatek.tvinput%2F.hdmi.HDMIInputService%2FHW4');
   for (const k of ['up', 'down', 'left', 'right', 'ok', 'back', 'home', 'pp', 'rew', 'ff']) assert.match(TV_KEYS[k], /^KEYCODE_/, k);
