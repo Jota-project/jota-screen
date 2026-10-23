@@ -316,6 +316,23 @@ test('doctor.sh: falla (≠0) con ✗ cuando no hay nada instalado', () => {
   assert.match(r.stdout, /comprobaciones fallidas/);
 });
 
+test('doctor.sh: ADB de la tele solo con TV_ADB (✓ con device, ✗ si no)', () => {
+  const run = extra => {
+    const st = stubs({ ss: 'exit 0', timeout: 'shift; exec "$@"', ...extra }); // timeout de GNU no existe en macOS
+    return spawnSync('bash', [path.join(REPO, 'scripts/doctor.sh')],
+      { env: cleanEnv(tmp(), { PATH: `${st.dir}:${process.env.PATH}`, TV_PORT: '1', TV_MDNS_NAME: '', TV_ADB: 'tele:5555' }), encoding: 'utf8' }).stdout;
+  };
+  assert.match(run({ adb: 'echo device' }), /✓ tele por ADB: tele:5555/);
+  assert.match(run({ adb: 'echo offline; exit 1' }), /✗ la tele no responde por ADB en tele:5555/);
+  const st = stubs({ ss: 'exit 0' }); // sin adb en el PATH de los stubs; PATH mínimo para que tampoco lo encuentre
+  const out = spawnSync('bash', [path.join(REPO, 'scripts/doctor.sh')],
+    { env: cleanEnv(tmp(), { PATH: `${st.dir}:/usr/bin:/bin`, TV_PORT: '1', TV_MDNS_NAME: '', TV_ADB: 'tele:5555' }), encoding: 'utf8' }).stdout;
+  if (!fs.existsSync('/usr/bin/adb') && !fs.existsSync('/bin/adb')) assert.match(out, /✗ .*falta adb \(sudo apt install adb\)/);
+  const none = spawnSync('bash', [path.join(REPO, 'scripts/doctor.sh')],
+    { env: cleanEnv(tmp(), { PATH: `${st.dir}:${process.env.PATH}`, TV_PORT: '1', TV_MDNS_NAME: '' }), encoding: 'utf8' }).stdout;
+  assert.doesNotMatch(none, /ADB/);
+});
+
 // ───────────────────────────────────────────────────────────────── cdp.js
 test('cdp.js: puerto de la config, ayuda y órdenes contra un Chrome falso', async () => {
   const { cdpPort, parseArgs } = require(path.join(REPO, 'scripts', 'cdp.js'));

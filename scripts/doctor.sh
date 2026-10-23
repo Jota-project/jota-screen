@@ -12,7 +12,7 @@ Comprueba, sin cambiar nada: la configuración, los servicios (jota-screen, jota
 jota-screen-spotify si está habilitado, jota-screen-kiosk), que el servidor haya conectado con Chrome
 («CDP conectado» en el registro), que /api/state responda 200 con cdp:true usando el token de TV_STATE_DIR
 y 401 sin token, que el token no aparezca en el registro reciente (por defecto, 15 minutos), los permisos
-del estado (0700 la carpeta, 0600 los ficheros), que CDP solo escuche en 127.0.0.1 y el alias mDNS.
+del estado (0700 la carpeta, 0600 los ficheros), que CDP solo escuche en 127.0.0.1, el alias mDNS y, si TV_ADB está puesto, que la tele responda por ADB.
 Nunca enseña el token.
 EOF
     exit 0 ;;
@@ -137,6 +137,13 @@ if command -v ss >/dev/null 2>&1; then
   if [ -z "$binds" ]; then bad "nadie escucha en el puerto CDP $TV_CDP_PORT (¿kiosco parado?)"
   elif printf '%s' "$binds" | tr ' ' '\n' | grep -v '^$' | grep -qv '^127\.0\.0\.1:'; then bad "CDP escucha fuera de 127.0.0.1: $binds"
   else ok "CDP en 127.0.0.1:$TV_CDP_PORT"; fi
+fi
+
+# ─── tele por ADB (solo con TV_ADB)
+if [ -n "${TV_ADB:-}" ]; then
+  if ! command -v adb >/dev/null 2>&1; then bad "TV_ADB está puesto pero falta adb (sudo apt install adb)"
+  elif [ "$(timeout 5 adb -s "$TV_ADB" get-state 2>/dev/null)" = device ]; then ok "tele por ADB: $TV_ADB"
+  else bad "la tele no responde por ADB en $TV_ADB (adb connect $TV_ADB y «Permitir siempre» en la tele)"; fi
 fi
 
 # ─── alias mDNS

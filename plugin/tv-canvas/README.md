@@ -2,7 +2,7 @@
 
 Plugin para controlar la pantalla de jota-screen (Chrome en modo kiosco) desde Claude Code / Claude Desktop.
 
-- `mcp/server.js`: servidor MCP (stdio) con 22 herramientas `tv_*`. Habla con la API del mando (`/api/cmd`).
+- `mcp/server.js`: servidor MCP (stdio) con 26 herramientas `tv_*`. Habla con la API del mando (`/api/cmd`).
   Es copia de `mcp/server.js` de la raíz del repo (`scripts/sync-plugin.sh`).
 - `skills/tv-canvas`: cuándo y cómo usarlas.
 

@@ -18,7 +18,7 @@ Antes se llamaba `tv-canvas`; el MCP, la skill y el plugin conservan ese nombre 
 - Node.js 22 o posterior (el servidor usa el de `.nvmrc`, 24) y npm.
 - Google Chrome (recomendado: trae Widevine para Netflix y similares) o Chromium.
 - `xrandr`/`xset` (x11-xserver-utils), `python3` con libX11 y libXtst (puntero del mando), `openbox` (recomendado).
-- Opcional: `avahi-utils` (alias `mando.local`), PipeWire con `wpctl` (volumen), spotifyd, nginx (mando sin puerto),
+- Opcional: `avahi-utils` (alias `mando.local`), PipeWire con `wpctl` (volumen), `adb` (apagar/encender la tele y su volumen real, ver [cómo se hace](docs/como-se-hace.md#control-nativo-de-la-tele-por-adb)), spotifyd, nginx (mando sin puerto),
   el J Gateway local (el agente que contesta desde el mando, por texto y voz).
 
 El instalador comprueba todo esto y dice qué paquetes faltan; no instala paquetes del sistema.
@@ -106,7 +106,7 @@ xdg-open "http://127.0.0.1:8787/?t=$(cat "$TV_STATE_DIR/token")"   # el mando ca
 
 Para tener «tele», un Chrome aparte con CDP:
 `google-chrome --remote-debugging-port=9222 --user-data-dir="$(mktemp -d)" http://127.0.0.1:8787/idle.html`.
-Sin `wpctl` no hay volumen y sin `TV_GATEWAY_URL` Jota no está disponible; el resto funciona. Con `TV_LAT`/`TV_LON` el reposo pide
+Sin `wpctl` (ni `adb`) no hay volumen y sin `TV_GATEWAY_URL` Jota no está disponible; el resto funciona. Con `TV_LAT`/`TV_LON` el reposo pide
 el tiempo a Open-Meteo.
 
 ## Herramientas

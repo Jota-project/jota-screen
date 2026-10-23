@@ -146,10 +146,26 @@ dueño, solo para las instrucciones del agente, como `cfg.OWNER` (`TV_OWNER`).
    [arquitectura.md](arquitectura.md#configuración).
 3. Prueba en `test/unit/config.test.js` (y en `test/runtime.test.js` si cambia lo que se ve desde fuera).
 
+## Control nativo de la tele por ADB
+
+Opcional: apagar y encender la tele, cambiar entre J-Screen y la tele, la cruceta y el volumen real (el de la barra de la tele).
+Sin `TV_ADB` todo sigue como antes (volumen de PipeWire).
+
+1. En la tele (Google TV): Ajustes → Sistema → Acerca de → pulsar «Compilación del SO de Android TV» 7 veces; después, en
+   Opciones para desarrolladores, activar «Depuración USB» (en esta tele también abre ADB por red, en el puerto 5555).
+2. En el equipo de la pantalla: `sudo apt install adb`.
+3. Con el usuario de la pantalla: `adb connect <ip-de-la-tele>:5555` y, en la tele, «¿Permitir depuración?» →
+   «Permitir siempre». `adb devices` debe enseñar la tele como `device`.
+4. La entrada de J-Screen: `adb -s <ip-de-la-tele>:5555 shell dumpsys tv_input` y buscar el HDMI al que está conectado el
+   equipo (`state: 0`, el `inputId` de la sesión principal), p. ej. `com.mediatek.tvinput/.hdmi.HDMIInputService/HW4`.
+5. En `screen.env`: `TV_ADB=<ip-de-la-tele>:5555` y `TV_INPUT=<inputId>`; `systemctl --user restart jota-screen`.
+   Con la IP fija en el router (la conexión ADB va por IP). En `spotifyd.conf`, `initial_volume = 100`: el volumen de Spotify
+   es el de la tele. `scripts/doctor.sh` comprueba que `adb -s $TV_ADB get-state` diga `device`.
+
 ## Pruebas
 
 ```
-npm ci && (cd remote && npm ci)    # la primera vez: herramientas de la raíz y dependencias del servidor
+npm ci && (cd remote && npm ci) && (cd mcp && npm ci)   # la primera vez: raíz, servidor y MCP (test/mcp.test.js lo necesita)
 npm run verify                     # lint (eslint) + tipos (tsc) + pruebas, todo desde la raíz
 npm test                           # solo las pruebas: node --test test/*.test.js test/unit/*.test.js
 ```
@@ -192,7 +208,7 @@ Si un fichero nuevo hace lo mismo, añadirlo a esa lista (corta a propósito).
   (`jota-screen`, `jota-screen-mdns`, `jota-screen-spotify` si está habilitado, `jota-screen-kiosk`), «CDP conectado»
   en el registro, `/api/state` con el token de `TV_STATE_DIR` (200 y `cdp:true`) y sin él (401), que el token no salga
   en el registro reciente (`--since MINUTOS`, 15 por defecto), los permisos del estado, que CDP solo escuche en
-  127.0.0.1 y el alias mDNS. Registro: `journalctl --user -u jota-screen -f` y `journalctl -u jota-screen-kiosk -f`.
+  127.0.0.1, el alias mDNS y, con `TV_ADB`, que la tele responda por ADB. Registro: `journalctl --user -u jota-screen -f` y `journalctl -u jota-screen-kiosk -f`.
 - **Depurar la pantalla** a mano: `node scripts/cdp.js tabs`, `nav <url>`, `eval <js>`, `click <texto>`.
 
 ## Instalar en otra pantalla

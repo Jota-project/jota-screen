@@ -64,7 +64,9 @@ remote/
     ratelimit.js          freno de intentos por IP
   src/tv/
     cdp.js                adaptador de Chrome (CDP): pestaña activa, call/fire, ganchos, reconexión
-    devices.js            puntero, volumen (wpctl), sonda de la página y el código de emparejar pintado en la tele
+    android-tv.js         la tele Google TV por ADB (`TV_ADB`): estado (encendido, entrada, volumen) en una lectura, volumen, encendido,
+                          entrada y teclas (sesión `monkey --port` persistente, con `input keyevent` de repuesto); PipeWire va fijo al 100 %
+    devices.js            puntero, volumen de PipeWire (wpctl), sonda de la página y el código de emparejar pintado en la tele
     page-poll.js          sondeo de vídeo y scroll con mandos conectados; `playback` (vídeo grande que avanza) también con la capa
                           del agente a la vista
     agent-contract.js     lo que el servidor y tv-agent.js dicen igual: valores de la foto, fuentes propias y el binding del arrastre
@@ -72,6 +74,10 @@ remote/
     tokens.js             lee shared/tokens-tv.css y arma la fuente de la isla (tokens delante)
   src/features/           capacidades: cada una devuelve sus `commands` (y `routes`, si tiene)
     control.js            nav (con `layout` opcional), links, clicktext, click, home, back, forward, reload, shot, pp, seek, fs, vol, volset
+    tele.js               power, src, tvkey (sin permiso, también invitados); `state.tv = {power, src}` (`on`/`off`/`null`, `j`/`tv`/`null`).
+                          Sondea cada 3 s con mandos conectados y cada 15 s sin ellos; el volumen de Spotify es el de la tele. Al encenderse
+                          la tele (también con el mando original) va a J-Screen; al apagar o pasar a Tele pausa lo que suena; las órdenes que
+                          necesitan la pantalla (`withScreen`/`ensureJ`) la enciende y vuelven a J-Screen antes, 6 s como mucho
     keyboard.js           key, text, field (escribir en directo), focus (aviso de foco)
     stage.js              present, show, stage, close, toast; ruta /stage/p*.html; canal /stage-ws
     spotify.js            spotify (todas las acciones), spwatch; rutas /spotify/login y /spotify/callback
@@ -117,7 +123,7 @@ remote/
     tv-island.js          isla de Live Activities (reposo y, por CDP, cualquier web)
     tv-stage.js           runtime de las páginas del escenario: tv.onData, tv.emit, tv.close
     stage.css, tpl-tasks.html, tpl-reminder.html, tpl-slides.html   plantillas del escenario
-mcp/server.js             MCP tv-canvas: 22 herramientas tv_* sobre /api (TV_URL, TV_TOKEN o el token de TV_STATE_DIR)
+mcp/server.js             MCP tv-canvas: 26 herramientas tv_* sobre /api (TV_URL, TV_TOKEN o el token de TV_STATE_DIR)
 plugin/tv-canvas/         plugin de Claude Code: copia del MCP (scripts/sync-plugin.sh) y la skill
 config/screen.env.example plantilla de la configuración (~/.config/jota-screen/screen.env)
 kiosk-session.sh, home.html, mdns-alias.sh   sesión X del kiosco, su portada y el alias mDNS
@@ -388,6 +394,9 @@ valores por defecto, está en [config/screen.env.example](../config/screen.env.e
 - **Kiosco**: `TV_CHROME`, `TV_CDP_PORT` (9222), `TV_HOME_URL` (el reposo).
 - **Agente**: `TV_GATEWAY_URL` y `TV_GATEWAY_KEY` (J Gateway; sin URL = «Jota no está disponible.»), `TV_AGENT` (`j-assistant`), `TV_SPEAKER_CMD` (altavoz de la tele), `TV_OWNER`
   (nombre del dueño en las instrucciones al agente; vacío = «el dueño»).
+- **Tele**: `TV_ADB` (`ip:5555` de la tele; vacío = sin control nativo, el volumen vuelve a ser el de PipeWire) y `TV_INPUT`
+  (id de la entrada HDMI de J-Screen). Necesita `adb` en el equipo y la depuración USB de la tele; ver
+  [cómo se hace](como-se-hace.md#control-nativo-de-la-tele-por-adb).
 - **Spotify**: `TV_SPOTIFY_DEVICE` (= `TV_NAME`), `TV_SPOTIFYD`, `TV_SPOTIFY_BANNER`.
 - **Tiempo**: `TV_CITY`, `TV_LAT`, `TV_LON`, `TV_TZ` (la del sistema): valores iniciales del reposo; lo guardado desde el
   mando (`idle.json`) manda. Sin latitud y longitud no se pide el tiempo.
