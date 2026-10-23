@@ -51,7 +51,7 @@ function up(e) {
   if (n === 1) {
     pad.classList.remove('on');
     if (dragging) { send('b 1 0'); dragging = false; }
-    else if (inTv()) { if (ok && maxN === 1) padGesture(e.clientX - x0, e.clientY - y0, e.timeStamp - downT); }
+    else if (inTv()) { if (ok && maxN === 1) padGesture(e.clientX - x0, e.clientY - y0); }
     else if (ok && maxN === 1 && e.timeStamp - downT < 240 && moved < 9) { click(1, p); lastTap = e.timeStamp; }
     maxN = 0;
   } else if (n === 2 && !inTv()) {

@@ -1,6 +1,6 @@
 // Modos del mando según la tele (state.tv; solo con TV_ADB): J-Screen (el mando de siempre), Tele (el trackpad es la
 // cruceta del Google TV) y Apagada (queda el botón de encender). Pinta la fila «J-Screen | Tele» y ⏻, manda power, src
-// y tvkey, y avisa con la píldora de lo que cambia sin una orden de este mando. Clases en <html>: tv, off, waking y tvq
+// y tvkey, y avisa con la píldora de lo que cambia sin una orden de este mando. Clases en <html>: tele, tv, off, waking y tvq
 // (la tele no responde). Lo leen controls (botones a tvkey) y trackpad (gesto a la cruceta) con inTv() y padGesture().
 import { $ } from '../core/dom.js';
 import { on } from '../core/store.js';
@@ -18,7 +18,7 @@ const HIT = { up: '.cu', down: '.cd', left: '.cl', right: '.cr', ok: '.cross .ok
 
 let mode = 'j';            // lo que enseña el mando: 'j' | 'tv' | 'off'
 let last = null;           // último state.tv
-let expect = null;         // orden propia en curso ({ power } o { src }): hasta su respuesta, el estado no la deshace
+let expect = null;         // orden propia en curso ({ power } o { src }): hasta ver la tele así (o 4 s tras la respuesta), el estado no la deshace
 let quietUntil = 0;        // tras una orden propia, lo que cambie no se avisa (la tele tarda en asentarse)
 let known = null;          // último encendido conocido (sin null: una tele dormida a fondo no responde)
 let bootUntil = 0;         // recién encendida: el servidor la lleva a J-Screen (como mucho 6 s); el lanzador no cuenta
@@ -28,8 +28,8 @@ let padLabel = '';
 /** ¿El mando está en modo Tele? (los botones y el trackpad van a la tele) */
 export const inTv = () => mode === 'tv';
 
-/** Al soltar el trackpad en modo Tele: la flecha (u OK) a la tele y el chevrón se ilumina. ms: lo que duró el gesto. */
-export function padGesture(dx, dy, ms) {
+/** Al soltar el trackpad en modo Tele: la flecha (u OK) a la tele y el chevrón se ilumina. */
+export function padGesture(dx, dy) {
   const k = swipeDir(dx, dy), e = $(HIT[k]);
   cmd({ t: 'tvkey', k }); buzz(9);
   e.classList.add('hit'); setTimeout(() => e.classList.remove('hit'), 260);
@@ -47,11 +47,11 @@ function ind() {
 function unwake() { document.documentElement.classList.remove('waking'); $('#offS').textContent = 'Toca para encender'; }
 
 function view(v) {
+  clearTimeout(offT);                                     // un apagado de fuera aún por enseñar ya no vale
   if (v === mode) return;
   const r = document.documentElement, was = mode;
   mode = v;
   if (v !== 'off') { segPaint($('#srcSeg'), 'src', v); ind(); }
-  clearTimeout(offT);
   r.classList.toggle('off', v === 'off');
   if (was === 'off') { clearTimeout(wakeT); setTimeout(unwake, 900); }   // el orbe lleno mientras vuelve el mando
   // la ayuda sale, cambia el modo y entra la nueva
@@ -68,7 +68,7 @@ function view(v) {
 function paint(s) {
   const t = s.tv || null, r = document.documentElement, row = $('#srcRow');
   const wasHidden = row.hidden;
-  row.hidden = !t;
+  row.hidden = !t; r.classList.toggle('tele', !!t);   // tele: hay tele por ADB (el CSS nuevo solo vale entonces)
   if (wasHidden && t) ind();
   const lost = !!t && t.power === null;
   r.classList.toggle('tvq', lost);
@@ -81,7 +81,7 @@ function paint(s) {
     quietUntil = bootUntil = Date.now() + 6000;
     setTimeout(() => { if (last && last.power === 'on' && !expect) view(modeOf(last)); }, 6100);   // si se quedó en Tele
   }
-  if (expect) { if (matches(t)) view(modeOf(t)); return; }
+  if (expect) { if (matches(t)) { expect = null; view(modeOf(t)); } return; }
   // lo que cambia sin una orden de este mando se dice (no al conectar, ni al volver de «sin respuesta»)
   let note = '';
   if (prev && prev.power === 'on' && Date.now() > quietUntil) {
@@ -97,10 +97,12 @@ function paint(s) {
 /** Orden propia de power o src: el mando cambia ya y, si falla, vuelve a lo que diga la tele y lo cuenta. */
 function order(o, want) {
   expect = want;
+  const back = () => { if (expect === want) expect = null; if (last && last.power !== null) view(modeOf(last)); };
   return rpc(o).then(res => {
-    expect = null; quietUntil = Date.now() + 4000;
-    if (res.error) pill(res.error);
-    if (last && last.power !== null) view(modeOf(last));
+    quietUntil = Date.now() + 4000;
+    if (res.error) { pill(res.error); back(); }
+    // la lectura de justo después puede ser aún la de antes (la tecla Inicio, el reposo): se espera a ver la tele así
+    else setTimeout(() => { if (expect === want) back(); }, 4000);
     return res;
   });
 }
