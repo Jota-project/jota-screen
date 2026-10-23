@@ -14,10 +14,11 @@ const { send, TYPES } = require('../transport/http-util');
  *   cfg: { FILES: { spotify: string }, SP_DEVICE: string, PUBLIC_URL: string, DEBUG: boolean, SPOTIFY_BANNER: boolean },
  *   log: { info: (...a: any[]) => void, error: (...a: any[]) => void },
  *   clients: () => Iterable<any>,              // sockets del mando (para «ahora suena» en vivo)
+ *   tvAudio?: { set: (v: number) => Promise<any> } | null,   // la tele por ADB: su volumen es el único, también el de Spotify
  *   idle: () => { watching: () => boolean, setMusic: Function },   // la pantalla en reposo se crea después
  * }} deps
  */
-module.exports = function createSpotify({ cdp, cfg, log, clients, idle }) {
+module.exports = function createSpotify({ cdp, cfg, log, clients, idle, tvAudio = null }) {
   const CFG = cfg;
   // Spotify: spotifyd (SP_DEVICE) es el dispositivo Spotify Connect; se controla con la API web de Spotify (app propia, PKCE).
   // Los tokens se guardan en ./spotify.json (0600). Conexión: abrir /spotify/login?t=TOKEN desde cualquier dispositivo de la red.
@@ -122,6 +123,11 @@ module.exports = function createSpotify({ cdp, cfg, log, clients, idle }) {
   async function spotify(m) {
     try {
       const a = String(m.a || 'status');
+      if (a === 'volume' && tvAudio) {                                   // con la tele por ADB no se toca el volumen de spotifyd
+        const v = Math.min(100, Math.max(0, Math.round(Number(m.v))));
+        if (!Number.isFinite(v)) return { error: 'volumen no válido' };
+        await tvAudio.set(v); return { ok: 1, volume: v };
+      }
       if (a === 'status') {
         if (!sp.clientId) return { connected: false, error: 'Spotify sin configurar: falta el Client ID' };
         if (!sp.refresh) return { connected: false, error: 'Spotify sin conectar: abre /spotify/login en el navegador' };

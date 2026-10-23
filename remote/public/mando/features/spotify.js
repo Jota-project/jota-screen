@@ -15,7 +15,7 @@ const spOpen = () => isOpen('spS');
 /* la búsqueda va plegada tras la lupa */
 function spQuery(on) { $('#spS').classList.toggle('q', on); $('#spQ').setAttribute('aria-expanded', String(on)); if (on) $('#spin').focus(); }
 function spButton() {
-  openSheet('spS');
+  openSheet('spS'); spVolHide();
   rpc({ t: 'spwatch', on: true }).then(r => { if (r && 'now' in r) spPaint(r.now); });
   spLoadTab();
 }
@@ -50,12 +50,14 @@ function spText(n) {
   if (!had || !key || matchMedia('(prefers-reduced-motion: reduce)').matches) return set();
   $('#spS').classList.add('swap'); swapT = setTimeout(set, 220);
 }
+/* con la tele por ADB el volumen es el de la tele (el balancín): sin deslizador de Spotify */
+const spVolHide = () => hide('.spVol', !!state.lastState?.tv);
 function spPaint(n) {
   sp.now = n; sp.recv = Date.now();
   const S = $('#spS');
   $('#spLogin').hidden = !(n && n.needsLogin);
   $('#spLoginA').href = '/spotify/login?t=' + encodeURIComponent(state.token);
-  spLights(n); spText(n);
+  spVolHide(); spLights(n); spText(n);
   S.classList.toggle('playing', !!(n && !n.empty && n.playing));
   if (!n || n.empty || !n.track) { $('#spLike').hidden = true; spTick(); spList(); return; }
   $('#spLike').hidden = n.liked === null || n.liked === undefined; $('#spLike').classList.toggle('on', !!n.liked);
@@ -105,7 +107,9 @@ export const spotify = {
     $('#spX').addEventListener('click', () => { buzz(7); closeSheet(); });
     $('#spQ').addEventListener('click', () => { buzz(7); spQuery(!$('#spS').classList.contains('q')); });
     $('#spTv').addEventListener('click', () => { buzz(8); cmd({ t: 'nav', url: 'https://open.spotify.com/' }); cmd({ t: 'spotify', a: 'activate' }); closeSheet(); pill('Abriendo Spotify en la tele'); });
+    on('state', spVolHide);
     $('#rSp').addEventListener('input', e => {
+      if (state.lastState?.tv) return;
       $('#spV').textContent = e.target.value + ' %';
       clearTimeout(sp.volT); sp.volT = setTimeout(() => { sp.volT = 0; rpc({ t: 'spotify', a: 'volume', v: +e.target.value }); }, 250);
     });

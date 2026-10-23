@@ -1,7 +1,7 @@
 // Mando principal: accesos (Spotify, Netflix…), botones de orden directa, ±10 s y lo que se ve del estado de la tele
 // (cabecera y ambiente, volumen, play/pausa y carril de scroll).
 import { $, el, hide } from '../core/dom.js';
-import { cfg, state, on } from '../core/store.js';
+import { cfg, state, on, emit } from '../core/store.js';
 import { cmd, rpc } from '../core/api.js';
 import { paintAmbient } from './ambient.js';
 
@@ -25,6 +25,7 @@ function onState(s) {
   $('#pp').dataset.m = s.media;
   paint2(s);                                            // el volumen se ve en el balancín: sin aviso flotante
   state.lastState = s;
+  emit('state', s);                                     // otras hojas (Spotify) reaccionan al estado
 }
 /* v2: número de volumen (el % real del servidor), silencio, play/pausa y carril con el scroll de la página de la tele */
 function paint2(s) {

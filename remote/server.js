@@ -166,7 +166,7 @@ const youtube = createYoutube({ cdp, nav: u => control.nav(u), key: k => keyboar
 // URL (o recargar) es un documento nuevo sin cambio de URL: onPage no lo ve y se avisa desde aquí
 const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio, cfg: CFG, leaveStage: () => stage.leave(), netflix,
   onLayout: (url, layout) => talkView.agentLayout(layout, url), onNavigate: () => talkView.navigating(), onReload: () => { pagePoll.reset(); talkView.reset(); } });
-const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: () => idle });
+const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: () => idle, tvAudio: androidTv });
 const idle = createIdle({
   PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
   stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info, nfx: () => nfxWatch.forIdle(), nfxDominant: d => nfxWatch.dominant(d),

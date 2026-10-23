@@ -7,7 +7,8 @@ backend = "pulseaudio"
 device_type = "t_v"
 bitrate = 320
 volume_controller = "softvol"
-initial_volume = 70
+# con la tele por ADB (TV_ADB) el volumen lo lleva la tele: spotifyd siempre al máximo
+initial_volume = 100
 volume_normalisation = true
 use_mpris = true
 cache_path = "@HOME@/.cache/spotifyd"
