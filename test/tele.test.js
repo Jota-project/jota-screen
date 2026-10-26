@@ -18,10 +18,13 @@ function fakeTv() {
   const tv = {
     calls, fail: false, st: { power: 'on', src: 'j', vol: 22, muted: false },
     async status() { if (tv.fail) no(); return { ...tv.st }; },
-    async power(on, to) { calls.push('power:' + on + (to === 'tv' ? ':tv' : '')); if (tv.fail) no(); if (tv.wakes !== false) tv.st = { ...tv.st, power: on ? 'on' : 'off', src: on ? tv.st.src : null }; },
+    async power(on, to) { calls.push('power:' + on + (to === 'tv' || to === 'tdt' ? ':' + to : '')); if (tv.fail) no(); if (tv.wakes !== false) tv.st = { ...tv.st, power: on ? 'on' : 'off', src: on ? tv.st.src : null }; },
     async toJ() { calls.push('toJ'); if (tv.fail) no(); },
     async toTv() { calls.push('toTv'); if (tv.fail) no(); },
     async key(k) { calls.push('key:' + k); if (tv.fail) no(); },
+    hasTdt: true,
+    async toTdt() { calls.push('toTdt'); if (tv.fail) no(); tv.st = { ...tv.st, src: 'tv' }; },
+    async digits(n) { calls.push('digits:' + n); if (tv.fail) no(); },
     wakes: true,
   };
   return tv;
@@ -332,4 +335,36 @@ test('servidor con TV_ADB y sin TV_INPUT: lo dice al arrancar', async () => {
 test('servidor sin TV_ADB: tv es null', async () => {
   const s = await start();
   try { assert.equal((await (await s.api('/api/state')).json()).tv, null); } finally { await s.stop(); }
+});
+
+test('channel con la tele apagada: enciende directa en la TDT, marca y no salta a J-Screen', async t => {
+  const { tv, tele, step, cmd } = setup(t);
+  tv.st = { ...tv.st, power: 'off', src: null };
+  tele.start(); await flush();
+  tv.power = async (on, to) => { tv.calls.push('power:' + on + ':' + to); tv.st = { ...tv.st, power: 'on', src: 'tv' }; };
+  const r = cmd('channel', { n: 3 });
+  await flush();   // que la espera de la TDT esté programada antes de adelantar el reloj
+  await step(2000);
+  assert.deepEqual(await r, { tv: { power: 'on', src: 'tv' } });
+  await step(15000); await step(15000);
+  assert.deepEqual(tv.calls.filter(c => c !== 'pause'), ['power:true:tdt', 'digits:3'], 'sin toJ: el encendido era nuestro');
+});
+
+test('channel desde J-Screen: pausa, abre la TDT, espera y marca el número entero', async t => {
+  const { tv, tele, step, cmd } = setup(t);
+  tele.start(); await flush();
+  const r = cmd('channel', { n: 24 });
+  await flush();
+  assert.deepEqual(tv.calls, ['pause', 'toTdt'], 'aún no marca: espera a que la TDT esté delante');
+  await step(2000);
+  await r;
+  assert.deepEqual(tv.calls, ['pause', 'toTdt', 'digits:24']);
+});
+
+test('channel: número no válido o sin TV_TDT, error y la tele no se toca', async t => {
+  const { tv, cmd } = setup(t);
+  for (const n of [0, -3, 2.5, 'tres', 10000]) assert.deepEqual(cmd('channel', { n }), { error: 'canal no válido' }, String(n));
+  tv.hasTdt = false;
+  assert.deepEqual(cmd('channel', { n: 3 }), { error: 'falta la entrada de la TDT (TV_TDT)' });
+  assert.deepEqual(tv.calls, []);
 });

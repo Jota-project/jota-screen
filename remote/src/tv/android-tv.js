@@ -115,9 +115,9 @@ function monkeySession(/** @type {(args: string[]) => Promise<string>} */ run, /
 
 /**
  * La tele por ADB, con la interfaz de volumen de createAudio. Todo menos read() lanza 'La tele no responde' si adb falla.
- * @param {{ addr: string, input: string, log: { info: (m: string) => void }, adb?: { run: (a: string[], ms?: number) => Promise<string>, keys: { press: (c: string) => Promise<void>, close: () => void } } }} o
+ * @param {{ addr: string, input: string, tdt?: string, log: { info: (m: string) => void }, adb?: { run: (a: string[], ms?: number) => Promise<string>, keys: { press: (c: string) => Promise<void>, close: () => void } } }} o
  */
-function createAndroidTv({ addr, input, log, adb }) {
+function createAndroidTv({ addr, input, tdt = '', log, adb }) {
   const raw = (/** @type {string[]} */ args, ms = 3000) => new Promise((res, rej) => execFile('adb', ['-s', addr, ...args], { timeout: ms }, (e, o, se) => (e ? rej(new Error(String(se || e.message))) : res(o))));
   const a = adb || { run: raw, keys: monkeySession(raw, addr) };
   let stale = false; // el último resultado fue offline / unauthorized / error: antes del siguiente run, adb connect
@@ -146,6 +146,8 @@ function createAndroidTv({ addr, input, log, adb }) {
   const key = k => press(TV_KEYS[k], k);
   const set = (/** @type {number} */ v) => sh(`cmd media_session volume --stream 3 --set ${Math.max(0, Math.min(100, Math.round(v)))} --show`);
   const toJ = () => sh('am start -a android.intent.action.VIEW -d ' + passthroughUri(input));
+  // la TDT (antena) también se abre por passthrough: 0,3 s medidos en la tele, y luego vale marcar el canal con los dígitos
+  const toTdt = () => sh('am start -a android.intent.action.VIEW -d ' + passthroughUri(tdt));
   return {
     /** @returns {Promise<{ vol: number, muted: boolean } | null>} */
     async read() { try { const s = await status(); return s.vol === null ? null : { vol: s.vol, muted: s.muted }; } catch { return null; } },
@@ -159,12 +161,16 @@ function createAndroidTv({ addr, input, log, adb }) {
     status,
     // to 'tv': el inicio de Google TV con am start (0,2-0,45 s medidos), no con monkey, que recién despierta tarda en
     // arrancar (>15 s), ni con input, que recién despierta puede pasar de 8 s
-    async power(/** @type {boolean} */ on, /** @type {'j'|'tv'} */ to = 'j') {
+    async power(/** @type {boolean} */ on, /** @type {'j'|'tv'|'tdt'} */ to = 'j') {
       await sh('input keyevent ' + (on ? 'KEYCODE_WAKEUP' : 'KEYCODE_SLEEP'));
-      if (on) await (to === 'tv' ? sh('am start -a android.intent.action.MAIN -c android.intent.category.HOME') : toJ());
+      if (on) await (to === 'tv' ? sh('am start -a android.intent.action.MAIN -c android.intent.category.HOME') : to === 'tdt' ? toTdt() : toJ());
     },
     toJ,
     toTv: () => key('home'),
+    hasTdt: !!tdt,
+    toTdt,
+    /** Marca un canal con sus dígitos, como el mando original (la TDT tiene que estar delante). @param {number} n */
+    async digits(n) { for (const d of String(n)) await press('KEYCODE_' + d, d); },
     key,
     close: () => a.keys.close(),
   };

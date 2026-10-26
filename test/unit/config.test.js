@@ -154,10 +154,12 @@ test('config: el Gateway de voz se lee del entorno y TV_AGENT cambia el agente',
 });
 
 test('config: TV_ADB y TV_INPUT se recortan; sin ellas valen vacío', () => {
-  const c = loadConfig({ HOME: '/h', PATH: '', TV_ADB: ' 192.168.1.22:5555 ', TV_INPUT: ' a/b ' });
+  const c = loadConfig({ HOME: '/h', PATH: '', TV_ADB: ' 192.168.1.22:5555 ', TV_INPUT: ' a/b ', TV_TDT: ' c/d ' });
   assert.equal(c.ADB, '192.168.1.22:5555');
   assert.equal(c.INPUT, 'a/b');
+  assert.equal(c.TDT, 'c/d');
   const d = loadConfig({ HOME: '/h', PATH: '' });
   assert.equal(d.ADB, '');
   assert.equal(d.INPUT, '');
+  assert.equal(d.TDT, '');
 });

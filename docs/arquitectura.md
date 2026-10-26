@@ -74,7 +74,7 @@ remote/
     tokens.js             lee shared/tokens-tv.css y arma la fuente de la isla (tokens delante)
   src/features/           capacidades: cada una devuelve sus `commands` (y `routes`, si tiene)
     control.js            nav (con `layout` opcional), links, clicktext, click, home, back, forward, reload, shot, pp, seek, fs, vol, volset
-    tele.js               power, src, tvkey (sin permiso, también invitados); `state.tv = {power, src}` (`on`/`off`/`null`, `j`/`tv`/`null`).
+    tele.js               power, src, channel, tvkey (sin permiso, también invitados); `state.tv = {power, src}` (`on`/`off`/`null`, `j`/`tv`/`null`).
                           Sondea cada 3 s con mandos conectados y cada 15 s sin ellos; el volumen de Spotify es el de la tele. Al encenderse
                           la tele (también con el mando original) va a J-Screen; al apagar o pasar a Tele pausa lo que suena; las órdenes que
                           necesitan la pantalla (`withScreen`/`ensureJ`) la enciende y vuelven a J-Screen antes, 6 s como mucho
@@ -395,7 +395,7 @@ valores por defecto, está en [config/screen.env.example](../config/screen.env.e
 - **Agente**: `TV_GATEWAY_URL` y `TV_GATEWAY_KEY` (J Gateway; sin URL = «Jota no está disponible.»), `TV_AGENT` (`j-assistant`), `TV_SPEAKER_CMD` (altavoz de la tele), `TV_OWNER`
   (nombre del dueño en las instrucciones al agente; vacío = «el dueño»).
 - **Tele**: `TV_ADB` (`ip:5555` de la tele; vacío = sin control nativo, el volumen vuelve a ser el de PipeWire) y `TV_INPUT`
-  (id de la entrada HDMI de J-Screen). Necesita `adb` en el equipo y la depuración USB de la tele; ver
+  (id de la entrada HDMI de J-Screen); `TV_TDT` (id de la entrada de antena: canales por número; vacío = sin canales). Necesita `adb` en el equipo y la depuración USB de la tele; ver
   [cómo se hace](como-se-hace.md#control-nativo-de-la-tele-por-adb).
 - **Spotify**: `TV_SPOTIFY_DEVICE` (= `TV_NAME`), `TV_SPOTIFYD`, `TV_SPOTIFY_BANNER`.
 - **Tiempo**: `TV_CITY`, `TV_LAT`, `TV_LON`, `TV_TZ` (la del sistema): valores iniciales del reposo; lo guardado desde el

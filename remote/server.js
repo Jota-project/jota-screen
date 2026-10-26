@@ -101,7 +101,7 @@ cdp = createCdp({ port: CDP_PORT, log, hooks: {
 const pointer = createPointer({ script: path.join(ROOT, 'pointer.py'), display: CFG.DISPLAY, disabled: NO_POINTER, log });
 const pipewire = createAudio({ runtimeDir: CFG.XDG_RUNTIME_DIR });
 // con TV_ADB la tele Google TV por ADB: su volumen es el único (PipeWire se deja al 100 % al arrancar)
-const androidTv = CFG.ADB ? createAndroidTv({ addr: CFG.ADB, input: CFG.INPUT, log }) : null;
+const androidTv = CFG.ADB ? createAndroidTv({ addr: CFG.ADB, input: CFG.INPUT, tdt: CFG.TDT, log }) : null;
 if (androidTv && !CFG.INPUT) log.info('tele: TV_ADB puesto pero TV_INPUT vacío: nunca se verá J-Screen delante (pon TV_INPUT en screen.env)');
 const audio = androidTv || pipewire;
 // con la capa del agente a la vista sondea también sin mandos: de ahí sale el paso del panel a la píldora

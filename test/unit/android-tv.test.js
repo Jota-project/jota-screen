@@ -220,3 +220,15 @@ test('monkey: pkill antes de arrancar y otra vez al cerrar', async () => {
   assert.deepEqual(ev.slice(0, 3), ['pkill', 'forward', 'spawn']);
   assert.ok(ev.indexOf('pkill', 1) > ev.indexOf('spawn'));
 });
+
+test('tele: TDT por passthrough, power(true, "tdt") y canal marcado con sus dígitos por monkey', async () => {
+  const TDT = 'com.mediatek.tvinput/.tuner.TunerInputService/HW0';
+  const seen = [], pressed = [];
+  const tv = createAndroidTv({ addr: 'x:5555', input: TV_INPUT, tdt: TDT, log: { info() {} },
+    adb: { run: async args => { seen.push(args[1]); return OUT; }, keys: { press: async c => { pressed.push(c); }, close() {} } } });
+  assert.equal(tv.hasTdt, true);
+  await tv.power(true, 'tdt'); await tv.digits(24);
+  assert.deepEqual(seen, ['input keyevent KEYCODE_WAKEUP', 'am start -a android.intent.action.VIEW -d ' + passthroughUri(TDT)]);
+  assert.deepEqual(pressed, ['KEYCODE_2', 'KEYCODE_4']);
+  assert.equal(createAndroidTv({ addr: 'x', input: TV_INPUT, log: { info() {} }, adb: { run: async () => OUT, keys: { press: async () => {}, close() {} } } }).hasTdt, false);
+});

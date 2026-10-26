@@ -57,6 +57,7 @@ function loadConfig(env = process.env, { hostname = os.hostname() } = {}) {
     SPEAKER_CMD: speakerCmd(env.TV_SPEAKER_CMD),   // altavoz de la tele (stdin = PCM16 24 kHz mono); vacío = pw-cat
     ADB: (env.TV_ADB || '').trim(),                             // tele Google TV por ADB (ip:5555); vacío = sin tele nativa
     INPUT: (env.TV_INPUT || '').trim(),                         // inputId de TV Input Framework donde está J-Screen (HDMI)
+    TDT: (env.TV_TDT || '').trim(),                             // inputId de la TDT (antena); vacío = sin canales
     AGENT: (env.TV_AGENT || '').trim() || 'j-assistant',        // agente del Gateway
     ADMIN_URL: adminUrl(env, PORT, hostname),
     SPOTIFY_BANNER: !!env.TV_SPOTIFY_BANNER,

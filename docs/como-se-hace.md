@@ -158,9 +158,13 @@ Sin `TV_ADB` todo sigue como antes (volumen de PipeWire).
    «Permitir siempre». `adb devices` debe enseñar la tele como `device`.
 4. La entrada de J-Screen: `adb -s <ip-de-la-tele>:5555 shell dumpsys tv_input` y buscar el HDMI al que está conectado el
    equipo (`state: 0`, el `inputId` de la sesión principal), p. ej. `com.mediatek.tvinput/.hdmi.HDMIInputService/HW4`.
-5. En `screen.env`: `TV_ADB=<ip-de-la-tele>:5555` y `TV_INPUT=<inputId>`; `systemctl --user restart jota-screen`.
+5. En `screen.env`: `TV_ADB=<ip-de-la-tele>:5555` y `TV_INPUT=<inputId>`; para poner canales por número, también
+   `TV_TDT=<inputId de la antena>` (el `TunerInputService`, p. ej. `com.mediatek.tvinput/.tuner.TunerInputService/HW0`).
+   `systemctl --user restart jota-screen`.
    Con la IP fija en el router (la conexión ADB va por IP). En `spotifyd.conf`, `initial_volume = 100`: el volumen de Spotify
    es el de la tele. `scripts/doctor.sh` comprueba que `adb -s $TV_ADB get-state` diga `device`.
+6. Si ha cambiado `mcp/` (herramientas nuevas para Jota): reiniciar el cliente del MCP a mano
+   (`systemctl --user restart openclaw-gateway`; deja vivos los procesos del MCP viejo) y añadir las herramientas a su skill.
 
 ## Pruebas
 

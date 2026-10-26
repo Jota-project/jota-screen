@@ -1,17 +1,20 @@
 'use strict';
 // @ts-check
 // Capacidad «tele»: la tele Google TV por ADB. Sondea encendido, entrada y volumen (cada 3 s con mandos, 15 s sin ellos),
-// da las órdenes power, src y tvkey (sin permiso: también invitados) y aplica las reglas del diseño:
+// da las órdenes power, src, channel y tvkey (sin permiso: también invitados) y aplica las reglas del diseño:
 //   - al encenderse la tele (off → on, también con el mando original) va a J-Screen una sola vez; si la encendimos
 //     nosotros y aun así sale otra cosa (el lanzador llega después del am start), se vuelve a J-Screen una vez;
 //   - al apagar o pasar a Tele (por orden nuestra o con el mando original) se pausa lo que suena en J-Screen, una vez;
 //   - src con la tele apagada la enciende antes (j: el encendido ya va a J-Screen; tv: encender y luego Tele);
+//   - channel abre la TDT (encendiendo si hace falta, sin saltar a J-Screen) y marca el número;
 //   - las órdenes que necesitan la pantalla esperan antes a ver J-Screen delante (ensureJ, como mucho 6 s).
 const { TV_KEYS } = require('../tv/android-tv');
 
 const WATCHED_MS = 3000, IDLE_MS = 15000;
 const ENSURE_MS = 6000, ENSURE_STEP_MS = 500;
 const QUIET_KEYS = new Set(['up', 'down', 'left', 'right', 'ok']); // la cruceta va a ráfagas: sin lectura tras cada una
+// shortcut: espera fija a que la TDT esté delante antes de marcar (en la prueba bastaron 3 s); bajarla si sobra en la tele
+const TDT_MS = 2000;
 const OWN_PAUSE_MS = 30000; // la pausa de una orden propia vale para su apagado o paso a Tele si el sondeo lo ve en este tiempo
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
@@ -106,6 +109,21 @@ function createTele({ tv, state, broadcast, watched, pause, log }) {
     });
   }
 
+  /** Pone un canal de la TDT: enciende o deja J-Screen si hace falta, abre la TDT y marca el número. @param {number} n */
+  function channel(n) {
+    return act(async () => {
+      if (asleep()) {
+        own = 'tv';
+        try { await tv.power(true, 'tdt'); } catch (e) { own = false; throw e; }
+      } else {
+        if (state.tv.src === 'j') await ownPause('tv');
+        await undoPause(() => tv.toTdt());
+      }
+      await sleep(TDT_MS);
+      await tv.digits(n);
+    });
+  }
+
   /** Enciende o vuelve a J-Screen si hace falta y espera a verlo (como mucho 6 s). */
   async function ensureJ() {
     const ok = () => state.tv.power === 'on' && state.tv.src === 'j';
@@ -142,6 +160,11 @@ function createTele({ tv, state, broadcast, watched, pause, log }) {
   const commands = [
     { t: 'power', run: m => power(!!m.on) },
     { t: 'src', run: m => src(m.s === 'tv' ? 'tv' : 'j') },
+    { t: 'channel', run: m => {
+      const n = Number(m.n);
+      if (!tv.hasTdt) return { error: 'falta la entrada de la TDT (TV_TDT)' };
+      return Number.isInteger(n) && n >= 1 && n <= 9999 ? channel(n) : { error: 'canal no válido' };
+    } },
     { t: 'tvkey', run: m => {
       const k = m.k;
       if (typeof k !== 'string' || !Object.hasOwn(TV_KEYS, k)) return { error: 'tecla no válida' };

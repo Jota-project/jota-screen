@@ -27,6 +27,7 @@ test('tv_power y tv_source mandan su orden a /api/cmd', { skip }, async () => {
     await client.callTool({ name: 'tv_power', arguments: { state: 'on' } });
     await client.callTool({ name: 'tv_source', arguments: { source: 'tv' } });
     await client.callTool({ name: 'tv_source', arguments: { source: 'jscreen' } });
-    assert.deepEqual(got, [{ t: 'power', on: false }, { t: 'power', on: true }, { t: 'src', s: 'tv' }, { t: 'src', s: 'j' }]);
+    await client.callTool({ name: 'tv_channel', arguments: { number: 3 } });
+    assert.deepEqual(got, [{ t: 'power', on: false }, { t: 'power', on: true }, { t: 'src', s: 'tv' }, { t: 'src', s: 'j' }, { t: 'channel', n: 3 }]);
   } finally { await client.close(); api.close(); }
 });

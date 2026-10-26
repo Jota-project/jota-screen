@@ -120,6 +120,10 @@ tool('tv_source', "Switch what the TV shows: jscreen (this canvas, HDMI) or tv (
   { source: z.enum(['jscreen', 'tv']) },
   async ({ source }) => out(await cmd({ t: 'src', s: source === 'tv' ? 'tv' : 'j' })));
 
+tool('tv_channel', "Put a live TV (antenna/TDT) channel by its number on the TV's own channel list, e.g. 3 for «la 3». Turns the TV on if needed and leaves J-Screen for the TV tuner. Only numbers: a channel name works only if you know its number on this TV.",
+  { number: z.number().int().min(1).max(9999) },
+  async ({ number }) => out(await cmd({ t: 'channel', n: number })));
+
 tool('tv_spotify',
   'Control Spotify on the TV (the server is a Spotify Connect device, Premium account). Actions: status (short: what is playing, connected?), ' +
   'now (full now-playing: track, album+year, artist photo, playing context (playlist/album), queue, shuffle/repeat, liked, volume, album-art colours), ' +
