@@ -14,8 +14,13 @@
 // el agente completo. El barge-in del Gateway no se usa: interrumpe este servidor.
 // Las llamadas a herramientas del turno (`tool`) pasan el mismo filtro que los tokens: las de la lista cerrada de
 // agent-ui.js van a la vista como ficha (`tool`/`toolEnd`); de las demás solo se registra el nombre (nunca args ni resultado).
+// Voz y texto sincronizados: en un turno que suena (tv o phone), voice-sync.js empareja el audio con el texto y la vista y el
+// móvil reciben `voice` ({ anchors, rate, head, upto, text }) solo cuando cambia (anclas, rate, atasco), nunca por trozo.
+// Desde turn_start hasta el arranque, `voice` sin anclas: la tele espera a la voz para enseñar la respuesta. Sin audio en
+// noVoiceMs tras el primer token, `voice` null y todo como siempre. Al acabar o cortarse la voz, null (`{ev:'voice', end}`).
 const { WebSocket } = require('ws');
 const { toolCard, toolName, layoutOf, opensPage } = require('./agent-ui');
+const { createVoiceSync } = require('./voice-sync');
 
 const DOWN = 'Jota no está disponible.';
 const BUSY = 'Sigo con la petición anterior. Espera un momento.';
@@ -27,6 +32,11 @@ const OUTS = ['tv', 'phone', 'none'];
 const RATE_MS = 24;                                        // muestras por ms del PCM del Gateway (24 kHz)
 const TV_GRACE_MS = 5000;                                  // tras end, si el altavoz no avisa, «habla» como mucho lo estimado más esto
 const TOOL_ID_MAX = 80;                                    // caracteres del id de una llamada a herramienta que llegan a la vista
+const NO_VOICE_MS = 2500;                                  // tras el primer token, sin audio en esto el texto va como siempre
+const PLAY_LATENCY_MS = 150;                               // provisional, se calibra en la tele: del write a que suena
+const VOICE_EARLY_MS = 300;                                // antes de que los clientes lleguen a `upto`, se mira si hay más audio
+const VOICE_MIN_GAP_MS = 250;                              // …y nunca más a menudo que esto
+const VOICE_RATE_STEP = 0.05;                              // cambio de rate (ms por carácter) que se avisa
 
 /**
  * Instrucciones que van delante de cada mensaje: con el nombre de la pantalla (TV_NAME) y, si se da, el del dueño (TV_OWNER).
@@ -49,6 +59,11 @@ function prompts(name, owner = '') {
 /** «Jota habla»: lo que suena de una respuesta; `ending` tras speaker.end (tele), `view` la tele espera a esto para done.
  * @typedef {{ out: string, ws: any, samples: number, first: number, last: number, timer: any, ending: boolean, view: boolean }} Play */
 
+/** Voz sincronizada de la respuesta que suena: su reloj, el instante en que suena su ms 0 (`t0`, con los atascos ya
+ *  corridos), lo último avisado y sus plazos. `waiting`: los clientes llegan ya a `upto`, el trozo siguiente se avisa.
+ * @typedef {{ sync: ReturnType<typeof createVoiceSync>, ws: any, t0: number | null, sent: { n: number, rate: number, upto: number } | null,
+ *   timer: any, noVoice: any, waiting: boolean }} Vox */
+
 /** Ficha de herramienta tal como la recibe la vista. @typedef {{ id: string, kind: string, title: string, detail: string }} ToolView */
 
 /** Vista de la tele que no pinta nada (tests y arranques sin ella). */
@@ -64,12 +79,14 @@ const NO_SPEAKER = { start() {}, write() {}, end() {}, stop() {} };
  *            hide?: () => void, onHide?: (fn: () => void) => void, tool?: (c: ToolView) => void, toolEnd?: (e: { id: string, ok: boolean }) => void,
  *            userForm?: (form: any) => any, agentLayout?: (layout: string, url: string) => void,
  *            onForm?: (fn: (form: 'pill' | 'panel', canSwitch: boolean) => void) => void,
- *            form?: () => { form: 'pill' | 'panel', canSwitch: boolean } },
+ *            form?: () => { form: 'pill' | 'panel', canSwitch: boolean }, voice?: (v: object | null) => void },
  *   speaker?: { start: () => void, write: (pcm: Buffer) => void, end: () => void, stop: () => void, onIdle?: (fn: () => void) => void },
  *   log?: { info: Function, warn: Function }, finalMs?: number, turnIdleMs?: number, maxVoiceMs?: number, audioTailMs?: number, playMarginMs?: number,
+ *   noVoiceMs?: number, playLatencyMs?: number,
  * }} deps
  */
-module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker = NO_SPEAKER, log = { info() {}, warn() {} }, finalMs = 8000, turnIdleMs = 150000, maxVoiceMs = 32000, audioTailMs = 3000, playMarginMs = 300 }) {
+module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker = NO_SPEAKER, log = { info() {}, warn() {} }, finalMs = 8000, turnIdleMs = 150000, maxVoiceMs = 32000, audioTailMs = 3000, playMarginMs = 300,
+  noVoiceMs = NO_VOICE_MS, playLatencyMs = PLAY_LATENCY_MS }) {
   const { askPrefix: ASK_PREFIX, askGuest: ASK_GUEST } = prompts(cfg.NAME, cfg.OWNER);
   /** El turno en curso: quién preguntó, el id que le da el Gateway (tras turn_start) y la respuesta acumulada.
    *  `sent`: ya se llamó a gw.send; hasta entonces ningún turn_start puede ser el nuestro (un push).
@@ -87,6 +104,8 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   let tail = null;
   /** «Jota habla»: desde el primer frame que suena hasta el fin de la reproducción. @type {null | Play} */
   let play = null;
+  /** La voz sincronizada: del turn_start de un turno que suena hasta que acaba (o se corta) su audio. @type {null | Vox} */
+  let vox = null;
   /** El móvil del intercambio que la tele enseña ahora (recibe `hidden` cuando se quita, o cuando otro móvil la ocupa, y
    *  el formato de la capa). Si ese móvil se reconecta (pantalla bloqueada, cambio de red), su conexión nueva lo sustituye
    *  (greet). */
@@ -118,6 +137,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   function playEnded() {
     const p = play; if (!p) return;
     play = null; clearTimeout(p.timer);
+    voiceOff();
     tell(p.ws, { ev: 'silent' });                         // el móvil quita «Parar»
     if (p.view) v('done');
   }
@@ -138,12 +158,64 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     const p = play; if (!p) return;                        // ya acabó (o se cortó): no vuelve a abrirse
     p.samples += (ev.pcm ? ev.pcm.length : 0) >> 1; p.last = now;
     if (p.out === 'phone') armPlay(p);
+    voicePcm(ev.pcm);
+  }
+
+  /** Empieza la voz sincronizada del turno (en espera: sin anclas, la tele no enseña la respuesta aún). @param {any} ws */
+  function voiceOn(ws) {
+    voiceOff();
+    vox = { sync: createVoiceSync(), ws, t0: null, sent: null, timer: null, noVoice: null, waiting: false };
+    emitVoice(vox);
+  }
+  /** Acaba la voz sincronizada: la vista y el móvil enseñan ya todo lo recibido. */
+  function voiceOff() {
+    const x = vox; if (!x) return;
+    vox = null; clearTimeout(x.timer); clearTimeout(x.noVoice);
+    v('voice', null);
+    tell(x.ws, { ev: 'voice', end: true });
+  }
+  /** Lo avisado ya no vale: anclas nuevas o rate que cambia más de VOICE_RATE_STEP. @param {Vox} x */
+  const changed = x => !x.sent || x.sync.anchors().length !== x.sent.n || Math.abs(x.sync.rate() - x.sent.rate) > VOICE_RATE_STEP * x.sent.rate;
+  /** Avisa a la vista y al móvil. `head`: ms de audio sonados ahora (negativo: aún no suena). Los clientes se paran en
+   *  `upto`: antes de llegar se mira si hay más audio (y se avisa) o es un atasco (se avisa con el trozo siguiente). @param {Vox} x */
+  function emitVoice(x) {
+    const s = x.sync, upto = s.receivedMs(), rate = s.rate(), anchors = s.anchors();
+    const head = x.t0 === null ? 0 : Math.min(Date.now() - x.t0, upto);
+    x.sent = { n: anchors.length, rate, upto }; x.waiting = false;
+    const o = { anchors, rate, head, upto, text: s.textLength() };
+    v('voice', o);
+    tell(x.ws, { ev: 'voice', ...o });
+    clearTimeout(x.timer);
+    if (x.t0 === null) return;
+    x.timer = setTimeout(() => { if (vox !== x) return; if (s.receivedMs() > upto) emitVoice(x); else x.waiting = true; },
+      Math.max(VOICE_MIN_GAP_MS, x.t0 + upto - VOICE_EARLY_MS - Date.now()));
+    if (x.timer.unref) x.timer.unref();
+  }
+  /** Un trozo de audio que suena: al reloj de la voz. Si llega con el altavoz ya vacío (atasco), lo que ha durado se corre. @param {Buffer} pcm */
+  function voicePcm(pcm) {
+    const x = vox; if (!x || !pcm || !pcm.length) return;
+    const now = Date.now(), had = x.sync.receivedMs();
+    if (x.t0 === null) x.t0 = now + playLatencyMs;
+    else if (now > x.t0 + had) { x.t0 = now + playLatencyMs - had; x.waiting = true; }
+    x.sync.pcm(pcm);
+    if (x.waiting || changed(x)) emitVoice(x);
+  }
+  /** La respuesta acumulada, al reloj de la voz; con el primer token sin audio, el plazo de NO_VOICE_MS. @param {string} text */
+  function voiceText(text) {
+    const x = vox; if (!x) return;
+    x.sync.text(text);
+    if (!x.noVoice && !x.sync.receivedMs()) {
+      x.noVoice = setTimeout(() => { if (vox === x && !x.sync.receivedMs()) voiceOff(); }, noVoiceMs);
+      if (x.noVoice.unref) x.noVoice.unref();
+    }
+    if (x.t0 !== null && changed(x)) emitVoice(x);          // una pausa que esperaba a su puntuación
   }
 
   /** Corta todo lo que suene: la cola, «Jota habla» y el altavoz. */
   function silence() {
     if (tail) { clearTimeout(tail.timer); tail = null; }
     playEnded();
+    voiceOff();                                            // en espera, aún sin audio
     spk('stop');
   }
   /** Vence la cola: el altavoz vacía lo que le queda y avisa con onIdle (sin onIdle, se da por acabado ya). */
@@ -326,6 +398,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
       case 'turn_start':
         if (!turn.turnId) {
           turn.turnId = ev.turnId; turn.seq = ev.seq; if (turn.out === 'tv') spk('start');
+          if (turn.out === 'tv' || turn.out === 'phone') voiceOn(turn.ws); else voiceOff();
           if (ghostPending) { ghostPending = false; turn.maybeGhost = true; }
         }
         return;
@@ -340,6 +413,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
         if (turn.reply) confirmTurn(turn);                 // antes que el texto: las fichas van delante de la respuesta
         tell(turn.ws, { ev: 'token', text: turn.reply });
         v('jota', turn.reply);
+        voiceText(turn.reply);
         return;
       case 'tool':
         if (turn.turnId !== ev.turnId) return;

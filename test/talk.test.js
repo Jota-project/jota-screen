@@ -10,8 +10,8 @@ const { WebSocket } = require(path.join(__dirname, '..', 'remote', 'node_modules
 
 const PERMS = { full: { agent: 'full', admin: true }, guest: { agent: 'guest' }, off: { agent: 'off' } };
 
-function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalMs, maxVoiceMs, audioTailMs = 20, playMarginMs, log } = {}) {
-  const subs = new Set(), sent = [], views = [], audio = [], ends = [], bins = [], spk = [], cancels = [];
+function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalMs, maxVoiceMs, audioTailMs = 20, playMarginMs, log, noVoiceMs, playLatencyMs } = {}) {
+  const subs = new Set(), sent = [], views = [], audio = [], ends = [], bins = [], spk = [], cancels = [], voices = [];
   const gw = {
     ensure: async () => { if (slowEnsure) await new Promise(r => setTimeout(r, 20)); return ensure; }, send: t => sent.push(t), audio: b => audio.push(b), end: () => ends.push(1), on: fn => { subs.add(fn); return () => subs.delete(fn); },
     cancel: () => cancels.push(1), emit: ev => subs.forEach(f => f(ev)),
@@ -21,6 +21,7 @@ function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalM
   const view = Object.fromEntries(['turn', 'you', 'jota', 'done', 'error', 'tool', 'toolEnd'].map(k => [k, (...a) => views.push([k, ...a])]));
   view.hide = () => { views.push(['hide']); onHide(); };
   view.onHide = fn => { onHide = fn; };
+  view.voice = x => voices.push(x);                       // la voz sincronizada, aparte: no cambia la secuencia de `views`
   // formato: la vista falsa acepta lo que se le pida y avisa cuando la prueba llama a form()
   let onForm = () => {};
   view.userForm = f => { views.push(['userForm', f]); return f === 'pill' || f === 'panel' ? { ok: 1, form: f } : { error: 'formato no válido' }; };
@@ -31,7 +32,7 @@ function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalM
   const speaker = Object.fromEntries(['start', 'write', 'end', 'stop'].map(k => [k, (...a) => spk.push([k, ...a])]));
   speaker.stop = () => { spk.push(['stop']); onIdle(); };
   speaker.onIdle = fn => { onIdle = fn; };
-  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, speaker, log, turnIdleMs, finalMs, maxVoiceMs, audioTailMs, playMarginMs });
+  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, speaker, log, turnIdleMs, finalMs, maxVoiceMs, audioTailMs, playMarginMs, noVoiceMs, playLatencyMs });
   const msgs = [];
   const ws = { readyState: WebSocket.OPEN, send: s => (Buffer.isBuffer(s) ? bins.push(s) : msgs.push(JSON.parse(s))) };
   const perm = { current: 'full' };
@@ -40,7 +41,7 @@ function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalM
   const ask = (text, dev = { role: 'admin', name: 'Admin' }, out) => cmds.dispatch({ t: 'ask', text, out }, { dev, ws });
   const vcmd = (m, dev = { role: 'admin', name: 'Admin' }, sock = ws) => cmds.dispatch(m, { dev, ws: sock });
   const tick = () => new Promise(r => setImmediate(r));
-  return { gw, talk, sent, views, msgs, ws, perm, ask, tick, audio, ends, vcmd, bins, spk, cancels, idle: () => onIdle(), hidden: () => onHide(), form: (f, can) => onForm(f, can), make: null };
+  return { gw, talk, sent, views, voices, msgs, ws, perm, ask, tick, audio, ends, vcmd, bins, spk, cancels, idle: () => onIdle(), hidden: () => onHide(), form: (f, can) => onForm(f, can), make: null };
 }
 
 test('ask full: send lleva askPrefix + texto; los tokens llegan acumulados y ask resuelve {ok:1, reply}', async () => {
@@ -945,4 +946,101 @@ test('el móvil del intercambio se reconecta (otra conexión, mismo dispositivo)
   can = false;
   assert.deepEqual(talk.greet(sock('d1')), [], 'la tele ya no deja cambiarlo: nada que mandar');
   gw.emit({ type: 'token', turnId: 'a', text: 'ok' }); gw.emit({ type: 'turn_end', turnId: 'a' }); await p;
+});
+
+// ───────── voz y texto sincronizados (voice-sync.js): la vista y el móvil reciben `voice` solo cuando cambia
+/** PCM16 LE 24 kHz: seno a 220 Hz con amplitud 0,3 (voz) o ceros (silencio). @param {number} ms @param {boolean} on */
+const tone = (ms, on) => { const n = ms * 24, b = Buffer.alloc(n * 2); if (on) for (let i = 0; i < n; i++) b.writeInt16LE(Math.round(0.3 * 32767 * Math.sin(2 * Math.PI * 220 * i / 24000)), i * 2); return b; };
+const audPcm = (seq, pcm) => ({ type: 'audio', seq, pcm, frame: Buffer.concat([Buffer.from([0xA1, seq >> 8, seq & 255]), pcm]) });
+const vmsgs = t => t.msgs.filter(m => m.ev === 'voice');
+
+test('voz out tv: en espera desde turn_start (sin anclas), luego anclas del audio; la vista y el móvil reciben lo mismo', async () => {
+  const t = make({ audioTailMs: 500 });
+  const p = turnWith(t, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  assert.equal(t.voices.length, 1);
+  assert.deepEqual([t.voices[0].anchors, t.voices[0].head, t.voices[0].upto], [[], 0, 0], 'en espera: la tele aún no enseña la respuesta');
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'Hola. Qué tal.' });
+  t.gw.emit(audPcm(1, Buffer.concat([tone(300, true), tone(300, false), tone(400, true)])));
+  const v = t.voices.at(-1);
+  assert.deepEqual(v.anchors, [[0, 0], [300, 5], [600, 6]]);
+  assert.deepEqual([v.upto, v.text, v.rate], [1000, 14, 62]);
+  assert.ok(v.head < 0 && v.head >= -150, 'aún no suena: la latencia del altavoz por delante');
+  assert.deepEqual(vmsgs(t).at(-1), { t: 'talk', ev: 'voice', ...v }, 'el móvil, lo mismo');
+  t.gw.emit({ type: 'turn_end', turnId: 'a' }); await p;
+  t.idle();                                                 // no ha vaciado: aún suena
+  await wait(520); t.idle();
+  assert.equal(t.voices.at(-1), null, 'acaba de sonar: null');
+  assert.deepEqual(vmsgs(t).at(-1), { t: 'talk', ev: 'voice', end: true });
+});
+
+test('voz: un trozo de audio no es un mensaje (solo anclas nuevas, cambio de rate o atasco)', async () => {
+  const t = make({ audioTailMs: 500 });
+  const p = turnWith(t, 'phone'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'Una frase larga sin pausas que dura un buen rato.' });
+  for (let i = 0; i < 50; i++) t.gw.emit(audPcm(1, tone(40, true)));   // 2 s en 50 trozos
+  assert.equal(t.bins.length, 50);
+  assert.deepEqual(t.voices.map(v => v.anchors.length), [0, 1], 'en espera y el arranque');
+  assert.equal(vmsgs(t).length, 2);
+  t.gw.emit({ type: 'turn_end', turnId: 'a' }); await p;
+});
+
+test('voz out none (o sin out): ni la vista ni el móvil reciben voice', async () => {
+  for (const out of ['none', undefined]) {
+    const t = make();
+    const p = t.ask('hola', undefined, out); await t.tick();
+    t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); t.gw.emit(audPcm(1, tone(400, true)));
+    t.gw.emit({ type: 'token', turnId: 'a', text: 'Hola.' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
+    await p;
+    assert.deepEqual([t.voices, vmsgs(t)], [[], []]);
+  }
+});
+
+test('voz: tras un stop vuelve a null (y el móvil recibe end)', async () => {
+  const t = make();
+  const p = turnWith(t, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'Hola.' }); t.gw.emit(audPcm(1, tone(400, true)));
+  assert.equal(t.voices.at(-1).anchors.length, 1);
+  await t.vcmd({ t: 'stop' }); await p;
+  assert.equal(t.voices.at(-1), null);
+  assert.equal(vmsgs(t).filter(m => m.end).length, 1, 'una vez');
+  // interrumpir con otra pregunta, igual
+  const u = make();
+  const q = turnWith(u, 'tv'); await u.tick();
+  u.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 }); u.gw.emit({ type: 'token', turnId: 'a', text: 'Ho' });
+  u.vcmd({ t: 'ask', text: 'otra', out: 'tv', interrupt: true }); await u.tick(); await q;
+  assert.equal(u.voices.at(-1), null);
+});
+
+test('voz: sin audio en noVoiceMs tras el primer token, null (y todo sigue como siempre)', async () => {
+  const t = make({ noVoiceMs: 30, audioTailMs: 500 });
+  const p = turnWith(t, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  await wait(50);
+  assert.notEqual(t.voices.at(-1), null, 'el plazo cuenta desde el primer token');
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'Hola.' });
+  await wait(50);
+  assert.equal(t.voices.at(-1), null);
+  t.gw.emit(audPcm(1, tone(400, true)));
+  assert.equal(t.voices.at(-1), null, 'el audio que llega tarde ya no la enciende');
+  t.gw.emit({ type: 'turn_end', turnId: 'a' }); await p;
+});
+
+test('voz: con audio a tiempo no hay plazo que la apague; un atasco se avisa al llegar el trozo siguiente', async () => {
+  const t = make({ noVoiceMs: 30, audioTailMs: 2000, playLatencyMs: 0 });
+  const p = turnWith(t, 'tv'); await t.tick();
+  t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
+  t.gw.emit({ type: 'token', turnId: 'a', text: 'Hola, ¿qué tal estás hoy por aquí?' });
+  t.gw.emit(audPcm(1, tone(100, true)));
+  const n = t.voices.length;
+  await wait(400);                                         // 100 ms de audio: el altavoz se queda sin nada
+  assert.notEqual(t.voices.at(-1), null);
+  t.gw.emit(audPcm(1, tone(100, true)));
+  assert.equal(t.voices.length, n + 1, 'se reanuda: aviso');
+  const v = t.voices.at(-1);
+  assert.equal(v.upto, 200);
+  assert.ok(v.head >= 100 && v.head < 150, 'la cabeza sigue donde se quedó, no corrida por el atasco');
+  t.gw.emit({ type: 'turn_end', turnId: 'a' }); await p;
 });
