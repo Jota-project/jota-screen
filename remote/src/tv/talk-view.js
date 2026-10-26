@@ -145,10 +145,29 @@ const RESTORE_GLOBAL = '__tvAgentRestore';   // global de la página con la últ
  * Foto que recibe `TVAgent.render`. `enter`: 'open' normal; 'restore' en un documento nuevo (tras navegar)
  * o en otra pestaña. `tab` (solo la primera foto tras un cambio de pestaña, con 'restore'): lo que haya pintado en esa
  * pestaña es de antes y se retira en seco. `shown` (con `tab`): palabras de tú y de Jota que ya se veían de cada turno.
+ * `voice` (solo con voz, del turno actual): ver Voice.
  * @typedef {{ form: 'pill' | 'panel', ctx: string, state: State, live: boolean, night: boolean, calm: boolean, glass: string,
  *   colors: [string, string] | null, turns: Turn[], icons: Record<string, any>, enter: 'open' | 'restore', tab?: true,
- *   shown?: Record<string, [number, number]> }} Snap
+ *   shown?: Record<string, [number, number]>, voice?: Voice }} Snap
  */
+/**
+ * Voz sincronizada de la respuesta (talk.js, voice-sync.js): anclas [ms de audio, carácter], ms por carácter tras la
+ * última, `head` ms de audio sonados al mandar la foto (negativo: aún no suena), `upto` ms recibidos (la página no pasa
+ * de ahí) y `text` largo del texto al que se refieren. Sin anclas: en espera (la respuesta aún no se enseña).
+ * @typedef {{ anchors: [number, number][], rate: number, head: number, upto: number, text: number }} Voice
+ */
+const VOICE_ANCHORS_MAX = 200;               // anclas que llegan a la página (las últimas)
+const VOICE_HEAD_MIN = -10000;               // cabeza negativa: lo que falta para que suene (la latencia del altavoz)
+
+/** La voz de talk.js, saneada (números finitos ≥ 0, como mucho VOICE_ANCHORS_MAX anclas) o null. @param {any} v @returns {Voice | null} */
+function cleanVoice(v) {
+  const ok = (/** @type {any} */ n) => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+  if (!v || typeof v !== 'object' || !Array.isArray(v.anchors) || !ok(v.rate) || !(v.rate > 0) || !ok(v.upto) || !ok(v.text)) return null;
+  if (typeof v.head !== 'number' || !Number.isFinite(v.head) || v.head < VOICE_HEAD_MIN) return null;
+  const anchors = v.anchors.filter((/** @type {any} */ a) => Array.isArray(a) && a.length === 2 && ok(a[0]) && ok(a[1]))
+    .slice(-VOICE_ANCHORS_MAX).map((/** @type {number[]} */ a) => /** @type {[number, number]} */ ([a[0], a[1]]));
+  return { anchors, rate: v.rate, head: Math.min(v.head, v.upto), upto: v.upto, text: v.text };
+}
 
 /** Sin `context()` (o si lanza): los valores por defecto. @type {Look} */
 const DEFAULT_LOOK = Object.freeze({ ctx: null, night: false, calm: false, glass: 'auto', colors: null, playback: null, page: null });
@@ -227,14 +246,16 @@ function settleTools(t) { for (const x of t.tools) if (x.status === 'run') x.sta
  * Foto a partir de los turnos guardados (el último, el actual). Pura: la prueban las pruebas. Lleva los
  * KEEP_TURNS últimos también en la píldora (la página solo enseña el último): así el log no cambia en el mismo frame en
  * que cambia la forma, y el turno anterior se pliega o reaparece con el contenido ya oculto (en el viaje del paso).
- * @param {{ form: 'pill' | 'panel', ctx: string, state: State, live: boolean, look: Look, turns: Turn[], enter?: 'open' | 'restore' }} o
+ * @param {{ form: 'pill' | 'panel', ctx: string, state: State, live: boolean, look: Look, turns: Turn[], enter?: 'open' | 'restore',
+ *   voice?: Voice | null }} o
  * @returns {Snap}
  */
-function snapshot({ form, ctx, state, live, look, turns, enter = 'open' }) {
+function snapshot({ form, ctx, state, live, look, turns, enter = 'open', voice = null }) {
   const shown = turns.slice(-KEEP_TURNS).map(t => ({ ...t, tools: t.tools.map(x => ({ ...x })) }));
   /** @type {Record<string, any>} */ const icons = {};
   for (const t of shown) for (const x of t.tools) if (KINDS[x.kind]) icons[x.kind] = KINDS[x.kind].icon;
-  return { form, ctx, state, live, night: look.night, calm: look.calm, glass: look.glass, colors: look.colors, turns: shown, icons, enter };
+  return { form, ctx, state, live, night: look.night, calm: look.calm, glass: look.glass, colors: look.colors, turns: shown, icons, enter,
+    ...(voice ? { voice: { ...voice, anchors: voice.anchors.map(a => /** @type {[number, number]} */ ([a[0], a[1]])) } } : {}) };
 }
 
 /** Script de documento nuevo con la fuente de la capa: al cargarse pinta la última foto, si ya llegó. Solo el marco
@@ -263,6 +284,8 @@ function createTalkView({ cdp, pub, batchMs = 100, log = () => {}, context, onAs
   /** @type {State} */
   let state = 'done';
   let live = false;
+  /** La voz del turno actual y cuándo llegó (`at`): la cabeza avanza en tiempo real hasta cada foto. @type {(Voice & { at: number }) | null} */
+  let spoken = null;
   let open = false;      // hay un intercambio en curso (entre turn y done/error)
   let shown = false;     // la capa está (o va a estar) en pantalla
   let injected = false;  // la página actual tiene la capa (según lo último que sabemos)
@@ -309,7 +332,8 @@ function createTalkView({ cdp, pub, batchMs = 100, log = () => {}, context, onAs
     // una tarjeta puesta en el reposo sigue en su turno al pasar a una web ajena: allí, sin sus imágenes (son de
     // 127.0.0.1: desde la web, Chrome pediría permiso para «acceder a otras aplicaciones y servicios de este dispositivo»)
     const turns = [...history, cur].map(t => (t.media && !ourPage(l) ? { ...t, media: noImages(t.media) } : t));
-    return snapshot({ form, ctx: l.ctx || (form === 'pill' ? 'video' : 'web'), state, live, look: l, turns, enter });
+    const vo = spoken && { anchors: spoken.anchors, rate: spoken.rate, head: Math.min(spoken.head + Date.now() - spoken.at, spoken.upto), upto: spoken.upto, text: spoken.text };
+    return snapshot({ form, ctx: l.ctx || (form === 'pill' ? 'video' : 'web'), state, live, look: l, turns, enter, voice: vo });
   }
 
   // ── scripts de documento nuevo: en cola (nunca dos cambios a la vez) y siempre contra la sesión que los registró
@@ -434,6 +458,7 @@ function createTalkView({ cdp, pub, batchMs = 100, log = () => {}, context, onAs
     settleTools(cur);                                   // interrumpido sin done: lo archivado no gira
     if (said(cur)) history = [...history, cur].slice(-KEEP_TURNS); // un turno cancelado sin nada no se guarda
     cur = newTurn(++seq);
+    spoken = null;                                      // la de la respuesta anterior ya no vale
     mode = m === 'island' ? 'island' : 'panel';
     state = voice ? 'listen' : 'think';
     live = true; open = true;
@@ -582,6 +607,14 @@ function createTalkView({ cdp, pub, batchMs = 100, log = () => {}, context, onAs
       if (cur.jota && (state === 'listen' || state === 'think')) state = 'talk';   // el primer token
       schedule();
     },
+    /** Voz sincronizada de la respuesta del turno actual (talk.js), o null: sin voz, o se acabó o se cortó (todo a la
+     * vista). Va en la foto siguiente con la cabeza al día. @param {any} v */
+    voice(v) {
+      const c = cleanVoice(v);
+      if (!c && !spoken) return;
+      spoken = c && { ...c, at: Date.now() };
+      schedule();
+    },
     /** Ficha de una herramienta que empieza (mismo id: se actualiza); `opens`: pone otra página en la tele.
      * @param {{ id: string, kind: string, title: string, detail: string, opens?: boolean }} c */
     tool(c) {
@@ -720,5 +753,5 @@ function createTalkView({ cdp, pub, batchMs = 100, log = () => {}, context, onAs
   };
 }
 
-module.exports = { createTalkView, snapshot, HIDE, KEEP_TURNS, CLOSE_BASE_MS, CLOSE_PER_CHAR_MS, RETRY_HINT, RECOVER_ON_OK, SETTLED_STATUS,
+module.exports = { createTalkView, snapshot, cleanVoice, VOICE_ANCHORS_MAX, HIDE, KEEP_TURNS, CLOSE_BASE_MS, CLOSE_PER_CHAR_MS, RETRY_HINT, RECOVER_ON_OK, SETTLED_STATUS,
   AWAIT_PAGE_MS, AFTER_PAINT_MIN_MS, PAINT_WAIT_MS, PAINT_BLANK, BLANK_RE, LEAVE_HIDE, PAINT_GRID, PAINT_MIN_POINTS, PAINT_EVERY_MS, MORPH_DELAY_MS, BINDING_GAP_MS, NO_LAYER, PAINT_PROBE, paintProbe, PILL_DWELL_BASE_MS, PILL_DWELL_PER_CHAR_MS, RESTORE_GLOBAL };

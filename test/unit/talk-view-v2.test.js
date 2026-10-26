@@ -1002,3 +1002,31 @@ test('ocultar devuelve la isla de actividades a 1 aunque TVAgent.hide falle', ()
   assert.throws(() => new Function('window', tv.HIDE)(window));
   assert.equal(dim, 1);
 });
+
+test('voice: va en la foto solo con voz, saneada (≤ VOICE_ANCHORS_MAX anclas, números finitos ≥ 0) y con la cabeza al día', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { cdp, v } = make();
+  v.turn('panel'); v.jota('Hola. Qué tal.');
+  await step(t);
+  assert.ok(!('voice' in last(cdp)), 'sin voz, la foto no la lleva');
+  const anchors = Array.from({ length: 250 }, (_, i) => [i * 10, i]);
+  v.voice({ anchors: [[-1, 0], [5, NaN], 'x', ...anchors], rate: 62, head: -100, upto: 1000, text: 14 });
+  await step(t);
+  let s = last(cdp);
+  assert.equal(s.voice.anchors.length, tv.VOICE_ANCHORS_MAX, 'las últimas');
+  assert.deepEqual(s.voice.anchors[0], [500, 50]);
+  assert.deepEqual([s.voice.rate, s.voice.upto, s.voice.text], [62, 1000, 14]);
+  assert.equal(s.voice.head, 0, 'la cabeza avanza hasta la foto: -100 + 100 ms del lote');
+  v.jota('Hola. Qué tal estás.'); await step(t, 2000);
+  assert.equal(last(cdp).voice.head, 1000, 'nunca pasa de upto');
+  for (const bad of [{ anchors: [], rate: 0, head: 0, upto: 0, text: 0 }, { anchors: [], rate: 62, head: Infinity, upto: 0, text: 0 }, { rate: 62 }, 'x']) {
+    assert.equal(tv.cleanVoice(bad), null);
+  }
+  v.voice(null); await step(t);
+  assert.ok(!('voice' in last(cdp)), 'acabada o cortada: fuera');
+  v.voice({ anchors: [], rate: 62, head: 0, upto: 0, text: 0 }); await step(t);
+  s = last(cdp);
+  assert.deepEqual(s.voice.anchors, [], 'en espera');
+  v.turn('panel'); await step(t);
+  assert.ok(!('voice' in last(cdp)), 'un turno nuevo empieza sin la voz del anterior');
+});

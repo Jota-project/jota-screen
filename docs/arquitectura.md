@@ -194,7 +194,11 @@ talk.js ── mismo filtro de turnId/fantasma que los tokens, rearma el plazo (
 talk-view.js ── foto completa cada ≤ 100 ms: TVAgent.render(SNAP)
       {form pill|panel, ctx idle|music|web|video, state listen|think|talk|error|done, live, night, calm, glass, colors,
        turns: [{id, you, youFinal, jota, tools:[{id, kind, title, detail, status run|ok|fail}], error, hint, media?}], icons,
-       enter open|restore, tab? (solo la foto del cambio de pestaña), shown? {turnId: [tú, Jota]} (con tab)}
+       enter open|restore, tab? (solo la foto del cambio de pestaña), shown? {turnId: [tú, Jota]} (con tab),
+       voice? (solo con voz: talk.js + voice-sync.js)}
+      voice? = {anchors:[[ms de audio, carácter]…], rate ms/carácter, head ms sonados (negativo: aún no), upto ms recibidos,
+       text largo}: la respuesta del turno actual se enseña frase a frase y se ilumina al ritmo de la voz (al móvil, igual:
+       {t:'talk', ev:'voice', …} y {ev:'voice', end:true} al acabar)
       media? = tarjeta de contenido del turno (la pone el servidor, no el Gateway; hoy, Netflix):
        {key, kind list|play, state idle|press, items:[{title, sub, left, frac 0–1, img, still}]}
 ```
