@@ -249,10 +249,11 @@ ${NO_BACKDROP}{-webkit-backdrop-filter:none;backdrop-filter:none}
 /* entradas ya hechas (o restauradas tras navegar): no se repiten al mover el host */
 .sd{animation:none!important}
 /* palabras: entran con desenfoque, sin desplazamiento (solo opacity y filter) */
-.wd{display:inline-block;max-width:100%;margin-right:.26em;animation:wIn .5s var(--tv-ease) backwards;transition:color ${VOICE_FADE_MS}ms var(--tv-ease)}
+.wd{display:inline-block;max-width:100%;margin-right:.26em;animation:wIn .5s var(--tv-ease) backwards;transition:opacity ${VOICE_FADE_MS}ms var(--tv-ease)}
 .wd.prov{opacity:${LOOK.prov}}
-/* con voz: la frase en curso en tenue y lo ya dicho iluminado */
-.j[data-voice] .wd:not(.said){color:var(--t-soft)}
+/* con voz: la frase en curso en tenue y lo ya dicho iluminado. Opacidad (se compone sin repintar); wIn va sin fill
+   forwards, así que al acabar su entrada la palabra se queda en el tenue de esta regla */
+.j[data-voice] .wd:not(.said){opacity:.45}
 @keyframes wIn{from{opacity:0;filter:blur(${u(4)})}}
 @keyframes fadeIn{from{opacity:0}}
 

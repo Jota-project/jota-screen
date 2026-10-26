@@ -898,6 +898,7 @@ test('voz: sin arrancar (el TTS no manda audio), al quitarse la respuesta se rev
   p.advance(400);
   assert.ok(jwords(p).length > 0 && jwords(p).length < 7, 'palabra a palabra');
   const css = p.host().shadowRoot.adoptedStyleSheets[0].css;
-  assert.match(css, /\.j\[data-voice\] \.wd:not\(\.said\)\{color:var\(--t-soft\)\}/);
+  assert.match(css, /\.j\[data-voice\] \.wd:not\(\.said\)\{opacity:\.45\}/);
+  assert.match(css, /\.wd\{[^}]*animation:wIn[^};]*backwards;transition:opacity \d+ms/, 'tenue por opacidad; la entrada sin fill forwards no lo tapa');
   assert.match(css, /\.w\[data-calm\] \.wd\{[^}]*transition:none/);
 });
