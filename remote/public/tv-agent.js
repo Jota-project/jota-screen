@@ -22,6 +22,9 @@
 // (sin entradas ni palabras que vuelvan a revelarse). Con `shown` ({ id: [tú, Jota] }, lo que enseñaba la pestaña que se
 // deja, de revealed()) se restauran esas palabras y el resto se revela como siempre: nace igual que se veía allí.
 // hide(true) quita la capa en seco (la pestaña que se deja).
+// Voz sincronizada (`voice` en la foto, del turno actual; ver src/features/voice-sync.js): la respuesta deja de ir a
+// WORD_MS y sale frase a frase al ritmo de la voz (la frase en curso entera, en tenue) y lo ya dicho se ilumina palabra a
+// palabra. Sin anclas aún, en espera (no se enseña). Al acabar o cortarse la voz, todo a la vista e iluminado.
 // Fuentes: las suyas (FontFace desde los bytes de __TV_FONTS, con nombre propio), igual en el reposo que en cualquier web.
 // Reglas de la capa:
 // - Como tv-island.js: shadow DOM, solo createElement/createElementNS/textContent (Trusted Types) y estilos en una hoja
@@ -88,6 +91,11 @@
   const FADE_MS = 650;             // fundido de cierre hacia el orbe
   const REMOVE_SAFETY_MS = 2000;   // si el rAF no corre (pestaña oculta), la capa se quita igual tras este tiempo
   const LOG_KEEP = 8;              // frases en la región accesible
+  const VOICE_TICK_MS = 50;        // con voz, cada cuánto se mira por dónde va (solo se toca el DOM si cambia)
+  const VOICE_FADE_MS = 150;       // la palabra dicha pasa de tenue a iluminada en esto
+  const VOICE_ANCHORS_MAX = 200;   // anclas de la voz que se aceptan (las últimas)
+  const SENTENCE_END = /[.!?…:]["'»)\]]*$/; // palabra que cierra frase (con su cierre de comillas o paréntesis)
+  const WORD_DONE = /[\s.,;:!?¡¿…»"')]$/;  // la respuesta en directo acaba en palabra entera (si no, la última espera)
   const SPRING = {                 // muelles por borde: crece rápido y con algo de rebote, encoge despacio
     grow: { k: 230, c: 21 },
     shrink: { k: 105, c: 16 },
@@ -241,8 +249,10 @@ ${NO_BACKDROP}{-webkit-backdrop-filter:none;backdrop-filter:none}
 /* entradas ya hechas (o restauradas tras navegar): no se repiten al mover el host */
 .sd{animation:none!important}
 /* palabras: entran con desenfoque, sin desplazamiento (solo opacity y filter) */
-.wd{display:inline-block;max-width:100%;margin-right:.26em;animation:wIn .5s var(--tv-ease) backwards}
+.wd{display:inline-block;max-width:100%;margin-right:.26em;animation:wIn .5s var(--tv-ease) backwards;transition:color ${VOICE_FADE_MS}ms var(--tv-ease)}
 .wd.prov{opacity:${LOOK.prov}}
+/* con voz: la frase en curso en tenue y lo ya dicho iluminado */
+.j[data-voice] .wd:not(.said){color:var(--t-soft)}
 @keyframes wIn{from{opacity:0;filter:blur(${u(4)})}}
 @keyframes fadeIn{from{opacity:0}}
 
@@ -350,7 +360,7 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
 /* calma (o noche): nada ondula ni gira deprisa; las palabras entran sin desenfoque */
 .w[data-calm] .orbe,.w[data-calm] .orbe::after{animation:none}
 .w[data-calm][data-state=think] .orbe::after{opacity:0}
-.w[data-calm] .wd{animation-duration:.2s;animation-name:wInCalm}
+.w[data-calm] .wd{animation-duration:.2s;animation-name:wInCalm;transition:none}
 @keyframes wInCalm{from{opacity:0}}
 .w[data-calm] .spin{animation-duration:2.4s}
 
@@ -364,6 +374,10 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
   /** @type {any} */ let last = null;  // última foto saneada
   let open = false, closing = false, closedAt = 0;
   let raf = 0, lastT = 0, removeT = 0, revealT = 0, revealAt = 0, flushBy = 0;
+  // voz: cuándo llegó la foto con la voz (la cabeza avanza desde ahí), su temporizador y el carácter dicho del turno
+  // `voiceId` (nunca retrocede)
+  let voiceAt = 0, voiceT = 0, voiceSaid = 0;
+  /** @type {number | null} */ let voiceId = null;
   /** @type {Map<number, any>} */ const turns = new Map(); // turn.id → { el, you, jota, tcs, tools, hint, said, sm }
   /** @type {number | null} */ let curId = null; // turno actual a la vista (al cambiar, se limpia el aviso y se aplica el nivel medido)
   let lastSig = '';                 // última foto (JSON): la misma foto no despierta el rAF
@@ -454,7 +468,15 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
       enter: ENTERS.includes(s.enter) ? s.enter : 'open',
       tab: s.tab === true,
       shown: s.shown && typeof s.shown === 'object' ? s.shown : null,
+      voice: cleanVoice(s.voice),
     };
+  }
+  function cleanVoice(v) {
+    const ok = n => typeof n === 'number' && Number.isFinite(n) && n >= 0;
+    if (!v || typeof v !== 'object' || !Array.isArray(v.anchors) || !ok(v.rate) || !(v.rate > 0) || !ok(v.upto)) return null;
+    if (typeof v.head !== 'number' || !Number.isFinite(v.head)) return null;
+    const anchors = v.anchors.filter(a => Array.isArray(a) && a.length === 2 && ok(a[0]) && ok(a[1])).slice(-VOICE_ANCHORS_MAX).map(a => [a[0], a[1]]);
+    return { anchors, rate: v.rate, head: Math.min(v.head, v.upto), upto: v.upto };
   }
   const calmNow = () => !!(last && (last.calm || last.night)) || mq(REDUCED_MOTION_QUERY);
   function tierNow() {
@@ -633,8 +655,14 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
       const at = dom.log.children[i];
       if (at !== v.el) dom.log.insertBefore(v.el, at || null);
       setWords(v.you, t.you, current && !t.youFinal);
-      // la respuesta en directo: la última palabra puede estar a medias (llega por trozos), se espera a que se cierre
-      setWords(v.jota, t.jota, false, current && s.live && !/[\s.,;:!?¡¿…»"')]$/.test(t.jota));
+      // la respuesta en directo: la última palabra puede estar a medias (llega por trozos), se espera a que se cierre.
+      // Con voz, la pinta la voz; al acabar (si llegó a sonar), todo a la vista ya
+      if (current && s.voice) voicePaint(v, t);
+      else {
+        const spoke = voiceEnd(v);
+        setWords(v.jota, t.jota, false, current && s.live && !WORD_DONE.test(t.jota));
+        if (spoke) flushLine(v.jota);
+      }
       v.jota.el.classList.toggle('sm', small(v, t, current, s.live));
       if (v.hint.textContent !== t.hint) v.hint.textContent = t.hint;
       syncTools(v, t.tools, s.icons);
@@ -718,8 +746,9 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     if (v.sm == null) v.sm = !live && t.jota.length > LONG_REPLY;
     return v.sm;
   }
-  // una línea de palabras: `want` es lo que hay que enseñar, `spans` lo que ya se ve
-  const line = (tag, cls) => ({ el: el(tag, cls), want: /** @type {string[]} */ ([]), spans: /** @type {any[]} */ ([]), prov: false });
+  // una línea de palabras: `want` es lo que hay que enseñar, `spans` lo que ya se ve; con voz, `said` palabras dichas y
+  // `voiced` (la voz llegó a sonar: al acabar, todo a la vista)
+  const line = (tag, cls) => ({ el: el(tag, cls), want: /** @type {string[]} */ ([]), spans: /** @type {any[]} */ ([]), prov: false, said: -1, voiced: false });
   function setWords(ln, text, prov, holdLast) {
     let words = text.split(/\s+/).filter(Boolean);
     if (holdLast) words = words.slice(0, -1);
@@ -740,6 +769,59 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
   function flushLine(ln) { while (ln.spans.length < ln.want.length) showNext(ln); }
   function showUpTo(ln, n) { const m = Math.min(Number(n) || 0, ln.want.length); while (ln.spans.length < m) showNext(ln); }
   const pendingOf = ln => ln.want.length - ln.spans.length;
+
+  // ── Voz: carácter dicho en el ms `t` de audio (copia de charAt de src/features/voice-sync.js)
+  function charAt(a, rate, t, len) {
+    if (!a.length || t < a[0][0]) return 0;
+    let i = a.length - 1;
+    while (i > 0 && a[i][0] > t) i--;
+    const [t1, c1] = a[i], nx = a[i + 1];
+    const c = nx ? (nx[0] > t1 ? c1 + (nx[1] - c1) * (t - t1) / (nx[0] - t1) : nx[1]) : c1 + (t - t1) / rate;
+    return Math.max(0, Math.min(len, c));
+  }
+  // la respuesta con voz: en el DOM, las frases hasta la que se dice ahora (entera); `said` en las palabras ya dichas.
+  // Las clases solo se tocan cuando cambia el número de palabras o de dichas
+  function voicePaint(v, t) {
+    const vo = last.voice, ln = v.jota;
+    if (voiceId !== t.id) { voiceId = t.id; voiceSaid = 0; }
+    const head = Math.min(vo.head + performance.now() - voiceAt, vo.upto);
+    const on = vo.anchors.length > 0 && head >= vo.anchors[0][0];
+    if (on) voiceSaid = Math.max(voiceSaid, charAt(vo.anchors, vo.rate, head, t.jota.length));
+    const c = voiceSaid, ws = [...t.jota.matchAll(/\S+/g)];
+    const n = ws.length - (last.live && !WORD_DONE.test(t.jota) ? 1 : 0);   // la última, a medias, espera
+    let vis = 0;
+    if (on) {
+      let k = 0;
+      while (k < n && ws[k].index <= c) k++;               // palabras ya empezadas
+      vis = Math.max(1, k);
+      while (vis < n && !SENTENCE_END.test(ws[vis - 1][0])) vis++;
+      vis = Math.min(vis, n);
+    }
+    let said = 0;
+    while (said < vis && ws[said].index + ws[said][0].length <= c) said++;
+    setFlag(ln.el, 'data-voice', true);
+    if (on) ln.voiced = true;
+    const before = ln.spans.length;
+    setWords(ln, vis ? t.jota.slice(0, ws[vis - 1].index + ws[vis - 1][0].length) : '', false, false);
+    while (ln.spans.length < ln.want.length) { showNext(ln); kick(PULSE.word); }
+    if (said === ln.said && ln.spans.length === before) return;
+    ln.said = said;
+    ln.spans.forEach((sp, i) => sp.classList.toggle('said', i < said));
+  }
+  // sin voz (no la hubo, acabó o se cortó): fuera el tenue. Devuelve si llegó a sonar (entonces, todo a la vista ya)
+  function voiceEnd(v) {
+    const ln = v.jota, spoke = ln.voiced;
+    ln.voiced = false; ln.said = -1;
+    setFlag(ln.el, 'data-voice', false);
+    return spoke;
+  }
+  function voiceTick() {
+    voiceT = 0;
+    if (!dom || !open || !last || !last.voice || !last.turns.length) return;
+    const t = last.turns[last.turns.length - 1], v = turns.get(t.id);
+    if (v) voicePaint(v, t);
+    voiceT = setTimeout(voiceTick, VOICE_TICK_MS);
+  }
 
   function syncTools(v, tools, icons) {
     const ids = new Set(tools.map(x => x.id));
@@ -854,11 +936,12 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
   // ── Revelado palabra a palabra: un solo temporizador para toda la capa; primero tu frase, luego la respuesta
   function queue() {
     const v = last && last.turns.length ? turns.get(last.turns[last.turns.length - 1].id) : null;
-    return v ? [v.you, v.jota] : [];
+    return v ? (last.voice ? [v.you] : [v.you, v.jota]) : [];   // con voz, la respuesta va a su ritmo (voiceTick)
   }
   // el paso se recalcula con cada foto, pero solo se adelanta (si llegara antes cada 100 ms, nunca saldría ninguna palabra)
   function schedule() {
     if (!open) return;
+    if (last.voice && !voiceT) voiceT = setTimeout(voiceTick, VOICE_TICK_MS);
     const pending = queue().reduce((n, ln) => n + pendingOf(ln), 0);
     if (!pending) { flushBy = 0; return; }
     const now = performance.now();
@@ -993,6 +1076,7 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     endMorph();
     if (raf) cancelAnimationFrame(raf);
     raf = 0; closing = false;
+    clearTimeout(voiceT); voiceT = 0;
     if (resizeObs) resizeObs.disconnect();
     if (host) host.remove();
     host = null; dom = null; edge = null; last = null; resizeObs = null; lastSig = ''; traveling = false;
@@ -1010,10 +1094,11 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
       // otra pestaña: lo que hay aquí pintado es de antes; fuera en seco y se restaura de cero (sin entradas ni revelado)
       if (s.enter === 'restore' && s.tab && host) { clearTimeout(revealT); revealT = 0; flushBy = 0; finish(); }
       last = s;
+      voiceAt = performance.now();                       // la cabeza de la voz es la de esta foto
       // la forma que eligió el usuario arrastrando manda hasta que la foto la confirme (o pase DRAG.hold)
       if (hold && (last.form === hold.form || performance.now() > hold.until)) hold = null;
       if (hold) last.form = hold.form;
-      const sig = JSON.stringify({ ...last, enter: '', tab: false, shown: null }), fresh = !host || !host.isConnected, reopened = closing;
+      const sig = JSON.stringify({ ...last, enter: '', tab: false, shown: null, voice: !!last.voice }), fresh = !host || !host.isConnected, reopened = closing;
       restoring = fresh && last.enter === 'restore';
       clearTimeout(removeT); removeT = 0;
       ensure();
@@ -1032,6 +1117,7 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     // dry: en seco, sin fundido (la pestaña que se deja: ya no se ve)
     hide(dry) {
       clearTimeout(revealT); revealT = 0; flushBy = 0; deferred = null;
+      clearTimeout(voiceT); voiceT = 0;
       if (waiting) { waiting.mo.disconnect(); waiting = null; }
       setOpen(false);
       dropDrag();

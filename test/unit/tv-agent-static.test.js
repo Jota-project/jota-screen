@@ -853,3 +853,51 @@ test('tarjeta de Netflix: lista o «poner» con su ▶; pulsarlo no rehace la ta
   A.render(snap({ turns: [{ ...t1, id: 3, media: null }] }));
   assert.equal(find(root, 'mp'), null); assert.equal(find(root, 'ml'), null);
 });
+
+// ── Voz sincronizada: la respuesta sale frase a frase con la voz y se ilumina lo ya dicho
+const JOTA = 'Hola, Sito. Hoy hace sol. Mañana llueve.';
+const vturn = jota => ({ id: 1, you: 'Qué tal', youFinal: true, jota, tools: [], error: false, hint: '' });
+const jline = p => p.host().shadowRoot.all().find(n => cls(n).includes('j'));
+const jwords = p => jline(p).childNodes.map(n => n.textContent);
+const saidN = p => jline(p).childNodes.filter(n => cls(n).includes('said')).length;
+
+test('voz: en espera no se enseña la respuesta; luego la frase en curso entera, lo dicho iluminado y la siguiente al empezarla', () => {
+  const p = loadPage();
+  const A = p.win.TVAgent;
+  A.render(snap({ turns: [vturn(JOTA)], voice: { anchors: [], rate: 62, head: 0, upto: 0, text: JOTA.length } }));
+  p.advance(2000);
+  assert.deepEqual(jwords(p), [], 'en espera: sin palabras de Jota (tu frase sí sale)');
+  assert.equal(byCls(p, 'wd').length, 2);
+  A.render(snap({ turns: [vturn(JOTA)], voice: { anchors: [[0, 0]], rate: 62, head: 0, upto: 10000, text: JOTA.length } }));
+  assert.deepEqual(jwords(p), ['Hola,', 'Sito.'], 'la frase que empieza, entera');
+  assert.ok(jline(p).hasAttribute('data-voice'));
+  assert.equal(saidN(p), 0);
+  p.advance(400);                                          // 400 / 62 ≈ 6,5 letras: «Hola,» dicha
+  assert.equal(saidN(p), 1);
+  assert.deepEqual(jwords(p), ['Hola,', 'Sito.'], 'la frase siguiente aún no');
+  p.advance(400);                                          // ≈ 12,9: «Sito.» dicha y empieza «Hoy»
+  assert.deepEqual(jwords(p), ['Hola,', 'Sito.', 'Hoy', 'hace', 'sol.']);
+  assert.equal(saidN(p), 2);
+  // la cabeza no pasa de lo recibido, y lo dicho nunca retrocede
+  A.render(snap({ turns: [vturn(JOTA)], voice: { anchors: [[0, 0]], rate: 62, head: 300, upto: 300, text: JOTA.length } }));
+  p.advance(500);
+  assert.equal(saidN(p), 2);
+  // acaba la voz: todo a la vista ya (sin revelado) y sin tenue
+  A.render(snap({ live: false, state: 'done', turns: [vturn(JOTA)] }));
+  assert.equal(jwords(p).join(' '), JOTA);
+  assert.ok(!jline(p).hasAttribute('data-voice'));
+});
+
+test('voz: sin arrancar (el TTS no manda audio), al quitarse la respuesta se revela como siempre; tenue solo con voz y sin transición en calma', () => {
+  const p = loadPage();
+  const A = p.win.TVAgent;
+  A.render(snap({ turns: [vturn(JOTA)], voice: { anchors: [], rate: 62, head: 0, upto: 0, text: JOTA.length } }));
+  p.advance(1000);
+  A.render(snap({ turns: [vturn(JOTA)] }));
+  assert.deepEqual(jwords(p), [], 'no sale de golpe');
+  p.advance(400);
+  assert.ok(jwords(p).length > 0 && jwords(p).length < 7, 'palabra a palabra');
+  const css = p.host().shadowRoot.adoptedStyleSheets[0].css;
+  assert.match(css, /\.j\[data-voice\] \.wd:not\(\.said\)\{color:var\(--t-soft\)\}/);
+  assert.match(css, /\.w\[data-calm\] \.wd\{[^}]*transition:none/);
+});
