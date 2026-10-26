@@ -15,8 +15,8 @@ const spOpen = () => isOpen('spS');
 /* la búsqueda va plegada tras la lupa */
 function spQuery(on) { $('#spS').classList.toggle('q', on); $('#spQ').setAttribute('aria-expanded', String(on)); if (on) $('#spin').focus(); }
 function spButton() {
-  openSheet('spS'); spVolHide();
-  rpc({ t: 'spwatch', on: true }).then(r => { if (r && 'now' in r) spPaint(r.now); });
+  openSheet('spS'); spVolHide(); $('#spDead').hidden = true;
+  rpc({ t: 'spwatch', on: true }).then(r => { if (r && 'now' in r) spPaint(r.now); if (r && r.noDevice) $('#spDead').hidden = false; });
   spLoadTab();
 }
 function spPos() { return !sp.now || sp.now.empty ? 0 : Math.min(sp.now.duration, sp.now.progress + (sp.now.playing ? Date.now() - sp.recv : 0)); }
@@ -68,6 +68,8 @@ function spPaint(n) {
   spTick();
   if (sp.tab === 'queue') spList();
 }
+/* un error de una acción; si es que Spotify no ve el altavoz, se ofrece reiniciarlo */
+function spErr(r) { if (r && r.error) pill(r.error); if (r && r.noDevice) $('#spDead').hidden = false; }
 function spTick() {
   const d = sp.now && !sp.now.empty ? sp.now.duration : 0;
   const p = sp.drag !== null ? sp.drag * d : spPos();
@@ -99,11 +101,19 @@ export const spotify = {
       const b = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest('[data-sp]')); if (!b) return;
       buzz(8);
       if (b.dataset.sp === 'playpause' && sp.now && !sp.now.empty) { sp.now.progress = spPos(); sp.recv = Date.now(); sp.now.playing = !sp.now.playing; $('#spS .big use').setAttribute('href', sp.now.playing ? '#i-pause' : '#i-play'); }
-      rpc({ t: 'spotify', a: b.dataset.sp }).then(r => { if (r && r.error) pill(r.error); });
+      rpc({ t: 'spotify', a: b.dataset.sp }).then(spErr);
     });
     $('#spShuf').addEventListener('click', () => { buzz(8); $('#spShuf').classList.toggle('on'); rpc({ t: 'spotify', a: 'shuffle' }); });
     $('#spRep').addEventListener('click', () => { buzz(8); rpc({ t: 'spotify', a: 'repeat' }); });
     $('#spLike').addEventListener('click', () => { buzz(12); $('#spLike').classList.toggle('on'); rpc({ t: 'spotify', a: 'like' }).then(r => { if (r && r.error) { pill(r.error); $('#spLike').classList.toggle('on'); } }); });
+    $('#spRestart').addEventListener('click', () => {
+      buzz(12); $('#spRestart').disabled = true; pill('Reiniciando el altavoz…');
+      rpc({ t: 'spotify', a: 'restart' }).then(r => {
+        $('#spRestart').disabled = false;
+        if (r && r.error) return pill(r.error);
+        $('#spDead').hidden = true; pill('Altavoz reiniciado');
+      });
+    });
     $('#spX').addEventListener('click', () => { buzz(7); closeSheet(); });
     $('#spQ').addEventListener('click', () => { buzz(7); spQuery(!$('#spS').classList.contains('q')); });
     $('#spTv').addEventListener('click', () => { buzz(8); cmd({ t: 'nav', url: 'https://open.spotify.com/' }); cmd({ t: 'spotify', a: 'activate' }); closeSheet(); pill('Abriendo Spotify en la tele'); });
@@ -118,7 +128,7 @@ export const spotify = {
       if (e.key !== 'Enter' || e.isComposing) return;
       e.preventDefault(); const v = spin.value.trim(); if (!v) return;
       spin.value = ''; $('#spT').textContent = 'Buscando…'; $('#spA').textContent = v; spin.blur();
-      rpc({ t: 'spotify', a: 'search_play', query: v, type: 'track' }).then(r => { if (r && r.error) { pill(r.error); spPaint(sp.now); } });
+      rpc({ t: 'spotify', a: 'search_play', query: v, type: 'track' }).then(r => { if (r && r.error) { spErr(r); spPaint(sp.now); } });
     });
     $('#spTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; buzz(7); if (sp.tab === b.dataset.tab && b.dataset.tab === 'playlists') sp.detail = null; sp.tab = b.dataset.tab; spLoadTab(); });
     on('me', j => {

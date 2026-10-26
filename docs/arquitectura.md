@@ -417,6 +417,11 @@ Las genera `scripts/install.sh` desde las plantillas de `systemd/` ([systemd/REA
 Sustituyen a las antiguas `tv-remote`, `tv-mdns`, `spotifyd` y `tv-kiosk`: el instalador detiene y deshabilita las
 de usuario y enseña los comandos `sudo` para la del kiosco.
 
+spotifyd puede seguir vivo tras un corte de red pero sin sesión: Spotify deja de ver el altavoz y `Restart=on-failure`
+no actúa porque el proceso no termina. Cuando una acción de Spotify no encuentra el altavoz (o al abrir el panel), el
+mando muestra «Reiniciar altavoz», que hace `systemctl --user restart jota-screen-spotify` (acción `spotify` `restart`).
+Nunca se reinicia solo. A mano, lo mismo: `systemctl --user restart jota-screen-spotify`.
+
 ## Límites conocidos
 
 - `public/` se carga en memoria al arrancar y solo hasta **2 niveles de carpetas** (`public/a/b/f.js` sí,

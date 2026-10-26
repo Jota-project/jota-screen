@@ -4,6 +4,7 @@
 // (app propia, PKCE). Aquí viven el token, el límite de peticiones (429, con la espera guardada), todas las acciones de
 // la orden `spotify`, el «ahora suena» en vivo (nowplaying.js) para el mando y el reposo, y el retoque de la web de Spotify.
 const crypto = require('node:crypto');
+const { execFile } = require('node:child_process');
 const { WebSocket } = require('ws');
 const { readJson, writeJson } = require('../core/json-store');
 const { send, TYPES } = require('../transport/http-util');
@@ -134,9 +135,15 @@ module.exports = function createSpotify({ cdp, cfg, log, clients, idle, tvAudio 
         const dev = await spDevice();
         return { connected: true, device: dev ? { name: dev.name, active: dev.is_active, volume: dev.volume_percent } : null, ...spInfoNow(await spNow.poll(3000)) };
       }
+      // spotifyd a veces sigue vivo sin sesión tras un corte de red y Spotify deja de verlo: el mando ofrece reiniciarlo (siempre a mano)
+      if (a === 'restart') {
+        await new Promise((res, rej) => execFile('systemctl', ['--user', 'restart', 'jota-screen-spotify'], { timeout: 15000 }, (e, _o, se) => (e ? rej(new Error('no he podido reiniciar el altavoz: ' + String(se || e.message).trim())) : res(null))));
+        log.info('spotify: altavoz reiniciado desde el mando');
+        return { ok: 1 };
+      }
       const noDev = ['now', 'queue', 'playlists', 'playlist', 'recent'].includes(a); // lecturas: no necesitan el altavoz
       const dev = noDev ? null : await spDevice();
-      if (!noDev && !dev) return { error: `el dispositivo «${SP_DEVICE}» no aparece en Spotify (¿está en marcha spotifyd?)` };
+      if (!noDev && !dev) return { error: `el dispositivo «${SP_DEVICE}» no aparece en Spotify (¿está en marcha spotifyd?)`, noDevice: true };
       const q = dev ? `?device_id=${encodeURIComponent(dev.id)}` : '';
       const wake = async () => { if (dev && !dev.is_active) await spApi('PUT', '/me/player', { device_ids: [dev.id], play: false }); };
       const after = async () => { await new Promise(r => setTimeout(r, 700)); return spInfoNow(await spNow.poll(300)); }; // se une a la consulta de kick()
@@ -341,7 +348,8 @@ module.exports = function createSpotify({ cdp, cfg, log, clients, idle, tvAudio 
       if (ws) ws.spWatch = Date.now();
       // solo al abrirse se pregunta a Spotify (cola y «me gusta» al día); los refrescos cada 15 s usan lo que hay
       const n = was && spNow.get() ? spNow.get() : await spNow.panelOpened();
-      return { now: n ? { ...n, needsLogin: !spHasScopes() } : null };
+      const noDevice = !was && !!sp.refresh && (await spDevice().catch(() => undefined)) === null; // al abrir: ¿ve Spotify el altavoz?
+      return { now: n ? { ...n, needsLogin: !spHasScopes() } : null, noDevice };
     } },
   ];
 
