@@ -202,7 +202,7 @@ body.night,body.cinema{--text:#808080;--clock:#7a7a7a;--clock2:#767676;--soft:#7
 .sg-c[data-cap=over] .sg-k{justify-content:flex-start}
 .sg-k span{overflow:hidden;text-overflow:ellipsis}
 .sg-k i{flex:none;width:calc(12 * var(--s));height:calc(12 * var(--s));border-radius:50%;background:var(--dot);box-shadow:0 0 calc(14 * var(--s)) var(--dot)}
-.sg-t{font-family:var(--serif);font-weight:420;font-variation-settings:'opsz' 144;font-size:calc(46 * var(--s));line-height:1.08;letter-spacing:-.01em;margin-top:calc(12 * var(--s));
+.sg-t{font-family:var(--serif);font-weight:420;font-variation-settings:'opsz' 36;font-size:calc(46 * var(--s));line-height:1.08;letter-spacing:-.01em;margin-top:calc(12 * var(--s));
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;text-wrap:balance}
 .sg-c[data-size=lead] .sg-t{font-size:calc(72 * var(--s));line-height:1}
 .sg-c[data-size=row] .sg-t{font-size:calc(40 * var(--s))}

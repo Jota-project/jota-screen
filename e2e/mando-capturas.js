@@ -97,7 +97,9 @@ function initScript({ token, cfg }) {
   window.__wsLog = [];
   const send = W.prototype.send;
   W.prototype.send = function (d) {
-    if (typeof d === 'string' && d.charCodeAt(0) === 112) return; // «p<ts>»: el eco de latencia no se manda (sin ms en pantalla)
+    // «p<ts>»: el eco de latencia no va al servidor (sin ms en pantalla), pero se contesta aquí sin cifra: el mando da por
+    // muerta una conexión sin eco (core/api.js)
+    if (typeof d === 'string' && d.charCodeAt(0) === 112) { setTimeout(() => this.dispatchEvent(new MessageEvent('message', { data: 'p' })), 20); return; }
     if (typeof d !== 'string') { window.__wsBin = (window.__wsBin || 0) + 1; return send.call(this, d); } // audio: se cuenta, no se apunta
     if (typeof d === 'string' && d.startsWith('{"t":"vend"')) window.__wsBinAtVend = window.__wsBin || 0;     // el último trozo (flush) va antes de vend
     window.__wsLog.push(String(d));

@@ -22,9 +22,10 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .bt.big{background:var(--accent);color:var(--on-accent);border-color:transparent}
 .bt.big.dn{background:var(--accent-press)}
 .bt.big svg{width:28px;height:28px}
-#pp .i-pause{display:none}
-#pp[data-m="1"] .i-pause{display:block}
-#pp[data-m="1"] .i-play{display:none}
+/* play ⇄ pausa: los dos iconos apilados y fundidos (cambia al pulsar, sin esperar a la tele: features/controls.js) */
+#pp svg{position:absolute;inset:0;margin:auto;transition:opacity .2s var(--ease),transform .2s var(--ease),filter .2s var(--ease)}
+#pp .i-pause,#pp[data-m="1"] .i-play{opacity:0;transform:scale(.25);filter:blur(4px)}
+#pp[data-m="1"] .i-pause{opacity:1;transform:none;filter:none}
 #pp[data-m="-1"]{opacity:.6}
 .live{opacity:1}
 
@@ -104,7 +105,14 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .fld{display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px 14px;padding:11px 2px;border-top:1px solid var(--line)}
 .fld:first-of-type{border-top:0}
 .fld small{display:block;color:var(--dim);font-weight:500;font-size:12.5px;margin-top:2px}
-.fld input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent);height:28px;touch-action:pan-y}
+.fld input[type=range]{grid-column:1/-1;width:100%;accent-color:var(--accent);height:28px;touch-action:pan-y;-webkit-appearance:none;appearance:none;background:transparent}
+/* deslizadores con la pista de Jota Dusk: la nativa (blanca) era lo más brillante de Ajustes y Spotify */
+.fld input[type=range]::-webkit-slider-runnable-track{height:4px;border-radius:2px;background:var(--line)}
+.fld input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(--line)}
+.fld input[type=range]::-moz-range-progress{height:4px;border-radius:2px;background:var(--accent)}
+.fld input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:22px;height:22px;margin-top:-9px;border:0;border-radius:50%;background:var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.fld input[type=range]::-moz-range-thumb{width:22px;height:22px;border:0;border-radius:50%;background:var(--accent);box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.fld input[type=range]:focus-visible{outline:2px solid var(--accent-text);outline-offset:4px;border-radius:4px}
 .sw{width:50px;height:30px;border-radius:15px;background:var(--switch-off);border:0;position:relative;transition:background .2s;touch-action:manipulation}
 .sw::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;border-radius:50%;background:#fff;transition:transform .2s}
 .sw[aria-pressed=true]{background:var(--accent)}
@@ -260,8 +268,9 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .vzSt{font-size:15px;color:var(--accent-text)}
 .vzQ{margin:12px 0 0;font:380 34px/1.14 var(--serif);font-variation-settings:"opsz" 144;letter-spacing:-.015em;min-height:0}
 .vzQ:empty{display:none}
-.vzQ .w{display:inline-block;opacity:0;transform:translateY(16px);transition:opacity .35s ease,transform .5s var(--ease);transition-delay:calc(var(--i,0) * .26s)}
-.vzQ.said .w{opacity:1;transform:none}
+/* tu frase entra como las palabras de la tele (fundido y desenfoque, sin moverse), en cascada corta: como mucho 280 ms */
+.vzQ .w{display:inline-block;opacity:0;filter:blur(4px);transition:opacity .35s var(--ease),filter .35s var(--ease);transition-delay:min(calc(var(--i,0) * 35ms),280ms)}
+.vzQ.said .w{opacity:1;filter:none}
 .rep{min-height:0;margin-top:16px;font-size:17px;line-height:1.55;color:var(--text-soft);max-width:34em;transition:opacity .6s ease,transform .8s var(--ease)}
 .rep:empty{display:none}
 /* con voz: la frase en curso en tenue y lo ya dicho iluminado (agent.js) */
@@ -343,7 +352,7 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .sub2.out{opacity:0;transform:translateY(6px);transition-duration:.3s}
 .thumb2{width:26px;height:26px;border-radius:8px;flex:none;background:linear-gradient(135deg,var(--ca),var(--cb) 75%)}
 #t1{font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 1 auto}
-#t2{color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:1 1 0}
+#t2{color:var(--text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 0 auto;max-width:40%}   /* cede el título (#t1), no el origen («YouTube» no se queda en «Y.») */
 .sub2[hidden],.re2[hidden]{display:none}
 .re2{align-self:flex-start;font:inherit;font-size:15px;line-height:1.3;color:var(--text-soft);background:none;border:0;padding:13px 0;margin:-13px 0;cursor:pointer;touch-action:manipulation}
 .re2 u{text-decoration:none;font-weight:600;color:var(--accent-text)}
@@ -358,12 +367,16 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .rail2 i{position:absolute;left:0;right:0;top:0;height:0;border-radius:999px;background:var(--rail-thumb);transition:top .2s ease,height .2s ease}
 .hint2{position:absolute;left:24px;right:24px;bottom:26px;text-align:center;font-size:14px;line-height:1.5;color:var(--text-soft);pointer-events:none;transition:opacity .6s ease}
 .hint2.off{opacity:0}
+#agS[data-st=rec] .vzH{visibility:hidden}   /* mientras grabas, el estado ya dice qué hacer */
 .vcol2{width:64px;display:flex;flex-direction:column;align-items:center;flex-shrink:0}
 .vb2{width:64px;height:64px}
 /* el número del volumen, como el reloj del reposo: al cambiar, el dígito cae (o sube) */
 .vol2{flex:1;position:relative;width:72px;min-height:56px;overflow:hidden;font:380 48px/1 var(--serif);font-variation-settings:"opsz" 144;font-variant-numeric:tabular-nums;color:var(--text);transition:opacity .2s ease}
 .vol2.w3{font-size:36px}
-.vol2.off{opacity:.4}
+.vol2.muted{opacity:.4}
+.vol2.unknown{color:var(--text-faint)}
+/* sin conexión (ui/status.js): lo que manda órdenes se atenúa; Jota y Ajustes siguen. Al tocar, aviso en vez de fingir */
+:root.sincon .mid2,:root.sincon .nav2,:root.sincon .play2,:root.sincon .apps2{opacity:.35}
 .vn{position:absolute;left:0;right:0;top:50%;margin-top:-.5em;text-align:center;transition:opacity .2s var(--ease),transform .3s var(--ease)}
 .vn.up{opacity:0;transform:translateY(-.4em);transition:none}
 .vn.dn{opacity:0;transform:translateY(.4em);transition:none}

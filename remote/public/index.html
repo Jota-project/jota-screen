@@ -184,7 +184,7 @@
 
     <button class="jota2" data-a="ag" data-click aria-label="Hablar con Jota">
       <span class="orb2" aria-hidden="true"></span>
-      <span class="jt2"><b>Dime qué quieres ver</b><small>Toca y habla</small></span>
+      <span class="jt2"><b>Dime qué quieres ver</b><small>Habla o escribe</small></span>
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>
     </button>
   </div>
@@ -197,7 +197,7 @@
 </div>
 
 <div class="shade" id="shade"></div>
-<div class="pill" id="pill"></div>
+<div class="pill" id="pill" role="status"></div>
 
 <!-- escribir en la tele: el móvil tiene su propio editor; cada cambio manda el texto entero y la selección -->
 <div class="kbV" id="kbS" role="dialog" aria-label="Escribir en la tele">
@@ -318,7 +318,7 @@
 <!-- hablar con Jota: un velo con luces sobre el mando; se escribe o se dicta con el micrófono del teclado -->
 <div class="sheet vzV" id="agS" role="dialog" aria-label="Hablar con Jota">
   <div class="vzTop"><button class="b2 vzX" id="agX" type="button" aria-label="Cerrar"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg></button><span>{{TV_NAME}}</span></div>
-  <div class="vzSt" id="agSt" aria-live="polite">Te escucho</div>
+  <div class="vzSt" id="agSt" aria-live="polite">Pídeme algo</div>
   <div class="vzCard" id="agCard">
     <p class="vzQ" id="agQ"></p>
     <div class="rep" id="rep"></div>

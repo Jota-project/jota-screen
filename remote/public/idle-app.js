@@ -434,10 +434,13 @@ function onData(m) {
   if (JSON.stringify(D.cfg) !== prevCfg) { setLayout(D.cfg.layout); schedule(); }
   if (!moving) place(scenes()[scene % scenes().length]);
 }
+/* sin servidor más de un minuto, fuera la música y las actividades: que no siga el ecualizador ni un «Listo» que no es */
+let staleT = 0;
+function stale() { staleT = 0; D.music = null; D.acts = []; music(); acts(); }
 function connect() {
   const ws = new WebSocket('ws://' + location.host + '/idle-ws');
-  ws.onmessage = e => { try { const m = JSON.parse(e.data); if (m.t === 'idle') onData(m); } catch {} };
-  ws.onclose = () => setTimeout(connect, 1500);
+  ws.onmessage = e => { clearTimeout(staleT); staleT = 0; try { const m = JSON.parse(e.data); if (m.t === 'idle') onData(m); } catch {} };
+  ws.onclose = () => { if (!staleT) staleT = setTimeout(stale, 60e3); setTimeout(connect, 1500); };
 }
 // para pruebas y capturas: TVIdle.scene(n) fuerza una escena con su reacomodo; TVIdle.place(n), al momento
 window.TVIdle = { scene: n => rearrange(n % scenes().length), place: n => { scene = n % scenes().length; place(scenes()[scene]); }, now: () => ({ layout, scene, moving, nfx: sug.mode === 'nfx', sug: sug.mode, n: sug.n }) };

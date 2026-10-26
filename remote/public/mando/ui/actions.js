@@ -2,6 +2,7 @@
 // que se mandan al pulsar (sin esperar al clic) y se repiten mientras se mantienen si llevan data-rep.
 import { cmd } from '../core/api.js';
 import { buzz } from './haptics.js';
+import { pill } from './pill.js';
 
 const clicks = new Map(), acts = new Map();
 export function registerClick(name, fn) {
@@ -20,18 +21,28 @@ export function fire(b) {
 }
 let repT = 0, repI = 0, cur = null;
 function stopRep() { clearTimeout(repT); clearInterval(repI); if (cur) { cur.classList.remove('dn'); cur = null; } }
+/** Orden directa; sin conexión (ui/status.js pone :root.sincon) no se finge: vibración de error y aviso. */
+function press(b) {
+  if (document.documentElement.classList.contains('sincon')) { buzz([30, 50, 30]); pill('Sin conexión con la tele'); return false; }
+  buzz(7); fire(b); return true;
+}
+const direct = b => !!b && !b.hasAttribute('data-click') && !!(b.dataset.a || b.dataset.url);
 
 export const actions = {
   name: 'actions',
   init() {
     document.addEventListener('pointerdown', e => {
-      const b = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest('.bt,.b2')); if (!b || b.hasAttribute('data-click') || !(b.dataset.a || b.dataset.url)) return;
+      const b = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest('.bt,.b2')); if (!direct(b)) return;
       e.preventDefault();                                   // no robar el foco al campo de texto
-      stopRep(); cur = b; b.classList.add('dn'); buzz(7); fire(b);
-      if (b.hasAttribute('data-rep')) repT = setTimeout(() => { repI = setInterval(() => fire(b), 85); }, 380);
+      stopRep(); cur = b; b.classList.add('dn');
+      if (press(b) && b.hasAttribute('data-rep')) repT = setTimeout(() => { repI = setInterval(() => fire(b), 85); }, 380);
     });
     ['pointerup', 'pointercancel'].forEach(t => document.addEventListener(t, stopRep));
     document.addEventListener('click', e => {
+      if (e.detail === 0) {                                 // Intro o espacio (teclado, Switch Control): sin pointerdown
+        const d = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest('.bt,.b2'));
+        if (direct(d)) { press(d); return; }
+      }
       const b = /** @type {HTMLElement} */ (/** @type {Element} */ (e.target).closest('[data-click]')); if (!b) return;
       buzz(7);
       clicks.get(b.dataset.a)();

@@ -69,12 +69,12 @@ function noQuit() { clearTimeout(quitT); quit = false; }
 /** Para lo que suene en el móvil si toca: al interrumpir, o si no hay nada sonando. */
 function cut() { if (interruptOn() || !player.playing()) player.stop(); }
 
-/** Estado de la vista: 'idle' (te escucho), 'rec' (grabando con el orbe), 'wait' (un momento) o 'done' (respuesta). */
+/** Estado de la vista: 'idle' (pídeme algo), 'rec' (grabando con el orbe), 'wait' (un momento) o 'done' (respuesta). */
 function stage(st) {
   const S = $('#agS');
   S.dataset.st = st;
   $('#shade').classList.toggle('think', st === 'wait' || st === 'rec');
-  $('#agSt').textContent = st === 'wait' ? 'Un momento' : st === 'done' ? 'Jota' : st === 'rec' ? 'Te escucho… suelta para enviar' : 'Te escucho';
+  $('#agSt').textContent = st === 'wait' ? 'Un momento' : st === 'done' ? 'Jota' : st === 'rec' ? 'Te escucho… suelta para enviar' : 'Pídeme algo';   // en reposo nadie escucha todavía
   if (st !== 'done') noQuit();
   acts();
 }

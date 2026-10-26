@@ -23,18 +23,46 @@ function logo(k) {
 function onState(s) {
   if (s.t !== 'state') return;
   paintAmbient(s);                                      // cabecera (qué hay en la tele) y color de las luces
-  $('#pp').dataset.m = s.media;
+  paintPlay(s);
   paint2(s);                                            // el volumen se ve en el balancín: sin aviso flotante
   state.lastState = s;
   emit('state', s);                                     // otras hojas (Spotify) reaccionan al estado
 }
-/* v2: número de volumen (el % real del servidor), silencio, play/pausa y carril con el scroll de la página de la tele */
+/* play/pausa y silencio cambian al pulsar (lo previsto, g), sin esperar a la tele; manda el servidor en cuanto lo confirma,
+   y si en GUESS_MS no lo confirma, se vuelve a lo que dice (la tele por ADB tarda hasta ~2 s en silenciar) */
+const GUESS_MS = 2500;
+let ppG = null, muG = null, gT = 0;
+/** Lo previsto, mientras el servidor no diga eso mismo y no haya caducado; si no, null. */
+const keep = (g, real) => (g && real !== g.v && performance.now() - g.at < GUESS_MS ? g : null);
+function paintPlay(s) {
+  ppG = keep(ppG, s.media);
+  const m = ppG ? ppG.v : s.media, pp = $('#pp');
+  pp.dataset.m = m;
+  pp.setAttribute('aria-label', m === 1 ? 'Pausar' : m === 0 ? 'Reproducir' : 'Reproducir o pausar');
+}
+function guessed() {
+  const s = state.lastState; if (!s) return;
+  paintPlay(s); paint2(s);
+  clearTimeout(gT); gT = setTimeout(() => { if (state.lastState) { paintPlay(state.lastState); paint2(state.lastState); } }, GUESS_MS + 50);
+}
+function guessPlay() {
+  const s = state.lastState; if (!s || inTv()) return;            // en modo Tele es una tecla de la tele: no hay estado que prever
+  const cur = ppG ? ppG.v : s.media; if (cur !== 0 && cur !== 1) return;
+  ppG = { v: 1 - cur, at: performance.now() }; guessed();
+}
+function guessMute() {
+  const s = state.lastState; if (!s) return;
+  muG = { v: !(muG ? muG.v : !!s.muted), at: performance.now() }; guessed();
+}
+/* v2: número de volumen (el % real del servidor), silencio, play/pausa y carril con el scroll de la página de la tele.
+   Silenciado se ve el número atenuado (no se pierde el nivel); sin dato, «–» en gris: no es lo mismo */
 function paint2(s) {
-  const v = $('#vol2'), m = $('#mute2'), off = !!s.muted || typeof s.vol !== 'number';
-  volDigit(off ? '–' : String(s.vol), off ? 0 : s.vol); v.classList.toggle('off', off);
-  v.setAttribute('aria-label', s.muted ? 'Volumen silenciado' : off ? 'Volumen desconocido' : 'Volumen ' + s.vol + ' %');
-  m.setAttribute('aria-pressed', !!s.muted); m.setAttribute('aria-label', s.muted ? 'Activar sonido' : 'Silenciar');
-  $('#pp').setAttribute('aria-label', s.media === 1 ? 'Pausar' : s.media === 0 ? 'Reproducir' : 'Reproducir o pausar');
+  muG = keep(muG, !!s.muted);
+  const v = $('#vol2'), m = $('#mute2'), muted = muG ? muG.v : !!s.muted, unknown = typeof s.vol !== 'number';
+  volDigit(unknown ? '–' : String(s.vol), unknown ? 0 : s.vol);
+  v.classList.toggle('muted', muted && !unknown); v.classList.toggle('unknown', unknown);
+  v.setAttribute('aria-label', muted ? 'Volumen silenciado' + (unknown ? '' : ', ' + s.vol + ' %') : unknown ? 'Volumen desconocido' : 'Volumen ' + s.vol + ' %');
+  m.setAttribute('aria-pressed', String(muted)); m.setAttribute('aria-label', muted ? 'Activar sonido' : 'Silenciar');
   const sc = s.scroll, rail = $('#rail');
   rail.hidden = !sc;                                    // sin dato (o página sin scroll), sin carril
   if (sc) {
@@ -70,9 +98,9 @@ export const controls = {
   msgs: { state: onState },
   acts: {
     home: tvOr('home', () => cmd({ t: 'home' })), back: tvOr('back', () => cmd({ t: 'back' })), fwd: () => cmd({ t: 'forward' }), reload: () => cmd({ t: 'reload' }),
-    fs: () => cmd({ t: 'fs' }), pp: tvOr('pp', () => cmd({ t: 'pp' })),
+    fs: () => cmd({ t: 'fs' }), pp: tvOr('pp', () => { guessPlay(); cmd({ t: 'pp' }); }),
     skb: () => cmd({ t: 'key', k: 'ArrowLeft' }), skf: () => cmd({ t: 'key', k: 'ArrowRight' }),
-    vd: vol('down'), vu: vol('up'), vm: vol('mute'),
+    vd: vol('down'), vu: vol('up'), vm: () => { guessMute(); vol('mute')(); },
     s10b: tvOr('rew', () => seek10(-10)), s10f: tvOr('ff', () => seek10(10)),
   },
   init() {

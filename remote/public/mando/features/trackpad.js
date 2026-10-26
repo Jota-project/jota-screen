@@ -2,7 +2,7 @@
 // inercia; toque con dos: clic derecho). Las rachas se juntan por fotograma. En modo Tele no hay puntero: el gesto
 // entero, al soltar, es una flecha u OK de la cruceta (features/tele.js).
 import { $ } from '../core/dom.js';
-import { cfg } from '../core/store.js';
+import { cfg, persist } from '../core/store.js';
 import { send } from '../core/api.js';
 import { buzz } from '../ui/haptics.js';
 import { inTv, padGesture } from './tele.js';
@@ -15,6 +15,9 @@ const r2 = n => Math.round(n * 100) / 100;
 /* un halo malva sigue al dedo mientras toca (en vez de la onda) y la ayuda se esconde solo mientras se toca */
 let haloId = null;
 let pad, hint, halo;
+/* la ayuda se retira para siempre tras HINT_USES gestos: es la pantalla que más se ve y ya se sabe usar */
+const HINT_USES = 5;
+let uses = 0;
 function haloAt(e) { const b = pad.getBoundingClientRect(); halo.style.left = (e.clientX - b.left) + 'px'; halo.style.top = (e.clientY - b.top) + 'px'; }
 
 function flush() {
@@ -46,7 +49,10 @@ function up(e) {
   if (e.pointerId === haloId) {                   // el halo pasa al dedo que queda o se apaga
     const rest = P.keys().next();
     haloId = rest.done ? null : rest.value;
-    if (haloId === null) { halo.classList.remove('on'); hint.classList.remove('off'); }
+    if (haloId === null) {
+      halo.classList.remove('on'); hint.classList.remove('off');
+      if (uses < HINT_USES) { persist.set('padUses', ++uses); hint.hidden = uses >= HINT_USES; }
+    }
   }
   if (n === 1) {
     pad.classList.remove('on');
@@ -64,6 +70,7 @@ export const trackpad = {
   name: 'trackpad',
   init() {
     pad = $('#pad'); hint = $('#hint'); halo = $('#halo');
+    uses = +persist.get('padUses', 0) || 0; hint.hidden = uses >= HINT_USES;
     pad.addEventListener('pointerdown', e => {
       e.preventDefault();
       try { pad.setPointerCapture(e.pointerId); } catch {}

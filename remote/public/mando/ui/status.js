@@ -26,14 +26,21 @@ export function setTitle(a, b) {
   pend = [a, nb]; sub.classList.add('out'); fadeT = setTimeout(apply, 320);
 }
 
+/* sin conexión más de SINCON_MS, los mandos se atenúan y no fingen (ui/actions.js); antes, un corte breve no parpadea y lo
+   pulsado espera en la cola de core/api.js */
+const SINCON_MS = 1000;
+let sinT = 0;
+const sinCon = on => document.documentElement.classList.toggle('sincon', on);
+
 export const status = {
   name: 'status',
   init() {
-    onWs('open', () => { paintDot(); offline2(false); });
+    onWs('open', () => { clearTimeout(sinT); sinT = 0; sinCon(false); paintDot(); offline2(false); });
     onWs('rtt', paintDot);
     onWs('close', (ev, lost) => {
       paintDot();
       if (lost) return;                                   // la pantalla de emparejar ya lo dice
+      if (!sinT) sinT = setTimeout(() => { sinT = 0; if (!isUp()) sinCon(true); }, SINCON_MS);   // desde el primer corte: los reintentos no lo aplazan
       setTitle('Reconectando…', '');
       offline2(getTries() >= 4 || navigator.onLine === false);
     });
