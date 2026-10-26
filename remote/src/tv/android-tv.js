@@ -134,8 +134,8 @@ function createAndroidTv({ addr, input, log, adb }) {
       throw new Error('La tele no responde');
     }
   }
-  // input arranca un proceso Java en cada llamada: 1,3-3,7 s medidos en la tele, más que los 3 s del resto
-  const sh = (/** @type {string} */ cmd) => run(['shell', cmd], cmd.startsWith('input ') ? 8000 : 3000);
+  // input arranca un proceso Java en cada llamada: hasta 6,7 s medidos al despertar la tele, más que los 3 s del resto
+  const sh = (/** @type {string} */ cmd) => run(['shell', cmd], cmd.startsWith('input ') ? 12000 : 3000);
   const status = async () => parseStatus(await sh(STATUS_CMD), input);
   /** @param {string} code KEYCODE_… @param {string} name para el registro */
   const press = async (code, name) => {
@@ -157,11 +157,11 @@ function createAndroidTv({ addr, input, log, adb }) {
     },
     set,
     status,
-    // to 'tv': Inicio por input keyevent y no por monkey, que recién despierta tarda en arrancar (>15 s medidos). Dos
-    // órdenes y no una: juntas pasan de los 3 s de run (1,3 s + 2,1 s medidos).
+    // to 'tv': el inicio de Google TV con am start (0,2-0,45 s medidos), no con monkey, que recién despierta tarda en
+    // arrancar (>15 s), ni con input, que recién despierta puede pasar de 8 s
     async power(/** @type {boolean} */ on, /** @type {'j'|'tv'} */ to = 'j') {
       await sh('input keyevent ' + (on ? 'KEYCODE_WAKEUP' : 'KEYCODE_SLEEP'));
-      if (on) await (to === 'tv' ? sh('input keyevent KEYCODE_HOME') : toJ());
+      if (on) await (to === 'tv' ? sh('am start -a android.intent.action.MAIN -c android.intent.category.HOME') : toJ());
     },
     toJ,
     toTv: () => key('home'),
