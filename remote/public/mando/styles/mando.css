@@ -264,6 +264,9 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .vzQ.said .w{opacity:1;transform:none}
 .rep{min-height:0;margin-top:16px;font-size:17px;line-height:1.55;color:var(--text-soft);max-width:34em;transition:opacity .6s ease,transform .8s var(--ease)}
 .rep:empty{display:none}
+/* con voz: la frase en curso en tenue y lo ya dicho iluminado (agent.js) */
+.rep[data-voice] .vw{color:var(--text-faint);transition:color .15s var(--ease)}
+.rep[data-voice] .vw.said{color:var(--text)}
 .vzIn{margin-top:20px;background:var(--pad);border-color:transparent;border-radius:999px;padding:0 20px}
 .vzO{display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:22px;flex:none}
 .vzOrb{width:96px;height:96px;border-radius:999px;border:0;padding:0;cursor:pointer;background:radial-gradient(circle at 35% 30%,#a99ad1 0%,#7c6aae 55%,#6e8cc4 120%);box-shadow:0 0 0 14px rgba(124,106,174,.16),0 0 80px rgba(124,106,174,.55);animation:breathe 3.4s ease-in-out infinite;touch-action:none}

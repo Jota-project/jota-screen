@@ -237,6 +237,48 @@ test('pcm-player: PCM16 LE se pasa a Float32 y el frame sin 0xA1 ni seq no suena
   assert.equal(srcs.length, 3);
 });
 
+test('pcm-player: pos() son los ms del turno ya sonados según ctx.currentTime (con huecos y atascos); stop o otro turno, de cero', async () => {
+  const { createPcmPlayer } = await import(pathToFileURL(path.join(PUB, 'mando', 'features', 'pcm-player.js')).href);
+  const srcs = [], ctx = { state: 'running', currentTime: 10, destination: {}, resume() { return Promise.resolve(); },
+    createBuffer: (_c, n, r) => ({ duration: n / r, copyToChannel() {} }),
+    createBufferSource: () => { const s = { connect() {}, disconnect() {}, start(at) { s.at = at; }, stop() {} }; srcs.push(s); return s; } };
+  const frame = (seq, ms) => { const b = new Uint8Array(3 + ms * 48); b[0] = 0xA1; b[2] = seq; return b.buffer; };
+  const p = createPcmPlayer(() => ctx);
+  assert.equal(p.pos(), 0, 'nada programado');
+  p.play(frame(5, 200)); p.play(frame(5, 100));             // empieza en 10,05 s: 200 ms y 100 ms seguidos
+  assert.equal(p.pos(), 0, 'aún no suena (LEAD)');
+  ctx.currentTime = 10.15;
+  assert.ok(Math.abs(p.pos() - 100) < 1e-6);
+  ctx.currentTime = 10.30;
+  assert.ok(Math.abs(p.pos() - 250) < 1e-6, 'ya en el segundo trozo');
+  ctx.currentTime = 11;
+  assert.ok(Math.abs(p.pos() - 300) < 1e-6, 'acabado: todo lo programado');
+  srcs.forEach(s => s.onended && s.onended());              // se vacía (atasco): el mismo turno sigue contando
+  p.play(frame(5, 100));                                    // tras el hueco, en 11,05 s
+  ctx.currentTime = 11.1;
+  assert.ok(Math.abs(p.pos() - 350) < 1e-6);
+  srcs.forEach(s => s.onended && s.onended());
+  p.play(frame(6, 100));                                    // otro turno: de cero
+  ctx.currentTime = 11.2;
+  assert.ok(Math.abs(p.pos() - 50) < 1e-6);
+  p.stop();
+  assert.equal(p.pos(), 0);
+});
+
+test('mando: la voz sincronizada usa el mismo reloj que el servidor (voice-sync.js charAt) y enseña hasta el fin de la frase en curso', async () => {
+  const { spokenAt, voiceWords } = await import(pathToFileURL(path.join(PUB, 'mando', 'features', 'agent.js')).href);
+  const { charAt } = require(path.join(__dirname, '..', '..', 'remote', 'src', 'features', 'voice-sync'));
+  const a = [[100, 0], [400, 5], [700, 6]];
+  for (const t of [-5, 0, 100, 250, 400, 550, 700, 800, 5000]) assert.equal(spokenAt(a, 50, t, 40), charAt(a, 50, t, 40), 't=' + t);
+  assert.equal(spokenAt([], 50, 800, 7), 0);
+  const text = 'Hola, Sito. Hoy hace sol. Mañana llueve.';
+  assert.deepEqual(voiceWords(text, 0), { words: ['Hola,', 'Sito.'], said: 0 });
+  assert.deepEqual(voiceWords(text, 6.5), { words: ['Hola,', 'Sito.'], said: 1 });
+  assert.deepEqual(voiceWords(text, 12), { words: ['Hola,', 'Sito.', 'Hoy', 'hace', 'sol.'], said: 2 });
+  assert.deepEqual(voiceWords(text, text.length).said, 7);
+  assert.deepEqual(voiceWords('Frase aún sin cerrar', 0).words, ['Frase', 'aún', 'sin', 'cerrar'], 'sin punto: lo que haya');
+});
+
 // ── formato de la conversación en la tele desde la hoja de Jota (features/talkform.js, contrato r3 §3) ──
 const talkform = () => import(pathToFileURL(path.join(PUB, 'mando', 'features', 'talkform.js')).href);
 

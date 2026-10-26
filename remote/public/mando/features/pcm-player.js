@@ -1,7 +1,8 @@
 // La respuesta del Gateway en el móvil: frames binarios 0xA1 + turn_seq (uint16 BE) + PCM16 LE 24 kHz mono. Cada trozo se
 // programa justo detrás del anterior en el AudioContext del mando (el de la voz), sin huecos. Solo vale el turno del
 // primer frame de la respuesta: los de otro `seq` se descartan hasta el siguiente `stop` o hasta que acaba de sonar. `playing()` dice si algo suena o
-// está programado; `onChange` avisa cuando empieza a sonar y cuando acaba (o se corta).
+// está programado; `onChange` avisa cuando empieza a sonar y cuando acaba (o se corta). `pos()`: ms de audio del turno ya
+// sonados (la voz sincronizada del texto, agent.js), del reloj del propio AudioContext.
 const RATE = 24000;
 const LEAD = 0.05;                                      // margen al arrancar o tras un hueco (s)
 
@@ -18,21 +19,30 @@ export function createPcmPlayer(getCtx, onChange = () => {}) {
   /** @type {number | null} */ let seq = null;
   let at = 0;                                           // cuándo acaba lo ya programado
   /** @type {Set<AudioBufferSourceNode>} */ const live = new Set();
+  /** Lo programado del turno: [inicio en el contexto (s), ms de audio del turno, duración (ms)]. @type {[number, number, number][]} */
+  let segs = [];
+  let total = 0, last = /** @type {number | null} */ (null), clock = /** @type {AudioContext | null} */ (null);
   return {
     /** @param {ArrayBuffer} frame */
     play(frame) {
       if (!(frame instanceof ArrayBuffer) || frame.byteLength < 5 || new Uint8Array(frame)[0] !== 0xA1) return;
       const s = new DataView(frame).getUint16(1);
-      if (seq === null) seq = s; else if (s !== seq) return;   // de otro turno
+      if (seq === null) { seq = s; if (s !== last) { segs = []; total = 0; } last = s; } else if (s !== seq) return;   // de otro turno (un atasco no)
       const ctx = getCtx(); if (!ctx) return;
       const pcm = pcm16ToFloat32(frame, 3); if (!pcm.length) return;
       if (ctx.state !== 'running') ctx.resume().catch(() => {});
       const b = ctx.createBuffer(1, pcm.length, RATE); b.copyToChannel(pcm, 0);
       const n = ctx.createBufferSource(); n.buffer = b; n.connect(ctx.destination);
       at = Math.max(at, ctx.currentTime + LEAD);
-      n.start(at); at += b.duration;
+      n.start(at); segs.push([at, total, b.duration * 1000]); total += b.duration * 1000; clock = ctx; at += b.duration;
       live.add(n); n.onended = () => { live.delete(n); if (!live.size) { seq = null; onChange(); } };   // acabó: el siguiente frame puede ser de otra respuesta
       if (live.size === 1) onChange();
+    },
+    /** ms de audio del turno ya sonados: lo acabado más lo que lleva el trozo que suena (en un hueco, lo de antes). */
+    pos() {
+      const now = clock ? clock.currentTime : 0;
+      for (let i = segs.length - 1; i >= 0; i--) { const [t0, ms, d] = segs[i]; if (t0 <= now) return ms + Math.min(d, (now - t0) * 1000); }
+      return 0;
     },
     /** Hay audio sonando o programado. */
     playing: () => live.size > 0,
@@ -40,7 +50,7 @@ export function createPcmPlayer(getCtx, onChange = () => {}) {
     stop() {
       for (const n of live) { n.onended = null; try { n.stop(); } catch {} try { n.disconnect(); } catch {} }
       const was = live.size > 0;
-      live.clear(); seq = null; at = 0;
+      live.clear(); seq = null; at = 0; segs = []; total = 0; last = null;
       if (was) onChange();
     },
   };
