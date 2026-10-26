@@ -187,11 +187,17 @@ test('tele: órdenes de mute, set, home y toJ, y close() cierra las teclas', asy
   let closed = 0; adb.keys.close = () => closed++;
   await tv.toggleMute(); await tv.set(40); await tv.toJ(); await tv.toTv(); tv.close();
   assert.deepEqual(adb.runs.map(r => r[1]), [
-    'input keyevent KEYCODE_VOLUME_MUTE',
     'cmd media_session volume --stream 3 --set 40 --show',
     'am start -a android.intent.action.VIEW -d ' + passthroughUri(TV_INPUT)]);
-  assert.deepEqual(adb.pressed, ['KEYCODE_HOME']);
+  assert.deepEqual(adb.pressed, ['KEYCODE_VOLUME_MUTE', 'KEYCODE_HOME'], 'el silencio va por monkey, como las teclas');
   assert.equal(closed, 1);
+});
+
+test('tele: power(true, "tv") despierta e Inicio en una sola orden, sin pasar por J ni por monkey', async () => {
+  const { adb, tv } = mk(22);
+  await tv.power(true, 'tv');
+  assert.deepEqual(adb.runs.map(r => r[1]), ['input keyevent KEYCODE_WAKEUP KEYCODE_HOME']);
+  assert.deepEqual(adb.pressed, []);
 });
 
 test('monkey: pkill antes de arrancar y otra vez al cerrar', async () => {

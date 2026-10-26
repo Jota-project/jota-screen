@@ -101,8 +101,7 @@ function createTele({ tv, state, broadcast, watched, pause, log }) {
     return act(async () => {
       if (asleep()) {
         own = s;
-        try { await tv.power(true); } catch (e) { own = false; throw e; }
-        if (s === 'tv') await tv.toTv();
+        try { await tv.power(true, s); } catch (e) { own = false; throw e; }
       } else if (s === 'tv') { await ownPause('tv'); await undoPause(() => tv.toTv()); } else await tv.toJ();
     });
   }

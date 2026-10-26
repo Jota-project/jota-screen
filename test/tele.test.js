@@ -18,7 +18,7 @@ function fakeTv() {
   const tv = {
     calls, fail: false, st: { power: 'on', src: 'j', vol: 22, muted: false },
     async status() { if (tv.fail) no(); return { ...tv.st }; },
-    async power(on) { calls.push('power:' + on); if (tv.fail) no(); if (tv.wakes !== false) tv.st = { ...tv.st, power: on ? 'on' : 'off', src: on ? tv.st.src : null }; },
+    async power(on, to) { calls.push('power:' + on + (to === 'tv' ? ':tv' : '')); if (tv.fail) no(); if (tv.wakes !== false) tv.st = { ...tv.st, power: on ? 'on' : 'off', src: on ? tv.st.src : null }; },
     async toJ() { calls.push('toJ'); if (tv.fail) no(); },
     async toTv() { calls.push('toTv'); if (tv.fail) no(); },
     async key(k) { calls.push('key:' + k); if (tv.fail) no(); },
@@ -272,10 +272,10 @@ test('src con la tele apagada la enciende antes: j solo enciende, tv enciende y 
       const { tv, tele, step, cmd } = setup(t2);
       tv.st = { ...tv.st, power: 'off', src: null };
       tele.start(); await flush();
-      tv.power = async on => { tv.calls.push('power:' + on); tv.st = { ...tv.st, power: 'on', src: s }; };
+      tv.power = async (on, to) => { tv.calls.push('power:' + on + (to === 'tv' ? ':tv' : '')); tv.st = { ...tv.st, power: 'on', src: s }; };
       await cmd('src', { s });
       await step(15000); await step(15000);
-      assert.deepEqual(tv.calls.filter(c => c !== 'pause'), s === 'j' ? ['power:true'] : ['power:true', 'toTv']);
+      assert.deepEqual(tv.calls.filter(c => c !== 'pause'), s === 'j' ? ['power:true'] : ['power:true:tv'], 'tv: despertar e Inicio en una sola orden, sin toTv aparte');
     });
   }
 });

@@ -136,17 +136,19 @@ function createAndroidTv({ addr, input, log, adb }) {
   }
   const sh = (/** @type {string} */ cmd) => run(['shell', cmd]);
   const status = async () => parseStatus(await sh(STATUS_CMD), input);
-  /** @param {keyof typeof TV_KEYS} k */
-  const key = async k => {
-    try { await a.keys.press(TV_KEYS[k]); }
-    catch (e) { log.info(`tele: monkey no responde (${/** @type {Error} */ (e).message}); tecla ${k} por input keyevent (lenta)`); await sh('input keyevent ' + TV_KEYS[k]); }
+  /** @param {string} code KEYCODE_… @param {string} name para el registro */
+  const press = async (code, name) => {
+    try { await a.keys.press(code); }
+    catch (e) { log.info(`tele: monkey no responde (${/** @type {Error} */ (e).message}); tecla ${name} por input keyevent (lenta)`); await sh('input keyevent ' + code); }
   };
+  /** @param {keyof typeof TV_KEYS} k */
+  const key = k => press(TV_KEYS[k], k);
   const set = (/** @type {number} */ v) => sh(`cmd media_session volume --stream 3 --set ${Math.max(0, Math.min(100, Math.round(v)))} --show`);
   const toJ = () => sh('am start -a android.intent.action.VIEW -d ' + passthroughUri(input));
   return {
     /** @returns {Promise<{ vol: number, muted: boolean } | null>} */
     async read() { try { const s = await status(); return s.vol === null ? null : { vol: s.vol, muted: s.muted }; } catch { return null; } },
-    toggleMute: () => sh('input keyevent KEYCODE_VOLUME_MUTE'),
+    toggleMute: () => press('KEYCODE_VOLUME_MUTE', 'mute'),   // por monkey: input keyevent tarda 1-2 s (medido)
     async step(/** @type {number} */ n, max = 100) {
       const { vol } = await status();
       if (vol === null) throw new Error('La tele no responde');   // sin volumen conocido no se fija nada
@@ -154,7 +156,11 @@ function createAndroidTv({ addr, input, log, adb }) {
     },
     set,
     status,
-    async power(/** @type {boolean} */ on) { await sh('input keyevent ' + (on ? 'KEYCODE_WAKEUP' : 'KEYCODE_SLEEP')); if (on) await toJ(); },
+    // to 'tv': despertar e Inicio en una sola orden (recién despierta, monkey tarda en arrancar: >15 s medidos)
+    async power(/** @type {boolean} */ on, /** @type {'j'|'tv'} */ to = 'j') {
+      await sh('input keyevent ' + (!on ? 'KEYCODE_SLEEP' : to === 'tv' ? 'KEYCODE_WAKEUP KEYCODE_HOME' : 'KEYCODE_WAKEUP'));
+      if (on && to === 'j') await toJ();
+    },
     toJ,
     toTv: () => key('home'),
     key,
