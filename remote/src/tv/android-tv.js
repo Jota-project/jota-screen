@@ -115,17 +115,17 @@ function monkeySession(/** @type {(args: string[]) => Promise<string>} */ run, /
 
 /**
  * La tele por ADB, con la interfaz de volumen de createAudio. Todo menos read() lanza 'La tele no responde' si adb falla.
- * @param {{ addr: string, input: string, log: { info: (m: string) => void }, adb?: { run: (a: string[]) => Promise<string>, keys: { press: (c: string) => Promise<void>, close: () => void } } }} o
+ * @param {{ addr: string, input: string, log: { info: (m: string) => void }, adb?: { run: (a: string[], ms?: number) => Promise<string>, keys: { press: (c: string) => Promise<void>, close: () => void } } }} o
  */
 function createAndroidTv({ addr, input, log, adb }) {
-  const raw = (/** @type {string[]} */ args) => new Promise((res, rej) => execFile('adb', ['-s', addr, ...args], { timeout: 3000 }, (e, o, se) => (e ? rej(new Error(String(se || e.message))) : res(o))));
+  const raw = (/** @type {string[]} */ args, ms = 3000) => new Promise((res, rej) => execFile('adb', ['-s', addr, ...args], { timeout: ms }, (e, o, se) => (e ? rej(new Error(String(se || e.message))) : res(o))));
   const a = adb || { run: raw, keys: monkeySession(raw, addr) };
   let stale = false; // el último resultado fue offline / unauthorized / error: antes del siguiente run, adb connect
-  /** @param {string[]} args */
-  async function run(args) {
+  /** @param {string[]} args @param {number} [ms] */
+  async function run(args, ms) {
     if (stale) { stale = false; await a.run(['connect', addr]).catch(() => {}); }
     try {
-      const out = await a.run(args);
+      const out = await a.run(args, ms);
       if (/offline|unauthorized/.test(out)) throw new Error(out);
       return out;
     } catch (e) {
@@ -134,7 +134,8 @@ function createAndroidTv({ addr, input, log, adb }) {
       throw new Error('La tele no responde');
     }
   }
-  const sh = (/** @type {string} */ cmd) => run(['shell', cmd]);
+  // input arranca un proceso Java en cada llamada: 1,3-3,7 s medidos en la tele, más que los 3 s del resto
+  const sh = (/** @type {string} */ cmd) => run(['shell', cmd], cmd.startsWith('input ') ? 8000 : 3000);
   const status = async () => parseStatus(await sh(STATUS_CMD), input);
   /** @param {string} code KEYCODE_… @param {string} name para el registro */
   const press = async (code, name) => {
