@@ -44,7 +44,7 @@ async function load() {
   return { api, tmp };
 }
 
-test('mando conexión: sin conexión las órdenes esperan (la última de cada tipo) y salen al abrir; las viejas no', async () => {
+test('mando conexión: sin conexión las órdenes esperan, en orden y sin juntarse, y salen al abrir; las viejas no', async () => {
   const f = fakes(); const { api, tmp } = await load();
   try {
     await api.connect();
@@ -53,7 +53,7 @@ test('mando conexión: sin conexión las órdenes esperan (la última de cada ti
     api.send('m 3 4');                                    // racha del trackpad: nunca a la cola
     f.tick(1000); ws.open();
     const out = ws.sent.filter(s => s[0] === '{').map(s => JSON.parse(s));
-    assert.deepEqual(out, [{ t: 'pp' }, { t: 'vol', d: 'down' }]);
+    assert.deepEqual(out, [{ t: 'pp' }, { t: 'vol', d: 'up' }, { t: 'vol', d: 'down' }]);
     assert.ok(!ws.sent.includes('m 3 4'));
 
     ws.readyState = 3; ws.onclose({ code: 1006 });         // se cae: lo pulsado hace más de 4 s no se manda al volver
@@ -86,5 +86,23 @@ test('mando conexión: al volver a la página se sondea; sin eco en 1,5 s se sue
     f.tick(300);                                          // reintento
     const ws2 = f.sockets[1]; assert.ok(ws2, 'reconecta'); ws2.open();
     assert.ok(ws2.sent.some(s => s.includes('"home"')), 'lo pulsado llega por la conexión nueva');
+  } finally { f.restore(); fs.rmSync(tmp, { recursive: true, force: true }); }
+});
+
+test('mando conexión: durante el sondeo el audio va detrás de su vstart; al soltar la conexión, los rpc enviados fallan ya', async () => {
+  const f = fakes(); const { api, tmp } = await load();
+  try {
+    api.start(); await api.connect();
+    const ws = f.sockets[0]; ws.open();
+    const sent = api.rpc({ t: 'tvkey', k: 'ok' });          // sale ya: conexión al día
+    f.show();                                             // vuelve a la página: sondeo
+    api.rpc({ t: 'vstart' }); api.sendBin(new Uint8Array([1])); api.sendBin(new Uint8Array([2]));
+    const ping = ws.sent.filter(s => typeof s === 'string' && s[0] === 'p').pop();
+    ws.onmessage({ data: ping });
+    const after = ws.sent.slice(ws.sent.lastIndexOf(ping) + 1);
+    assert.ok(String(after[0]).includes('"vstart"'), 'vstart primero'); assert.deepEqual([...after[1]], [1]); assert.deepEqual([...after[2]], [2]);
+
+    f.show(); f.tick(1600);                               // sondeo sin eco: se suelta
+    assert.deepEqual(await sent, { error: 'sin conexión' }, 'el rpc enviado por la conexión caída no espera 20 s');
   } finally { f.restore(); fs.rmSync(tmp, { recursive: true, force: true }); }
 });

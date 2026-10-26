@@ -31,7 +31,7 @@ function onState(s) {
 /* play/pausa y silencio cambian al pulsar (lo previsto, g), sin esperar a la tele; manda el servidor en cuanto lo confirma,
    y si en GUESS_MS no lo confirma, se vuelve a lo que dice (la tele por ADB tarda hasta ~2 s en silenciar) */
 const GUESS_MS = 2500;
-let ppG = null, muG = null, gT = 0;
+let ppG = null, muG = null;
 /** Lo previsto, mientras el servidor no diga eso mismo y no haya caducado; si no, null. */
 const keep = (g, real) => (g && real !== g.v && performance.now() - g.at < GUESS_MS ? g : null);
 function paintPlay(s) {
@@ -43,7 +43,7 @@ function paintPlay(s) {
 function guessed() {
   const s = state.lastState; if (!s) return;
   paintPlay(s); paint2(s);
-  clearTimeout(gT); gT = setTimeout(() => { if (state.lastState) { paintPlay(state.lastState); paint2(state.lastState); } }, GUESS_MS + 50);
+  setTimeout(() => { if (state.lastState) { paintPlay(state.lastState); paint2(state.lastState); } }, GUESS_MS + 50);   // uno por previsto
 }
 function guessPlay() {
   const s = state.lastState; if (!s || inTv()) return;            // en modo Tele es una tecla de la tele: no hay estado que prever

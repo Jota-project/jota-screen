@@ -3,9 +3,10 @@
 import { state, emit } from './store.js';
 
 let ws, tries = 0, rtt = 0, retryT = 0, rid = 0, gate = null, waitSince = 0, probing = 0, probeN = 0;
-/* órdenes sueltas a la espera de conexión: la última de cada tipo; caducan a los QUEUE_MS (más que el sondeo de 1,5 s
-   más la reconexión, para que lo pulsado al desbloquear el móvil llegue) */
-const QUEUE_MS = 4000, queue = new Map();
+/* lo que espera a la conexión, en orden (órdenes JSON y, mientras se abre o se sondea, el audio de la voz, que tiene que
+   ir detrás de su vstart); caduca a los QUEUE_MS: más que el sondeo de 1,5 s más la reconexión, para que lo pulsado al
+   desbloquear el móvil llegue. Nada se junta: dos toques de silencio o de play son dos órdenes */
+const QUEUE_MS = 4000, QUEUE_MAX = 400, queue = [];
 const pend = new Map();
 const handlers = new Map();
 const subs = { open: [], close: [], rtt: [], bin: [] };
@@ -22,21 +23,27 @@ export const send = s => { if (ws && ws.readyState === 1 && !probing) ws.send(s)
  * (send) no, que el cursor saltaría por la tele. */
 export const cmd = o => {
   if (ws && ws.readyState === 1 && !probing) { ws.send(JSON.stringify(o)); return; }
-  queue.set(o.id ? 'id' + o.id : o.t, { o, at: performance.now() });
+  enqueue({ o });
 };
+function enqueue(e) { e.at = performance.now(); queue.push(e); if (queue.length > QUEUE_MAX) fail(queue.shift()); }
+/** Una orden con respuesta que no va a salir: su rpc falla ya, sin esperar los 20 s. */
+function fail(e) { const f = e.o && e.o.id && pend.get(e.o.id); if (f) { pend.delete(e.o.id); f({ error: 'sin conexión' }); } }
 function flushQueue() {
   const now = performance.now();
-  for (const { o, at } of queue.values()) {
-    if (now - at < QUEUE_MS) ws.send(JSON.stringify(o));
-    else if (o.id) { const f = pend.get(o.id); if (f) { pend.delete(o.id); f({ error: 'sin conexión' }); } }
+  for (const e of queue.splice(0)) {
+    if (now - e.at >= QUEUE_MS) fail(e);
+    else ws.send(e.o ? JSON.stringify(e.o) : e.b);
   }
-  queue.clear();
 }
-/** Un mensaje binario (el audio del micrófono, ver features/voice.js). @param {ArrayBufferView} b */
-export const sendBin = b => { if (ws && ws.readyState === 1) ws.send(b); };
-/** Orden con respuesta (sin conexión, falla enseguida). */
+/** Un mensaje binario (el audio del micrófono, ver features/voice.js): mientras se abre o se sondea, a la cola detrás de su
+ * vstart; sin conexión, se pierde (como antes). @param {ArrayBufferView} b */
+export const sendBin = b => {
+  if (ws && ws.readyState === 1 && !probing) ws.send(b);
+  else if (isLive()) enqueue({ b });
+};
+/** Orden con respuesta: sin conexión (ni abriéndose) falla enseguida; abriéndose o sondeando, espera en la cola. */
 export const rpc = o => new Promise(res => {
-  if (!ws || ws.readyState !== 1) return res({ error: 'sin conexión' });
+  if (!isLive()) return res({ error: 'sin conexión' });
   const id = ++rid; pend.set(id, res); cmd({ ...o, id });
   setTimeout(() => { if (pend.delete(id)) res({ error: 'sin respuesta' }); }, 20000);
 });
@@ -83,6 +90,10 @@ export async function connect() {
 }
 function closed(ev) {
   probing = 0;
+  // lo que salió por la conexión caída no tendrá respuesta: sus rpc fallan ya (los de la cola esperan a la nueva)
+  const waiting = new Set(queue.map(e => e.o && e.o.id).filter(Boolean));
+  for (const [id, f] of pend) if (!waiting.has(id)) { pend.delete(id); f({ error: 'sin conexión' }); }
+  for (let i = queue.length - 1; i >= 0; i--) if (queue[i].b) queue.splice(i, 1);   // el audio de un turno roto, fuera
   const lost = ev.code === 4001 || ev.code === 4002;
   if (lost) emit('auth:lost', ev.code);
   else retryT = setTimeout(connect, Math.min(2000, 250 * ++tries));
@@ -120,6 +131,6 @@ export function start() {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) return;
     if (!ws || ws.readyState > 1) connect();
-    else if (ws.readyState === 1) probe();
+    else if (ws.readyState === 1) { waitSince = 0; probe(); }   // el eco pendiente de antes de ocultarse no cuenta
   });
 }
