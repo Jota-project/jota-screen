@@ -193,10 +193,10 @@ test('tele: órdenes de mute, set, home y toJ, y close() cierra las teclas', asy
   assert.equal(closed, 1);
 });
 
-test('tele: power(true, "tv") despierta e Inicio en una sola orden, sin pasar por J ni por monkey', async () => {
+test('tele: power(true, "tv") despierta y pulsa Inicio, en dos órdenes, sin pasar por J ni por monkey', async () => {
   const { adb, tv } = mk(22);
   await tv.power(true, 'tv');
-  assert.deepEqual(adb.runs.map(r => r[1]), ['input keyevent KEYCODE_WAKEUP KEYCODE_HOME']);
+  assert.deepEqual(adb.runs.map(r => r[1]), ['input keyevent KEYCODE_WAKEUP', 'input keyevent KEYCODE_HOME']);
   assert.deepEqual(adb.pressed, []);
 });
 

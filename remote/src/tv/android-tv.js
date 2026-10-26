@@ -156,10 +156,11 @@ function createAndroidTv({ addr, input, log, adb }) {
     },
     set,
     status,
-    // to 'tv': despertar e Inicio en una sola orden (recién despierta, monkey tarda en arrancar: >15 s medidos)
+    // to 'tv': Inicio por input keyevent y no por monkey, que recién despierta tarda en arrancar (>15 s medidos). Dos
+    // órdenes y no una: juntas pasan de los 3 s de run (1,3 s + 2,1 s medidos).
     async power(/** @type {boolean} */ on, /** @type {'j'|'tv'} */ to = 'j') {
-      await sh('input keyevent ' + (!on ? 'KEYCODE_SLEEP' : to === 'tv' ? 'KEYCODE_WAKEUP KEYCODE_HOME' : 'KEYCODE_WAKEUP'));
-      if (on && to === 'j') await toJ();
+      await sh('input keyevent ' + (on ? 'KEYCODE_WAKEUP' : 'KEYCODE_SLEEP'));
+      if (on) await (to === 'tv' ? sh('input keyevent KEYCODE_HOME') : toJ());
     },
     toJ,
     toTv: () => key('home'),
