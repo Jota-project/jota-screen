@@ -361,10 +361,10 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .vol2{flex:1;position:relative;width:72px;min-height:56px;overflow:hidden;font:380 48px/1 var(--serif);font-variation-settings:"opsz" 144;font-variant-numeric:tabular-nums;color:var(--text);transition:opacity .2s ease}
 .vol2.w3{font-size:36px}
 .vol2.off{opacity:.4}
-.vn{position:absolute;left:0;right:0;top:50%;margin-top:-.5em;text-align:center;transition:opacity .5s ease,transform .6s var(--ease)}
+.vn{position:absolute;left:0;right:0;top:50%;margin-top:-.5em;text-align:center;transition:opacity .2s var(--ease),transform .3s var(--ease)}
 .vn.up{opacity:0;transform:translateY(-.4em);transition:none}
 .vn.dn{opacity:0;transform:translateY(.4em);transition:none}
-.vn.vout{transition:opacity .4s ease,transform .6s var(--ease)}
+.vn.vout{transition:opacity .15s var(--ease),transform .3s var(--ease)}
 .mute2{width:64px;height:56px;margin-top:6px}
 .mute2[aria-pressed=true]{color:var(--accent-text)}
 .mute2 .m-off,.mute2[aria-pressed=true] .m-on{display:none}

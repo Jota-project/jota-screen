@@ -43,20 +43,21 @@ function paint2(s) {
   }
 }
 /* el número del volumen cae (o sube) al cambiar, como los minutos del reposo: el nuevo entra desde arriba si sube */
-let volN = null, volT = 0;
+let volN = null, volT = 0, volAt = 0;
 function volDigit(txt, n) {
   const v = $('#vol2'), cur = /** @type {HTMLElement | null} */ (v.querySelector('.vn:not(.vout)'));
   if (cur && cur.textContent === txt) return;
   const up = volN === null || n >= volN; volN = n;
+  const now = performance.now(), quick = now - volAt < 450; volAt = now;   // mantenido (se repite cada 85 ms tras 380): sin rueda, que se lea
   v.classList.toggle('w3', txt.length > 2);
   const nx = el('span', 'vn', txt);
-  if (!cur || matchMedia('(prefers-reduced-motion: reduce)').matches) { v.replaceChildren(nx); return; }
+  if (!cur || quick || matchMedia('(prefers-reduced-motion: reduce)').matches) { clearTimeout(volT); v.replaceChildren(nx); return; }
   for (const o of v.querySelectorAll('.vout')) o.remove();
   cur.classList.add('vout', up ? 'dn' : 'up');
   nx.classList.add(up ? 'up' : 'dn'); v.append(nx);
   void nx.offsetWidth;                                  // que pinte la posición de salida antes de animar
   nx.classList.remove('up', 'dn');
-  clearTimeout(volT); volT = setTimeout(() => { for (const o of v.querySelectorAll('.vout')) o.remove(); }, 650);
+  clearTimeout(volT); volT = setTimeout(() => { for (const o of v.querySelectorAll('.vout')) o.remove(); }, 350);
 }
 /* ±10 s (v2): mueve el vídeo de la página; si no hay <video>, la flecha como en el v1 */
 function seek10(s) { rpc({ t: 'seek', s }).then(r => { if (r && r.error) cmd({ t: 'key', k: s < 0 ? 'ArrowLeft' : 'ArrowRight' }); }); }
