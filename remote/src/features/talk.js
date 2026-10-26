@@ -33,7 +33,7 @@ const RATE_MS = 24;                                        // muestras por ms de
 const TV_GRACE_MS = 5000;                                  // tras end, si el altavoz no avisa, «habla» como mucho lo estimado más esto
 const TOOL_ID_MAX = 80;                                    // caracteres del id de una llamada a herramienta que llegan a la vista
 const NO_VOICE_MS = 2500;                                  // tras el primer token, sin audio en esto el texto va como siempre
-const PLAY_LATENCY_MS = 150;                               // provisional, se calibra en la tele: del write a que suena
+const SPEAKER_LATENCY_MS = 150;                            // provisional, se calibra en la tele: del write a que suena
 const VOICE_EARLY_MS = 300;                                // antes de que los clientes lleguen a `upto`, se mira si hay más audio
 const VOICE_MIN_GAP_MS = 250;                              // …y nunca más a menudo que esto
 const VOICE_RATE_STEP = 0.05;                              // cambio de rate (ms por carácter) que se avisa
@@ -82,11 +82,11 @@ const NO_SPEAKER = { start() {}, write() {}, end() {}, stop() {} };
  *            form?: () => { form: 'pill' | 'panel', canSwitch: boolean }, voice?: (v: object | null) => void },
  *   speaker?: { start: () => void, write: (pcm: Buffer) => void, end: () => void, stop: () => void, onIdle?: (fn: () => void) => void },
  *   log?: { info: Function, warn: Function }, finalMs?: number, turnIdleMs?: number, maxVoiceMs?: number, audioTailMs?: number, playMarginMs?: number,
- *   noVoiceMs?: number, playLatencyMs?: number,
+ *   noVoiceMs?: number, speakerLatencyMs?: number,
  * }} deps
  */
 module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker = NO_SPEAKER, log = { info() {}, warn() {} }, finalMs = 8000, turnIdleMs = 150000, maxVoiceMs = 32000, audioTailMs = 3000, playMarginMs = 300,
-  noVoiceMs = NO_VOICE_MS, playLatencyMs = PLAY_LATENCY_MS }) {
+  noVoiceMs = NO_VOICE_MS, speakerLatencyMs = SPEAKER_LATENCY_MS }) {
   const { askPrefix: ASK_PREFIX, askGuest: ASK_GUEST } = prompts(cfg.NAME, cfg.OWNER);
   /** El turno en curso: quién preguntó, el id que le da el Gateway (tras turn_start) y la respuesta acumulada.
    *  `sent`: ya se llamó a gw.send; hasta entonces ningún turn_start puede ser el nuestro (un push).
@@ -195,8 +195,8 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   function voicePcm(pcm) {
     const x = vox; if (!x || !pcm || !pcm.length) return;
     const now = Date.now(), had = x.sync.receivedMs();
-    if (x.t0 === null) x.t0 = now + playLatencyMs;
-    else if (now > x.t0 + had) { x.t0 = now + playLatencyMs - had; x.waiting = true; }
+    if (x.t0 === null) x.t0 = now + speakerLatencyMs;
+    else if (now > x.t0 + had) { x.t0 = now + speakerLatencyMs - had; x.waiting = true; }
     x.sync.pcm(pcm);
     if (x.waiting || changed(x)) emitVoice(x);
   }

@@ -10,7 +10,7 @@ const { WebSocket } = require(path.join(__dirname, '..', 'remote', 'node_modules
 
 const PERMS = { full: { agent: 'full', admin: true }, guest: { agent: 'guest' }, off: { agent: 'off' } };
 
-function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalMs, maxVoiceMs, audioTailMs = 20, playMarginMs, log, noVoiceMs, playLatencyMs } = {}) {
+function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalMs, maxVoiceMs, audioTailMs = 20, playMarginMs, log, noVoiceMs, speakerLatencyMs } = {}) {
   const subs = new Set(), sent = [], views = [], audio = [], ends = [], bins = [], spk = [], cancels = [], voices = [];
   const gw = {
     ensure: async () => { if (slowEnsure) await new Promise(r => setTimeout(r, 20)); return ensure; }, send: t => sent.push(t), audio: b => audio.push(b), end: () => ends.push(1), on: fn => { subs.add(fn); return () => subs.delete(fn); },
@@ -32,7 +32,7 @@ function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalM
   const speaker = Object.fromEntries(['start', 'write', 'end', 'stop'].map(k => [k, (...a) => spk.push([k, ...a])]));
   speaker.stop = () => { spk.push(['stop']); onIdle(); };
   speaker.onIdle = fn => { onIdle = fn; };
-  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, speaker, log, turnIdleMs, finalMs, maxVoiceMs, audioTailMs, playMarginMs, noVoiceMs, playLatencyMs });
+  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, speaker, log, turnIdleMs, finalMs, maxVoiceMs, audioTailMs, playMarginMs, noVoiceMs, speakerLatencyMs });
   const msgs = [];
   const ws = { readyState: WebSocket.OPEN, send: s => (Buffer.isBuffer(s) ? bins.push(s) : msgs.push(JSON.parse(s))) };
   const perm = { current: 'full' };
@@ -1029,7 +1029,7 @@ test('voz: sin audio en noVoiceMs tras el primer token, null (y todo sigue como 
 });
 
 test('voz: con audio a tiempo no hay plazo que la apague; un atasco se avisa al llegar el trozo siguiente', async () => {
-  const t = make({ noVoiceMs: 30, audioTailMs: 2000, playLatencyMs: 0 });
+  const t = make({ noVoiceMs: 30, audioTailMs: 2000, speakerLatencyMs: 0 });
   const p = turnWith(t, 'tv'); await t.tick();
   t.gw.emit({ type: 'turn_start', turnId: 'a', seq: 1 });
   t.gw.emit({ type: 'token', turnId: 'a', text: 'Hola, ¿qué tal estás hoy por aquí?' });

@@ -22,6 +22,7 @@ const DEFAULT_MS_PER_CHAR = 62;                            // provisional, se ca
 const RATE_MIN = 35, RATE_MAX = 120;                       // ms por carácter medidos: se recortan a esto
 const TOL_MIN = 12, TOL_REL = 0.35;                        // tolerancia del emparejamiento, en caracteres
 const PUNCT = /[.,;:!?…\n]/;                               // huecos donde la voz suele parar
+const MEDIAN_WINS = 500;                                   // ventanas de voz para la mediana (las últimas 10 s)
 
 /**
  * Carácter dicho en el ms de audio `t`: interpolado entre anclas y, tras la última, a `rate` ms por carácter.
@@ -93,7 +94,7 @@ function createVoiceSync({ rateMsPerChar = DEFAULT_MS_PER_CHAR } = {}) {
     wins++;
     const quiet = rms < Math.max(SILENCE_FLOOR, SILENCE_REL * median());
     if (quiet) { if (started && quietFrom === null) quietFrom = at; return; }
-    voiceRms.push(rms);
+    voiceRms.push(rms); if (voiceRms.length > MEDIAN_WINS) voiceRms.shift();
     if (!started) { started = true; anchors.push([at, 0]); return; }
     if (quietFrom !== null && at - quietFrom >= PAUSE_MS) { pending.push([quietFrom, at]); settle(); }
     quietFrom = null;
