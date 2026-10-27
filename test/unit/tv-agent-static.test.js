@@ -187,6 +187,25 @@ test('la misma foto cada 100 ms no recrea nodos; las palabras salen de una en un
   assert.equal(p.doc.mutations, before, 'sin cambios en el DOM con la misma foto');
 });
 
+test('etiqueta de estado junto al orbe: «Te escucho…» hasta tu primera palabra, «Pensando…» hasta la de Jota o una ficha', () => {
+  const p = loadPage();
+  const st = () => p.host().shadowRoot.all().find(n => n.className === 'st').textContent;
+  const turn = o => [{ id: 1, you: '', youFinal: false, jota: '', tools: [], error: false, hint: '', ...o }];
+  p.win.TVAgent.render(snap({ state: 'listen', turns: [] }));
+  assert.equal(st(), 'Te escucho…', 'sin turno aún');
+  p.win.TVAgent.render(snap({ state: 'listen', turns: turn({ you: 'Pon' }) }));
+  assert.equal(st(), '', 'con tu primera palabra se quita');
+  p.win.TVAgent.render(snap({ state: 'think', calm: true, turns: turn({ you: 'Pon la tele', youFinal: true }) }));
+  assert.equal(st(), 'Pensando…', 'también en calma (donde no hay satélite)');
+  p.win.TVAgent.render(snap({ state: 'think', turns: turn({ you: 'Pon la tele', youFinal: true, tools: [{ id: 'a', kind: 'tv', title: 'Tele', detail: '', status: 'run' }] }) }));
+  assert.equal(st(), '', 'una ficha ya dice qué hace');
+  p.win.TVAgent.render(snap({ state: 'think', turns: turn({ you: 'Hola', youFinal: true, jota: 'Hola' }) }));
+  assert.equal(st(), '');
+  p.win.TVAgent.render(snap());
+  assert.equal(st(), '', 'hablando, nada');
+  assert.ok(!p.host().shadowRoot.all().some(n => n.getAttribute('role') === 'log' && n.textContent.includes('Pensando')), 'fuera de la región accesible');
+});
+
 test('fichas: se crean una vez por tool.id y solo cambia su estado (giro → check)', () => {
   const p = loadPage();
   const A = p.win.TVAgent;

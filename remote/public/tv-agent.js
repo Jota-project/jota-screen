@@ -238,8 +238,14 @@ ${NO_BACKDROP}{-webkit-backdrop-filter:none;backdrop-filter:none}
 .w[data-form=pill] .u{font-size:${u(30)}}
 .u:empty,.j:empty,.hint:empty{display:none}
 .hint{font:400 ${u(26)}/1.3 var(--tv-sans);color:var(--t-soft)}
+/* lo que hace Jota, en palabras, junto al orbe (a 3 m el orbe solo no se distingue; en calma, sin satélite, es lo único) */
+.st{font:400 ${u(26)}/1.3 var(--tv-sans);color:var(--t-soft);margin-left:${u(20)};white-space:nowrap}
+.st:empty{display:none}
 /* el turno anterior se atenúa por color, nunca por opacidad */
 .tn:not(:last-child) :is(.u,.j,.hint){color:var(--t-old)}
+/* y pesa menos que el actual: a 3 m se ve de un vistazo cuál es la respuesta de ahora */
+.tn:not(:last-child) .j{font-size:${u(30)}}
+.tn:not(:last-child) .u{font-size:${u(26)}}
 /* panel → píldora: el contenido sale (opacidad y desenfoque), viaja oculto y vuelve a entrar ya en la píldora */
 .log{transition:opacity ${MORPH.normal.in}ms var(--tv-ease),filter ${MORPH.normal.in}ms var(--tv-ease)}
 .w[data-morph=out] .log{opacity:0;filter:blur(${u(MORPH.normal.blur)});transition-duration:${MORPH.normal.out}ms}
@@ -258,13 +264,13 @@ ${NO_BACKDROP}{-webkit-backdrop-filter:none;backdrop-filter:none}
 @keyframes fadeIn{from{opacity:0}}
 
 /* orbe: escucha (anillo), piensa (satélite), error (ámbar con «!»); solo respira mientras escucha o piensa */
-.orbe{position:relative;width:${u(48)};height:${u(48)};flex:none}
+.orbe{position:relative;width:${u(64)};height:${u(64)};flex:none}
 ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:breathe 3.4s ease-in-out infinite}
-.w[data-form=pill] .orbe{width:${u(44)};height:${u(44)}}
+.w[data-form=pill] .orbe{width:${u(56)};height:${u(56)}}
 .orbe i{position:absolute;inset:0;border-radius:50%;
   background:radial-gradient(circle at 34% 28%,${LOOK.orbLight},var(--la) 52%,var(--lb) 125%);
-  box-shadow:0 0 ${u(30)} color-mix(in srgb,var(--la) 55%,transparent),0 0 0 calc(var(--ring, 0) * ${u(18)}) color-mix(in srgb,var(--tv-accent) 16%,transparent)}
-.orbe::after{content:"";position:absolute;left:50%;top:50%;width:${u(11)};height:${u(11)};margin:${u(-5.5)};border-radius:50%;
+  box-shadow:0 0 ${u(30)} color-mix(in srgb,var(--la) 55%,transparent),0 0 0 calc(var(--ring, 0) * ${u(26)}) color-mix(in srgb,var(--tv-accent) 30%,transparent)}
+.orbe::after{content:"";position:absolute;left:50%;top:50%;width:${u(16)};height:${u(16)};margin:${u(-8)};border-radius:50%;
   background:var(--tv-accent);opacity:0;transition:opacity .5s}
 .w[data-state=think] .orbe::after{opacity:1;animation:sat 3.1s linear infinite}
 .w[data-form=pill][data-state=think] .orbe::after{animation-name:sat2}
@@ -274,8 +280,8 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
   box-shadow:0 0 0 ${u(6)} color-mix(in srgb,var(--warn) 25%,transparent)}
 .w[data-night] .orbe i{background:radial-gradient(circle at 34% 28%,${LOOK.night.orb[0]},${LOOK.night.orb[1]} 70%);box-shadow:none}
 @keyframes breathe{50%{transform:scale(1.06)}}
-@keyframes sat{to{transform:rotate(360deg) translateY(${u(-34)})}}
-@keyframes sat2{to{transform:rotate(360deg) translateY(${u(-28)})}}
+@keyframes sat{to{transform:rotate(360deg) translateY(${u(-44)})}}
+@keyframes sat2{to{transform:rotate(360deg) translateY(${u(-38)})}}
 
 /* fichas de herramienta: icono, título, detalle y giro → check o «!» ámbar */
 .tcs{display:flex;flex-direction:column;align-items:flex-start;gap:${u(12)}}
@@ -520,8 +526,8 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     const sheet = el('div', 'sheet');
     const sd = restoring ? ' sd' : ''; // restaurada: la cabecera y el log ya estaban
     sheet.setAttribute('aria-hidden', 'true'); // el texto accesible va en la región role=log
-    const hd = el('div', 'hd' + sd), orb = el('div', 'orbe'), ring = el('i');
-    orb.appendChild(ring); hd.appendChild(orb);
+    const hd = el('div', 'hd' + sd), orb = el('div', 'orbe'), ring = el('i'), st = el('span', 'st');
+    orb.appendChild(ring); hd.append(orb, st);
     const log = el('div', 'log' + sd);
     sheet.append(hd, log);
     const sr = el('div', 'sr'); sr.setAttribute('role', 'log'); sr.setAttribute('aria-live', 'polite');
@@ -530,7 +536,7 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     root.appendChild(w);
     parent.appendChild(host);
     lift(false);
-    dom = { root, w, halo, body, sheet, hd, orb, ring, log, sr, alert };
+    dom = { root, w, halo, body, sheet, hd, orb, ring, st, log, sr, alert };
     grab(body);
     edge = null; amp = 0; radius = 0; drift = 0; curId = null; lastSig = ''; seed = restoring;
     turns.clear(); // host nuevo (la página lo quitó, o tras cerrar): los turnos se vuelven a pintar desde la foto
@@ -642,6 +648,8 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     setForm(s.form); setData(w, 'ctx', s.ctx); setData(w, 'state', s.state); setData(w, 'tier', tierNow());
     setFlag(w, 'data-night', s.night);
     setFlag(w, 'data-calm', calmNow());
+    const label = stateLabel(s);
+    if (dom.st.textContent !== label) dom.st.textContent = label;
     const [la, lb] = s.colors || LOOK.orb;
     if (w.style.getPropertyValue('--la') !== la) w.style.setProperty('--la', la);
     if (w.style.getPropertyValue('--lb') !== lb) w.style.setProperty('--lb', lb);
@@ -678,6 +686,13 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
       }
       speak(v, t, current && s.live);
     });
+  }
+  // «Te escucho…» hasta tu primera palabra y «Pensando…» hasta la primera suya (o una ficha, que ya dice qué hace)
+  function stateLabel(s) {
+    const t = s.turns[s.turns.length - 1];
+    if (s.state === 'listen' && !(t && t.you)) return 'Te escucho…';
+    if (s.state === 'think' && !(t && (t.jota || t.tools.length))) return 'Pensando…';
+    return '';
   }
   // cambia el turno actual: el aviso de un fallo anterior ya no vale y el nivel medido entra ahora (no a media frase)
   function newTurn(id) {

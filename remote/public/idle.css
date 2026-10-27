@@ -36,6 +36,8 @@ body{font-family:var(--sans);color:var(--text);-webkit-font-smoothing:antialiase
    en body ni #dx porque el host del cristal cuelga de body: un filter/transform en un ancestro suyo rompería el
    backdrop-filter */
 html.tv-agent-talk #dy{transform:scale(.985);filter:brightness(.82)}
+/* el contexto (tiempo, agenda) quedaría a medias bajo el cristal: se va mientras habla Jota */
+html.tv-agent-talk #wCtx{opacity:0}
 
 /* ── rejilla 12×6 */
 #grid{position:absolute;inset:var(--my) var(--mx);display:grid;grid-template-columns:repeat(12,minmax(0,1fr));grid-template-rows:repeat(6,minmax(0,1fr));gap:var(--gap)}
