@@ -155,7 +155,7 @@ function onTalk(j) {
   const rep = $('#rep');
   // la parcial es la frase acumulada mientras se habla: sustituye sin animar (las palabras animadas, para la final)
   if (j.ev === 'partial') { const q = $('#agQ'); q.classList.remove('said'); q.textContent = j.text || ''; return; }
-  if (j.ev === 'final') { player.stop(); said(j.text || ''); lastAsk = j.text || ''; return; }   // si falla, se repite por escrito   // los frames de la respuesta anterior ya no valen
+  if (j.ev === 'final') { player.stop(); said(j.text || ''); lastAsk = j.text || ''; return; }   // los frames de la respuesta anterior ya no valen; si falla, se repite por escrito
   if (j.ev === 'voice') { onVoice(j); return; }
   // la respuesta acumulada, en directo (con voz, la pinta la voz)
   if (j.ev === 'token') { talking = out !== 'none'; voxText = j.text || ''; if (!vox) { rep.className = 'rep'; rep.textContent = voxText; } stage('wait'); return; }
@@ -179,11 +179,12 @@ function onTalk(j) {
 }
 /** Parar: el turno y el audio (aquí y en la tele) y la tele se limpia. */
 function stop() {
-  buzz(8); voiceEnd(true); player.stop(); noQuit(); talking = false; asked++;
+  buzz(8); voiceEnd(true); player.stop(); noQuit(); talking = false;
+  const me = ++asked;
   const st = $('#agS').dataset.st;
   if (st === 'wait') { const rep = $('#rep'); rep.className = 'rep'; rep.textContent = STOPPED; stage('idle'); }
   acts();
-  rpc({ t: 'stop' }).then(r => { if (r && r.error && r.error !== 'sin respuesta') fail(r.error, false); });
+  rpc({ t: 'stop' }).then(r => { if (me === asked && r && r.error && r.error !== 'sin respuesta') fail(r.error, false); });   // con otra pregunta ya en vuelo, no la pisa
 }
 
 export const agent = {
@@ -211,7 +212,7 @@ export const agent = {
     onWs('bin', b => player.play(b));
     mic = voice.init({ stage, said, rep, press: () => { cut(); voiceReset(); out = outSel(); asked++; talking = false; lastAsk = ''; retry = false; }, focus: () => { buzz(8); agin.focus(); } });
     $('#agStop').addEventListener('click', stop);
-    $('#agRetry').addEventListener('click', () => { buzz(8); if (lastAsk) ask(lastAsk); });
+    $('#agRetry').addEventListener('click', () => { buzz(8); if (lastAsk) { ask(lastAsk); $('#agStop').focus(); } });   // se oculta: el foco pasa a Parar (sin sacar el teclado)
     $('#agHide').addEventListener('click', () => { buzz(7); noQuit(); acts(); cmd({ t: 'hide' }); });
     // sin micrófono propio (http): el orbe enfoca el campo y el teclado del móvil trae el suyo
     if (!mic) $('#agOrb').addEventListener('click', () => { buzz(8); agin.focus(); });

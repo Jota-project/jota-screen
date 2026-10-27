@@ -80,7 +80,7 @@ function level(pcm) {
 
 /** Un trozo de 100 ms del worklet: en memoria mientras puede ser un toque; luego, al servidor. @param {Float32Array} pcm */
 function chunk(pcm) {
-  meter(level(pcm));
+  if (held) meter(level(pcm));                        // lo que llega tras soltar ya no mueve el orbe
   if (started) sendBin(pcm); else pending.push(pcm);
 }
 
