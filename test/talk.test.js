@@ -793,7 +793,7 @@ test('tool con ficha: la vista recibe tool al start y toolEnd al end; y la ficha
   t.gw.emit({ type: 'token', turnId: 'a', text: 'Listo.' }); t.gw.emit({ type: 'turn_end', turnId: 'a' });
   await p;
   assert.deepEqual(t.views.filter(v => v[0] === 'tool' || v[0] === 'toolEnd'), [
-    ['tool', { id: 'c1', kind: 'volume', title: 'Volumen', detail: 'Volumen 30 %' }],
+    ['tool', { id: 'c1', kind: 'volume', title: 'Volumen', detail: '30 %' }],
     ['toolEnd', { id: 'c1', ok: false }],
   ]);
   assert.ok(!t.msgs.some(m => m.ev === 'tool'), 'al móvil no se le manda nada nuevo');

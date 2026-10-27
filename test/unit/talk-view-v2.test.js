@@ -934,14 +934,18 @@ test('20 tokens en 50 ms producen una sola llamada a render', async t => {
   assert.equal(last(cdp).turns.at(-1).jota, reply);
 });
 
-test('durante el turno se atenúa la isla de actividades (dim(0)); hide() la quita ya, avisa a onHide y descarta lo pendiente', async t => {
+test('la isla de actividades: a la vista con el panel (dim(1)), apartada bajo la píldora (dim(0)); hide() la quita ya, avisa a onHide y descarta lo pendiente', async t => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const { cdp, v } = make();
   let told = 0;
   v.onHide(() => told++);
-  v.turn('panel'); v.you('hola', true); v.jota('buenas'); v.done();
+  v.turn('panel'); v.you('hola', true);
   await step(t);
-  assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(0)'));
+  assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(1)'), 'panel: la isla se ve');
+  v.turn('island'); v.you('hola', true); v.jota('buenas'); v.done();
+  await step(t);
+  assert.equal(last(cdp).form, 'pill');
+  assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(0)'), 'píldora: ocupa su sitio');
   v.hide(); await flushMicro();
   assert.equal(hidesOf(cdp), 1);
   assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(1)'));

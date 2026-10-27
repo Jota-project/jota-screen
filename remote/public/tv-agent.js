@@ -141,7 +141,7 @@
   const SERIF_STACK = `"${FONT_SERIF}","Fraunces",Georgia,serif`;
   const SANS_STACK = `"${FONT_SANS}",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif`;
   // animaciones de entrada: al acabar, su elemento queda marcado (.sd) y no se repiten
-  const ENTRY_ANIMS = new Set(['wIn', 'wInCalm', 'fadeIn', 'bud']);
+  const ENTRY_ANIMS = new Set(['wIn', 'wInCalm', 'fadeIn', 'bud', 'draw']);
   const CHECK_D = 'M5 12.5l4.5 4.5L19 7.5';
   const SVG_NS = 'http://www.w3.org/2000/svg';
   // primitivas y atributos permitidos en los iconos que manda el servidor (datos, no HTML)
@@ -303,6 +303,10 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
   border-top-color:var(--tv-accent);animation:rot 1s linear infinite}
 @keyframes rot{to{transform:rotate(360deg)}}
 .ss svg{width:100%;height:100%;stroke:var(--tv-accent);fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round}
+/* el check se dibuja (pathLength 1); sin la animación (calma, restaurada) queda dibujado */
+.ss path{stroke-dasharray:1;animation:draw .32s var(--tv-ease) backwards}
+@keyframes draw{from{stroke-dashoffset:1}}
+.w[data-calm] .ss path{animation:none}
 .x{display:grid;place-items:center;width:100%;height:100%;border-radius:50%;background:var(--warn);color:var(--ink);
   font:500 ${u(24)}/1 var(--tv-sans)}
 /* ficha pequeña: la anterior del turno, las de turnos anteriores y todas en la píldora (sin detalle) */
@@ -933,7 +937,11 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
     c.status = status;
     c.el.dataset.status = status;
     if (status === 'run') c.ss.replaceChildren(el('div', 'spin'));
-    else if (status === 'ok') { const s = svg(), p = document.createElementNS(SVG_NS, 'path'); p.setAttribute('d', CHECK_D); s.appendChild(p); c.ss.replaceChildren(s); }
+    else if (status === 'ok') {
+      const s = svg(), p = document.createElementNS(SVG_NS, 'path');
+      p.setAttribute('d', CHECK_D); p.setAttribute('pathLength', '1'); if (restoring) p.setAttribute('class', 'sd');
+      s.appendChild(p); c.ss.replaceChildren(s);
+    }
     else c.ss.replaceChildren(el('div', 'x', '!'));
     if (status !== 'run') kick(PULSE.event);
   }

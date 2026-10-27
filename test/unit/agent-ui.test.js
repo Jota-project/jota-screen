@@ -65,7 +65,7 @@ test('detalle de cada herramienta', () => {
   assert.deepEqual(c('tv_activity', { title: 'Pasta', seconds: 600 }), { kind: 'timer', title: 'Temporizador', detail: 'Pasta · 10 min' });
   assert.equal(c('tv_activity', { op: 'list' }), null);
   assert.equal(c('tv_activity', { op: 'end', id: 'x' }).title, 'Quitar aviso');
-  assert.deepEqual(c('tv_volume', { action: 'set', level: 30 }), { kind: 'volume', title: 'Volumen', detail: 'Volumen 30 %' });
+  assert.deepEqual(c('tv_volume', { action: 'set', level: 30 }), { kind: 'volume', title: 'Volumen', detail: '30 %' });
   assert.equal(c('tv_volume', { action: 'up' }).detail, 'Subir');
   assert.deepEqual(c('tv_power', { state: 'off' }), { kind: 'screen', title: 'Apagar la tele', detail: '' });
   assert.deepEqual(c('tv_source', { source: 'tv' }), { kind: 'screen', title: 'Cambiar de entrada', detail: 'Tele' });

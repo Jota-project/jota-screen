@@ -100,7 +100,7 @@ const BUILDERS = {
     return { kind: 'timer', title: a.seconds > 0 ? 'Temporizador' : 'Aviso en la tele', detail: join(clip(a.title, room), mins) };
   },
   tv_volume: a => {
-    const detail = a.action === 'set' ? `Volumen ${Math.round(Math.min(100, Math.max(0, Number(a.level ?? 50) || 0)))} %` : VOLUME_STEPS[a.action] || '';
+    const detail = a.action === 'set' ? `${Math.round(Math.min(100, Math.max(0, Number(a.level ?? 50) || 0)))} %` : VOLUME_STEPS[a.action] || '';
     return { kind: 'volume', title: 'Volumen', detail };
   },
   tv_power: a => ({ kind: 'screen', title: a.state === 'off' ? 'Apagar la tele' : 'Encender la tele', detail: '' }),

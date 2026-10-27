@@ -34,7 +34,9 @@ const { KINDS } = require('../features/agent-ui');
 const { CTXS, GLASS, COLOR_RE, FORM_BINDING, HOST_ID } = require('./agent-contract');
 const { CONTENT_HOSTS, AGENT_LAYOUT_TTL_MS, FORCED_SOURCES, cleanForm, contentKey, decideForm } = require('./agent-form');
 
-const DIM_ON = 'window.TVIsland&&window.TVIsland.dim(0)';
+// la isla de actividades (arriba en el centro) se aparta solo bajo la píldora, que va en su sitio; con el panel (a la
+// derecha) sigue a la vista: un temporizador que acaba no se queda escondido mientras habla Jota
+const dimOn = (/** @type {string} */ form) => `window.TVIsland&&window.TVIsland.dim(${form === 'pill' ? 0 : 1})`;
 // la isla de actividades vuelve a 1 aunque hide falle
 const HIDE = 'try{window.TVAgent&&window.TVAgent.hide()}finally{window.TVIsland&&window.TVIsland.dim(1)}';
 /** Quita en seco (sin fundido) la capa de la pestaña que se deja: ya no se ve y, al volver, se restaura de cero. */
@@ -401,7 +403,7 @@ function createTalkView({ cdp, pub, batchMs = 100, log = () => {}, context, onAs
     if (inj && !s) return Promise.resolve();
     const enter = restoreNext || retry === true ? 'restore' : 'open';   // el reintento es por una página nueva sin aviso
     const snap = first || payload(l, enter);
-    const expr = `(()=>{${s ? s + '\n;' : ''}if(!window.TVAgent)return false;window.TVAgent.render(${JSON.stringify(snap)});${DIM_ON};return true})()`;
+    const expr = `(()=>{${s ? s + '\n;' : ''}if(!window.TVAgent)return false;window.TVAgent.render(${JSON.stringify(snap)});${dimOn(snap.form)};return true})()`;
     if (inj) injected = true;
     painted = true;
     restoreNext = false;
