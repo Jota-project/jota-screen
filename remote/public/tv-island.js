@@ -55,6 +55,8 @@
 `;
   const NS = 'http://www.w3.org/2000/svg';
   let host, root, row, list = [], off = 0, timer = null, dim = 1, side = false;
+  // si la capa del agente ya pidió apartarla antes de que existiera (talk-view.js la deja en __tvIslandDim), se respeta
+  if (Array.isArray(window.__tvIslandDim)) { dim = Number(window.__tvIslandDim[0]) || 0; side = !!window.__tvIslandDim[1]; }
   const nodes = new Map();   // id -> {el, kind:'pill'|'mini'}
   const expUntil = new Map(); // id -> ms
   const seen = new Map();     // id -> updated
@@ -158,7 +160,7 @@
         e.classList.toggle('done', !!a.done);
       } else {
         setIcon(e.querySelector('.mi'), a);
-        setRing(e.querySelector('svg'), f);
+        setRing(e.querySelector('.ring'), f);   // el anillo, no el icono
       }
     });
     clearTimeout(timer);

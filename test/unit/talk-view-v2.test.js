@@ -945,7 +945,7 @@ test('la isla de actividades: a la vista con el panel (dim(1)), apartada bajo la
   v.turn('island'); v.you('hola', true); v.jota('buenas'); v.done();
   await step(t);
   assert.equal(last(cdp).form, 'pill');
-  assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(0)'), 'píldora: ocupa su sitio');
+  assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(0,false)') && cdp.exprs.at(-1).includes('window.__tvIslandDim=[0,false]'), 'píldora: ocupa su sitio (y queda apuntado para una isla que llegue después)');
   v.hide(); await flushMicro();
   assert.equal(hidesOf(cdp), 1);
   assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(1)'));

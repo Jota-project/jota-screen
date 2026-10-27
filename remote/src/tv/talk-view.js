@@ -36,11 +36,12 @@ const { CONTENT_HOSTS, AGENT_LAYOUT_TTL_MS, FORCED_SOURCES, cleanForm, contentKe
 
 // la isla de actividades (arriba en el centro) se aparta solo bajo la píldora, que va en su sitio; con el panel (a la
 // derecha) sigue a la vista, centrada a su izquierda: un temporizador que acaba no se queda escondido mientras habla Jota
-const dimOn = (/** @type {string} */ form) => `window.TVIsland&&window.TVIsland.dim(${form === 'pill' ? '0' : '1,true'})`;
+// (y lo deja apuntado en la página: la isla que se inyecte después lo lee al nacer)
+const dimOn = (/** @type {string} */ form) => { const a = form === 'pill' ? '0,false' : '1,true'; return `window.__tvIslandDim=[${a}];window.TVIsland&&window.TVIsland.dim(${a})`; };
 // la isla de actividades vuelve a 1 aunque hide falle
-const HIDE = 'try{window.TVAgent&&window.TVAgent.hide()}finally{window.TVIsland&&window.TVIsland.dim(1)}';
+const HIDE = 'try{window.TVAgent&&window.TVAgent.hide()}finally{window.__tvIslandDim=null;window.TVIsland&&window.TVIsland.dim(1)}';
 /** Quita en seco (sin fundido) la capa de la pestaña que se deja: ya no se ve y, al volver, se restaura de cero. */
-const LEAVE_HIDE = 'try{window.TVAgent&&window.TVAgent.hide(true)}finally{window.TVIsland&&window.TVIsland.dim(1)}';
+const LEAVE_HIDE = 'try{window.TVAgent&&window.TVAgent.hide(true)}finally{window.__tvIslandDim=null;window.TVIsland&&window.TVIsland.dim(1)}';
 /** Palabras que enseña ya cada turno en la pestaña que se deja ({ id: [tú, Jota] }), o null. */
 const REVEALED = '(()=>{try{return window.TVAgent&&typeof window.TVAgent.revealed==="function"?window.TVAgent.revealed():null}catch(e){return null}})()';
 const FROM_WAIT_MS = 100;                    // lo que se espera esa respuesta antes de pintar sin ella

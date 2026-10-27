@@ -75,8 +75,9 @@ const island = (p, acts) => p.evaluate(([src, a, t]) => { (0, eval)(src); window
     await overlay(b, vp, 'isla-recogida', async p => { await island(p, [timer, music, live]); await p.waitForTimeout(7000); }); n++;
     await overlay(b, vp, 'isla-con-panel', async p => {
       await p.evaluate(([src, s]) => { (0, eval)(src); window.TVAgent.render(s); }, [agentSource(PUB), PANEL]);
+      // lo que deja talk-view.js con el panel a la vista; la isla llega después y lo lee al nacer
+      await p.evaluate(() => { window.__tvIslandDim = [1, true]; });
       await island(p, [timer]);
-      await p.evaluate(() => window.TVIsland.dim(1, true));   // lo que hace talk-view.js con el panel a la vista
       await p.waitForTimeout(1500);
     }); n++;
     await overlay(b, vp, 'emparejar', async p => { await p.evaluate(`(${pairInPage})(${JSON.stringify({ code: '4821', name: 'iPhone de Ana', tok: readTokens(PUB) })})`); await p.waitForTimeout(400); }); n++;

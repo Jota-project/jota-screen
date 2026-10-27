@@ -113,16 +113,17 @@ function pairInPage(o) {
   const old = document.getElementById('__tvpair'); if (old) old.remove();
   if (!o) return;
   const host = document.fullscreenElement || document.documentElement;
-  const u = n => `calc(${n} * var(--u))`;
+  // sin tokens (no se pudieron leer), los valores de Jota Dusk de reserva
+  const u = n => `calc(${n} * var(--u, min(calc(100vw / 1920), calc(100vh / 1080))))`;
   const b = document.createElement('div'); b.id = '__tvpair';
   b.style.cssText = (o.tok || '') + ';position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(10,8,14,.78);' +
-    'font-family:var(--tv-sans);color:var(--tv-text);text-align:center;-webkit-font-smoothing:antialiased';
+    'font-family:var(--tv-sans, system-ui, sans-serif);color:var(--tv-text, #ddd6d0);text-align:center;-webkit-font-smoothing:antialiased';
   const c = document.createElement('div');
-  c.style.cssText = `background:var(--tv-surface);border-radius:${u(32)};padding:${u(44)} ${u(64)};box-shadow:var(--tv-shadow-float)`;
-  const k = document.createElement('div'); k.textContent = 'Nuevo mando'; k.style.cssText = `font-size:${u(22)};letter-spacing:.18em;text-transform:uppercase;color:var(--tv-accent);font-weight:500`;
-  const n = document.createElement('div'); n.textContent = o.name + ' quiere conectarse'; n.style.cssText = `font-size:${u(28)};margin-top:${u(10)};color:var(--tv-text-soft)`;
+  c.style.cssText = `background:var(--tv-surface, #1d1825);border-radius:${u(32)};padding:${u(44)} ${u(64)};box-shadow:var(--tv-shadow-float, 0 12px 40px rgba(0,0,0,.45))`;
+  const k = document.createElement('div'); k.textContent = 'Nuevo mando'; k.style.cssText = `font-size:${u(22)};letter-spacing:.18em;text-transform:uppercase;color:var(--tv-accent, #c3b7e3);font-weight:500`;
+  const n = document.createElement('div'); n.textContent = o.name + ' quiere conectarse'; n.style.cssText = `font-size:${u(28)};margin-top:${u(10)};color:var(--tv-text-soft, #bab2c4)`;
   const d = document.createElement('div'); d.textContent = o.code.split('').join(' '); d.style.cssText = `font-size:${u(120)};font-weight:500;letter-spacing:.06em;margin:${u(22)} 0 ${u(6)};font-variant-numeric:tabular-nums`;
-  const h = document.createElement('div'); h.textContent = 'Escribe este código en el mando'; h.style.cssText = `font-size:${u(22)};color:var(--tv-text-soft)`;
+  const h = document.createElement('div'); h.textContent = 'Escribe este código en el mando'; h.style.cssText = `font-size:${u(22)};color:var(--tv-text-soft, #bab2c4)`;
   c.append(k, n, d, h); b.appendChild(c); host.appendChild(b);
   b.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220 });
 }
