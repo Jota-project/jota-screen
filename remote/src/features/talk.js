@@ -88,11 +88,11 @@ const NO_SPEAKER = { start() {}, write() {}, end() {}, stop() {} };
  *            onForm?: (fn: (form: 'pill' | 'panel', canSwitch: boolean) => void) => void,
  *            form?: () => { form: 'pill' | 'panel', canSwitch: boolean }, voice?: (v: object | null) => void },
  *   speaker?: { start: () => void, write: (pcm: Buffer) => void, end: () => void, stop: () => void, onIdle?: (fn: () => void) => void },
- *   log?: { info: Function, warn: Function }, finalMs?: number, turnIdleMs?: number, maxVoiceMs?: number, audioTailMs?: number, playMarginMs?: number,
+ *   log?: { info: Function, warn: Function }, finalMs?: number, heardTailMs?: number, turnIdleMs?: number, maxVoiceMs?: number, audioTailMs?: number, playMarginMs?: number,
  *   noVoiceMs?: number, speakerLatencyMs?: number,
  * }} deps
  */
-module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker = NO_SPEAKER, log = { info() {}, warn() {} }, finalMs = 8000, turnIdleMs = 150000, maxVoiceMs = 32000, audioTailMs = 3000, playMarginMs = 300,
+module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker = NO_SPEAKER, log = { info() {}, warn() {} }, finalMs = 8000, heardTailMs = 2000, turnIdleMs = 150000, maxVoiceMs = 32000, audioTailMs = 3000, playMarginMs = 300,
   noVoiceMs = NO_VOICE_MS, speakerLatencyMs = SPEAKER_LATENCY_MS }) {
   const { askPrefix: ASK_PREFIX, askGuest: ASK_GUEST } = prompts(cfg.NAME, cfg.OWNER);
   /** El turno en curso: quién preguntó, el id que le da el Gateway (tras turn_start) y la respuesta acumulada.
@@ -102,7 +102,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
    *  `cards`: ids de sus llamadas a herramienta que la vista pinta como ficha (solo esas reciben toolEnd).
    *  `held`: eventos `tool` que llegan mientras `maybeGhost` (aún puede ser el parado): a la vista solo si el turno resulta nuestro.
    *  @type {null | { ws: any, turnId: string | null, sent: boolean, reply: string, timer: any, finish: (r: object) => void,
-   *    voice?: 'rec' | 'wait' | 'sent', out?: string, seq?: number, mode?: string, who?: string, cap?: any, waitTimer?: any, heard?: boolean, maybeGhost?: boolean,
+   *    voice?: 'rec' | 'wait' | 'sent', out?: string, seq?: number, mode?: string, who?: string, cap?: any, waitTimer?: any, phrases?: string[], heard?: boolean, maybeGhost?: boolean,
    *    cards?: Set<string>, held?: any[], frames?: number, peak?: number }} */
   let turn = null;
   /** La cola del audio: el TTS puede seguir llegando tras turn_end. Con el `seq` del turno acabado, sigue sonando hasta que pasan
@@ -367,25 +367,36 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
   function onVoice(ev) {
     const t = /** @type {NonNullable<typeof turn>} */ (turn);
     switch (ev.type) {
-      case 'partial':
-        tell(t.ws, { ev: 'partial', text: ev.text });
-        v('you', ev.text, false);
+      case 'partial': {
+        const text = heardWith(t, ev.text);                // lo ya confirmado en pausas anteriores, y lo que se está diciendo
+        tell(t.ws, { ev: 'partial', text });
+        v('you', text, false);
         return;
+      }
       case 'final': {
-        if (t.voice !== 'wait') return;                    // la final solo vale tras vend
-        const text = String(ev.text || '').trim().slice(0, 1000);
-        if (!text) return fail(NOT_HEARD);
-        clearTimeout(t.waitTimer);
-        t.voice = 'sent';
-        tell(t.ws, { ev: 'final', text });
-        v('you', text, true);
-        t.sent = true; arm();
-        gw.send(prefix(t.mode || 'full', t.who || '') + text);
-        return;
+        const text = String(ev.text || '').trim();
+        // grabando: el VAD del STT confirma cada frase al hacer una pausa; se guarda y se manda todo junto tras vend
+        if (t.voice === 'rec') { if (text) (t.phrases || (t.phrases = [])).push(text); return; }
+        if (t.voice !== 'wait') return;
+        const all = heardWith(t, text);
+        if (!all) return fail(NOT_HEARD);
+        return sendHeard(t, all);
       }
       case 'down': fail(DOWN); return;
       default: return;
     }
+  }
+
+  /** Las frases confirmadas en las pausas y, detrás, `text`. @param {NonNullable<typeof turn>} t @param {string} [text] */
+  function heardWith(t, text) { return [...(t.phrases || []), String(text || '').trim()].filter(Boolean).join(' ').slice(0, 1000); }
+  /** La frase de un turno por voz, ya entera: al móvil, a la tele y al Gateway. @param {NonNullable<typeof turn>} t @param {string} text */
+  function sendHeard(t, text) {
+    clearTimeout(t.waitTimer);
+    t.voice = 'sent';
+    tell(t.ws, { ev: 'final', text });
+    v('you', text, true);
+    t.sent = true; arm();
+    gw.send(prefix(t.mode || 'full', t.who || '') + text);
   }
 
   gw.on(ev => {
@@ -494,7 +505,14 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     if (!t || t.voice !== 'rec' || t.ws !== ws) return { error: 'no hay grabación' };
     t.voice = 'wait'; clearTimeout(t.cap);
     // trozos y pico (dBFS, como la compuerta de energía del Gateway, -45): 0 trozos = el móvil no manda; pico bajo = micro mudo
-    t.waitTimer = setTimeout(() => { if (turn === t) { log.warn(`talk: sin final (${t.frames || 0} trozos, pico ${(t.peak ?? -Infinity).toFixed(1)} dBFS)`); fail(NOT_HEARD); } }, finalMs);
+    // con frases ya confirmadas en pausas puede no llegar otra final (no queda audio sin confirmar): se espera poco y se
+    // manda lo oído; sin nada oído, la final de siempre o «No te he entendido»
+    const had = heardWith(t);
+    t.waitTimer = setTimeout(() => {
+      if (turn !== t || t.voice !== 'wait') return;
+      if (had) return sendHeard(t, had);
+      log.warn(`talk: sin final (${t.frames || 0} trozos, pico ${(t.peak ?? -Infinity).toFixed(1)} dBFS)`); fail(NOT_HEARD);
+    }, had ? heardTailMs : finalMs);
     if (t.waitTimer.unref) t.waitTimer.unref();
     gw.end();
     return { ok: 1 };

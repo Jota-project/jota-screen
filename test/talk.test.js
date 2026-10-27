@@ -10,7 +10,7 @@ const { WebSocket } = require(path.join(__dirname, '..', 'remote', 'node_modules
 
 const PERMS = { full: { agent: 'full', admin: true }, guest: { agent: 'guest' }, off: { agent: 'off' } };
 
-function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalMs, maxVoiceMs, audioTailMs = 20, playMarginMs, log, noVoiceMs, speakerLatencyMs } = {}) {
+function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalMs, heardTailMs, maxVoiceMs, audioTailMs = 20, playMarginMs, log, noVoiceMs, speakerLatencyMs } = {}) {
   const subs = new Set(), sent = [], views = [], audio = [], ends = [], bins = [], spk = [], cancels = [], voices = [];
   const gw = {
     ensure: async () => { if (slowEnsure) await new Promise(r => setTimeout(r, 20)); return ensure; }, send: t => sent.push(t), audio: b => audio.push(b), end: () => ends.push(1), on: fn => { subs.add(fn); return () => subs.delete(fn); },
@@ -32,7 +32,7 @@ function make({ ensure = true, media = 0, turnIdleMs, slowEnsure = false, finalM
   const speaker = Object.fromEntries(['start', 'write', 'end', 'stop'].map(k => [k, (...a) => spk.push([k, ...a])]));
   speaker.stop = () => { spk.push(['stop']); onIdle(); };
   speaker.onIdle = fn => { onIdle = fn; };
-  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, speaker, log, turnIdleMs, finalMs, maxVoiceMs, audioTailMs, playMarginMs, noVoiceMs, speakerLatencyMs });
+  const talk = createTalk({ gw, cfg: { NAME: 'Salón', OWNER: 'Alfonso' }, media: () => media, view, speaker, log, turnIdleMs, finalMs, heardTailMs, maxVoiceMs, audioTailMs, playMarginMs, noVoiceMs, speakerLatencyMs });
   const msgs = [];
   const ws = { readyState: WebSocket.OPEN, send: s => (Buffer.isBuffer(s) ? bins.push(s) : msgs.push(JSON.parse(s))) };
   const perm = { current: 'full' };
@@ -219,6 +219,39 @@ test('partial → ev:partial al móvil y view.you(text,false); vend → gw.end()
   assert.deepEqual(t.msgs.slice(-2), [{ t: 'talk', ev: 'done', reply: 'Hecho.' }, { t: 'talk', ev: 'silent' }], 'sin audio: silent al momento');
   assert.equal(t.views.at(-1)[0], 'done');
   assert.equal(t.talk.busy(), false);
+});
+
+test('pausas: las finales que llegan grabando (el VAD del STT cierra cada frase) se juntan y se mandan enteras', async () => {
+  // sin final tras vend (todo estaba ya confirmado): a los heardTailMs se manda lo oído, no «No te he entendido»
+  const t = make({ finalMs: 500, heardTailMs: 30 });
+  await t.vcmd({ t: 'vstart' });
+  t.gw.emit({ type: 'partial', text: 'Hola, ¿qué tal?' });
+  t.gw.emit({ type: 'final', text: 'Hola, ¿qué tal?' });
+  t.gw.emit({ type: 'partial', text: '¿Me oyes?' });
+  assert.deepEqual(t.msgs.at(-1), { t: 'talk', ev: 'partial', text: 'Hola, ¿qué tal? ¿Me oyes?' }, 'la parcial sigue a lo ya oído');
+  t.gw.emit({ type: 'final', text: '¿Me oyes?' });
+  t.gw.emit({ type: 'final', text: '  ' });                 // una final vacía grabando no rompe nada
+  await t.vcmd({ t: 'vend' });
+  assert.equal(t.sent.length, 0);
+  await sleep(60);
+  assert.deepEqual(t.msgs.at(-1), { t: 'talk', ev: 'final', text: 'Hola, ¿qué tal? ¿Me oyes?' });
+  assert.deepEqual(t.sent, [createTalk.prompts('Salón', 'Alfonso').askPrefix + 'Hola, ¿qué tal? ¿Me oyes?']);
+  await sleep(500);
+  assert.notEqual(t.msgs.at(-1).ev, 'error', 'el temporizador de «sin final» ya no salta');
+  // con final tras vend (lo último que se dijo), va detrás de lo oído
+  const u = make({ finalMs: 500, heardTailMs: 300 });
+  await u.vcmd({ t: 'vstart' });
+  u.gw.emit({ type: 'final', text: 'Hola.' });
+  await u.vcmd({ t: 'vend' });
+  u.gw.emit({ type: 'final', text: 'Pon jazz.' });
+  assert.deepEqual(u.sent, [createTalk.prompts('Salón', 'Alfonso').askPrefix + 'Hola. Pon jazz.']);
+  // la vacía tras vend tampoco tira lo oído
+  const w = make({ finalMs: 500, heardTailMs: 300 });
+  await w.vcmd({ t: 'vstart' });
+  w.gw.emit({ type: 'final', text: 'Hola.' });
+  await w.vcmd({ t: 'vend' });
+  w.gw.emit({ type: 'final', text: '' });
+  assert.deepEqual(w.sent, [createTalk.prompts('Salón', 'Alfonso').askPrefix + 'Hola.']);
 });
 
 test('voz de invitado: el prefijo es el del socket que hizo vstart', async () => {
