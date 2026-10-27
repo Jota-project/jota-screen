@@ -1,18 +1,26 @@
+/* Plantillas del escenario (tpl-*.html y lo que pinte el agente con tv_present): Jota Dusk como el reposo. Los nombres
+   de siempre (--bg, --fg, --mut, --acc…) siguen valiendo para el HTML del agente, pero salen de los tokens de la tele.
+   Medidas en --u (1 px de la tele de 1920×1080). */
+@import url(/shared/fonts.css);
+@import url(/shared/tokens-tv.css);
 :root{
-  --bg:#0a0c10;--bg2:#10141b;--fg:#f3f6fb;--mut:#8e98a8;--line:rgba(255,255,255,.09);
-  --acc:#7cc4ff;--ok:#5fe3a1;--warn:#ffb86b;
-  --ease:cubic-bezier(.2,.8,.2,1);
+  --bg:#211b2a;--fg:var(--tv-text);--mut:var(--tv-text-soft);--line:var(--tv-track-2);
+  --acc:var(--tv-accent);--ok:#9fd8b8;--warn:#e8b26a;
+  --ease:var(--tv-ease);
 }
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;overflow:hidden;cursor:default}
 body{
-  font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;color:var(--fg);
-  background:radial-gradient(1200px 700px at 78% -10%,rgba(124,196,255,.10),transparent 60%),
-             radial-gradient(900px 600px at -10% 110%,rgba(95,227,161,.07),transparent 55%),var(--bg);
+  font:500 calc(28 * var(--u))/1.35 var(--tv-sans);color:var(--fg);
+  /* las dos luces del reposo (malva y cielo), quietas */
+  background:radial-gradient(calc(1200 * var(--u)) calc(700 * var(--u)) at 78% -10%,rgba(124,106,174,.22),transparent 60%),
+             radial-gradient(calc(900 * var(--u)) calc(600 * var(--u)) at -10% 110%,rgba(110,140,196,.14),transparent 55%),var(--bg);
   -webkit-font-smoothing:antialiased;
 }
+/* títulos en Fraunces (corte de display: van grandes), el resto en Inter */
+h1,.big{font-family:var(--tv-serif);font-weight:420;letter-spacing:-.015em}
 .mut{color:var(--mut)}
-@keyframes rise{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
+@keyframes rise{from{opacity:0;transform:translateY(calc(18 * var(--u)))}to{opacity:1;transform:none}}
 @keyframes fade{from{opacity:0}to{opacity:1}}
 @keyframes pop{0%{transform:scale(.6);opacity:0}60%{transform:scale(1.08)}100%{transform:scale(1);opacity:1}}
 @keyframes pulse{0%{transform:scale(.9);opacity:.55}100%{transform:scale(1.55);opacity:0}}

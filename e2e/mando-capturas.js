@@ -48,7 +48,6 @@ const PAGE = { targetId: 'P1', type: 'page', url: 'https://www.youtube.com/watch
 const SID = 'S-P1';
 const UA = 'Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36';
 
-const FRAUNCES = require.resolve('@fontsource-variable/fraunces/files/fraunces-latin-full-normal.woff2', { paths: [__dirname, ...(process.env.NODE_PATH || '').split(':').filter(Boolean)] });
 const ART = '<svg xmlns="http://www.w3.org/2000/svg" width="300" height="300"><defs><linearGradient id="g" x2="0" y2="1">' +
   '<stop offset="0" stop-color="#2a1a5e"/><stop offset="1" stop-color="#9a3a8a"/></linearGradient></defs>' +
   '<rect width="300" height="300" fill="url(#g)"/><circle cx="150" cy="140" r="80" fill="#f07a5a"/><rect y="215" width="300" height="85" fill="#14284e"/></svg>';
@@ -162,9 +161,6 @@ async function newPage({ token, theme, name, landscape }) {
     const u = new URL(q.url());
     if (q.method() === 'POST' && u.host === new URL(srv.base).host) page.__http.push(`POST ${u.pathname} ${q.postData() || ''}`);
   });
-  await ctx.route(/fonts\.googleapis\.com/, r => r.fulfill({ contentType: 'text/css',
-    body: "@font-face{font-family:Fraunces;font-weight:100 900;src:url(https://fonts.gstatic.com/fraunces.woff2) format('woff2')}" }));
-  await ctx.route(/fonts\.gstatic\.com/, r => r.fulfill({ contentType: 'font/woff2', body: fs.readFileSync(FRAUNCES) }));
   await ctx.route(/i\.scdn\.co/, r => r.fulfill({ contentType: 'image/svg+xml', body: ART }));
   return page;
 }

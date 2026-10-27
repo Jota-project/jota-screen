@@ -49,7 +49,6 @@ const ONLY = arg('--solo') ? arg('--solo').split(',') : null;
 const outArg = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : null;
 const OUT = path.resolve(outArg || path.join(__dirname, 'capturas-agente', 'pestanas'));
 const VIDEOS = path.resolve(arg('--videos') || OUT);
-const FRAUNCES = require.resolve('@fontsource-variable/fraunces/files/fraunces-latin-full-normal.woff2');
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(VIDEOS, { recursive: true });
 
 const SRC = (...p) => require(path.join(ROOT, 'remote', 'src', ...p));
@@ -209,9 +208,6 @@ const r0 = n => Math.round(n);
     const ctx = await browser.newContext({ viewport: { width: SZ.w, height: SZ.h }, screen: { width: SZ.w, height: SZ.h }, timezoneId: 'Europe/Madrid',
       ...(video ? { recordVideo: { dir: path.join(OUT, 'tmp-video'), size: { width: SZ.w, height: SZ.h } } } : {}) });
     await ctx.addInitScript(probe, SAMPLES_MAX);
-    await ctx.route(/fonts\.googleapis\.com/, x => x.fulfill({ contentType: 'text/css',
-      body: "@font-face{font-family:Fraunces;font-weight:100 900;src:url(https://fonts.gstatic.com/fraunces.woff2) format('woff2')}" }));
-    await ctx.route(/fonts\.gstatic\.com/, x => x.fulfill({ contentType: 'font/woff2', body: fs.readFileSync(FRAUNCES) }));
     const errs = [], ev = [], t0 = Date.now();
     const mark = (k, v) => ev.push({ at: Date.now(), k, v });
     const R = { browser, ctx, errs, ev, mark, t0, tabs: /** @type {Record<string, any>} */ ({}) };

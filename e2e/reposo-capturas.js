@@ -1,7 +1,7 @@
 // Capturas de la pantalla en reposo (remote/public/idle.html) con datos de ejemplo, sin servidor ni tele.
 // Uso: cd e2e && npm install && node reposo-capturas.js [carpeta-salida]   (CHROME=/ruta para otro navegador)
 // Saca cada distribución en sus tres escenas, más sin música, título largo, tarde y noche, a 1920×1080.
-// Fraunces se sirve desde @fontsource-variable/fraunces; Inter usa la del sistema si está instalada.
+// Fraunces e Inter salen de remote/public/fonts (shared/fonts.css), como en la tele.
 'use strict';
 const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path');
@@ -11,7 +11,6 @@ const PUB = path.join(__dirname, '..', 'remote', 'public');
 let IDLE_CSP = null;
 try { ({ IDLE_CSP } = require(path.join(__dirname, '..', 'remote', 'src', 'transport', 'static.js'))); } catch { console.warn('sin remote/src: capturas sin CSP'); }
 const OUT = path.resolve(process.argv[2] || path.join(__dirname, 'capturas'));
-const FRAUNCES = require.resolve('@fontsource-variable/fraunces/files/fraunces-latin-full-normal.woff2');
 fs.mkdirSync(OUT, { recursive: true });
 
 // carátula sintética: un SVG con un sol, para no depender de imágenes reales
@@ -49,9 +48,6 @@ RUNS.push({ name: 'apilada-0-noche', data: base({ profile: 'night', acts: [], mu
     const p = await b.newPage({ viewport: { width: 1920, height: 1080 } });
     p.on('pageerror', e => errs.push(r.name + ': ' + e.message));
     p.on('console', m => { if (m.type() === 'error' && /Content Security Policy/.test(m.text())) errs.push(r.name + ': ' + m.text()); });
-    await p.route(/fonts\.googleapis\.com/, x => x.fulfill({ contentType: 'text/css',
-      body: "@font-face{font-family:Fraunces;font-weight:100 900;src:url(https://fonts.gstatic.com/fraunces.woff2) format('woff2')}" }));
-    await p.route(/fonts\.gstatic\.com/, x => x.fulfill({ contentType: 'font/woff2', body: fs.readFileSync(FRAUNCES) }));
     await p.goto(`http://127.0.0.1:${srv.address().port}/`);
     await p.evaluate(d => { d.now = Date.now(); onData(d); }, r.data); // eslint-disable-line no-undef
     await p.waitForTimeout(3000);

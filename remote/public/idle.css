@@ -11,9 +11,8 @@
   --ease:var(--tv-ease);
   --text:var(--tv-text);--clock:#d9d1dc;--clock2:#b3a7cf;--soft:var(--tv-text-soft);--accent:var(--tv-accent);--track:var(--tv-track);
   --serif:var(--tv-serif);--sans:var(--tv-sans);
-  /* unidad de escala: 1 px de la tele de 1920×1080. Todo se mide en múltiplos de ella, así que el reposo se ve igual en
-     cualquier pantalla (a 1280×720, la tele de 1920×1080 con --force-device-scale-factor=1.5, cada --u vale 0,67 px) */
-  --u:min(calc(100vw / 1920), calc(100vh / 1080));
+  /* la unidad de escala --u (1 px de la tele de 1920×1080) viene de tokens-tv.css; a 1280×720 (la tele con
+     --force-device-scale-factor=1.5) cada --u vale 0,67 px */
   /* margen (también área segura contra el sobrebarrido: al menos 5 % del ancho y 6 % del alto) y separación de la rejilla */
   --mx:max(calc(96 * var(--u)), 5vw);--my:max(calc(96 * var(--u)), 6vh);--gap:calc(48 * var(--u));
 }

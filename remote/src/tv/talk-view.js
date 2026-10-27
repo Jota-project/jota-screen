@@ -35,8 +35,8 @@ const { CTXS, GLASS, COLOR_RE, FORM_BINDING, HOST_ID } = require('./agent-contra
 const { CONTENT_HOSTS, AGENT_LAYOUT_TTL_MS, FORCED_SOURCES, cleanForm, contentKey, decideForm } = require('./agent-form');
 
 // la isla de actividades (arriba en el centro) se aparta solo bajo la píldora, que va en su sitio; con el panel (a la
-// derecha) sigue a la vista: un temporizador que acaba no se queda escondido mientras habla Jota
-const dimOn = (/** @type {string} */ form) => `window.TVIsland&&window.TVIsland.dim(${form === 'pill' ? 0 : 1})`;
+// derecha) sigue a la vista, centrada a su izquierda: un temporizador que acaba no se queda escondido mientras habla Jota
+const dimOn = (/** @type {string} */ form) => `window.TVIsland&&window.TVIsland.dim(${form === 'pill' ? '0' : '1,true'})`;
 // la isla de actividades vuelve a 1 aunque hide falle
 const HIDE = 'try{window.TVAgent&&window.TVAgent.hide()}finally{window.TVIsland&&window.TVIsland.dim(1)}';
 /** Quita en seco (sin fundido) la capa de la pestaña que se deja: ya no se ve y, al volver, se restaura de cero. */

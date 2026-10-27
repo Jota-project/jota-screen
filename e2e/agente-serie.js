@@ -47,7 +47,6 @@ const ONLY = arg('--solo') ? arg('--solo').split(',') : null;
 const outArg = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : null;
 const OUT = path.resolve(outArg || path.join(__dirname, 'capturas-agente', 'serie'));
 const VIDEOS = path.resolve(arg('--videos') || OUT);
-const FRAUNCES = require.resolve('@fontsource-variable/fraunces/files/fraunces-latin-full-normal.woff2');
 fs.mkdirSync(OUT, { recursive: true }); fs.mkdirSync(VIDEOS, { recursive: true });
 
 const TV = (...p) => require(path.join(ROOT, 'remote', 'src', 'tv', ...p));
@@ -234,9 +233,6 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     p.on('console', m => { if (m.type() === 'error' && !/WebSocket connection to/.test(m.text())) errs.push(m.text()); });
     // sin reloj fijo: el hueco tras navegar se mide con performance.now() contra el paint timing (los dos de verdad)
     await p.addInitScript(probe, SAMPLES_MAX);
-    await p.route(/fonts\.googleapis\.com/, x => x.fulfill({ contentType: 'text/css',
-      body: "@font-face{font-family:Fraunces;font-weight:100 900;src:url(https://fonts.gstatic.com/fraunces.woff2) format('woff2')}" }));
-    await p.route(/fonts\.gstatic\.com/, x => x.fulfill({ contentType: 'font/woff2', body: fs.readFileSync(FRAUNCES) }));
     const s = await ctx.newCDPSession(p);
     const cdp = { ready: true, session: 'e2e', call: (m, params) => s.send(m, params) };
     const state = { media: -1, scroll: null, url: base() + '/', path: '/' };

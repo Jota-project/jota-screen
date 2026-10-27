@@ -8,12 +8,16 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { FONT_SERIF, FONT_SANS } = require('./agent-contract');
+const { KINDS } = require('../features/agent-ui');
+
+// iconos de la isla por tipo de actividad (src/features/idle.js): los de las fichas del agente
+const ISLAND_ICONS = JSON.stringify({ timer: KINDS.timer.icon, music: KINDS.music.icon });
 
 const TOKENS = path.join('shared', 'tokens-tv.css');
 const ISLAND = 'tv-island.js';
 const AGENT = 'tv-agent.js';
-// fuentes de la capa del agente: la que falte en public/ no se manda (y la capa usa su pila de reserva). Inter no está
-// vendorizada aún: se pone aquí con su OFL y entra sola (la capa ya la pide con FONT_SANS)
+// fuentes de la capa del agente (las mismas de shared/fonts.css): la que falte en public/ no se manda (y la capa usa su
+// pila de reserva)
 const AGENT_FONTS = Object.freeze([
   { family: FONT_SERIF, file: path.join('fonts', 'fraunces-latin-opsz-normal.woff2'), weight: '100 900' },
   { family: FONT_SANS, file: path.join('fonts', 'inter-latin-wght-normal.woff2'), weight: '100 900' },
@@ -37,13 +41,15 @@ function readTokens(pubDir) {
 }
 
 /**
- * Fuente de la isla tal como se evalúa en la página: los tokens en `__TV_TOKENS` y detrás tv-island.js.
+ * Fuente de la isla tal como se evalúa en la página: los tokens en `__TV_TOKENS`, sus iconos en `__TV_ICONS` y detrás
+ * tv-island.js.
  * Se relee en cada llamada, como antes, para que un cambio en public/ se vea sin reiniciar.
  * @param {string} pubDir carpeta public/
  * @returns {string}
  */
 function islandSource(pubDir) {
-  return withTokens(pubDir, ISLAND);
+  return 'var __TV_TOKENS=' + JSON.stringify(readTokens(pubDir)) + ';\nvar __TV_ICONS=' + ISLAND_ICONS + ';\n' +
+    fs.readFileSync(path.join(pubDir, ISLAND), 'utf8');
 }
 
 /**

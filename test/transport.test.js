@@ -33,7 +33,7 @@ test('reposo: CSP sin \'unsafe-inline\'; su CSS y su JS van en ficheros', async 
   const r = await s.get('/idle.html');
   const csp = r.headers.get('content-security-policy');
   assert.doesNotMatch(csp, /unsafe-inline/);
-  assert.match(csp, /style-src 'self' https:\/\/fonts\.googleapis\.com;/);
+  assert.match(csp, /style-src 'self'; font-src 'self'/);   // fuentes propias, sin Google
   assert.match(csp, /script-src 'self';/);
   const html = await r.text();
   assert.doesNotMatch(html, /<style\b/i, 'sin <style> en línea');
@@ -54,7 +54,7 @@ test('mando: CSP sin \'unsafe-inline\'; su CSS y su JS van en ficheros', async (
   const r = await s.get('/');
   const csp = r.headers.get('content-security-policy');
   assert.doesNotMatch(csp, /unsafe-inline|unsafe-eval/);
-  assert.match(csp, /style-src 'self' https:\/\/fonts\.googleapis\.com;/);
+  assert.match(csp, /style-src 'self'; font-src 'self'/);   // fuentes propias, sin Google
   assert.match(csp, /script-src 'self';/);
   assert.match(csp, /object-src 'none'; frame-ancestors 'none'/);
   const html = await r.text();
@@ -65,7 +65,7 @@ test('mando: CSP sin \'unsafe-inline\'; su CSS y su JS van en ficheros', async (
   for (const tag of html.match(/<script\b[^>]*>/gi) || []) assert.match(tag, /\bsrc=/, 'sin <script> en línea: ' + tag);
   assert.match(html, /<link rel="stylesheet" href="\/mando\/styles\/mando\.css">/);
   // el tema, clásico y bloqueante en el <head> antes del CSS (para que no parpadee); la app, módulo ES al final del <body>
-  assert.match(html, /<script src="\/mando\/theme\.js"><\/script>\n<link rel="preconnect"/);
+  assert.match(html, /<script src="\/mando\/theme\.js"><\/script>\n<link rel="stylesheet" href="\/shared\/fonts\.css">/);
   assert.match(html, /<script type="module" src="\/mando\/app\.js"><\/script>\n<\/body>/);
   for (const [p, type] of [['/mando/styles/mando.css', /^text\/css/], ['/mando/theme.js', /^text\/javascript/], ['/mando/app.js', /^text\/javascript/]]) {
     const f = await s.get(p);

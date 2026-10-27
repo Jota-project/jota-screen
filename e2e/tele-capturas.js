@@ -11,7 +11,7 @@ const ROOT = path.join(__dirname, '..');
 const PUB = path.join(ROOT, 'remote', 'public');
 const OUT = path.resolve(process.argv[2] || path.join(__dirname, 'capturas-tele'));
 const { STAGE_CSP } = require(path.join(ROOT, 'remote', 'src', 'transport', 'static.js'));
-const { islandSource, agentSource } = require(path.join(ROOT, 'remote', 'src', 'tv', 'tokens.js'));
+const { islandSource, agentSource, readTokens } = require(path.join(ROOT, 'remote', 'src', 'tv', 'tokens.js'));
 const { pairInPage } = require(path.join(ROOT, 'remote', 'src', 'tv', 'devices.js'));
 fs.mkdirSync(OUT, { recursive: true });
 
@@ -75,9 +75,11 @@ const island = (p, acts) => p.evaluate(([src, a, t]) => { (0, eval)(src); window
     await overlay(b, vp, 'isla-recogida', async p => { await island(p, [timer, music, live]); await p.waitForTimeout(7000); }); n++;
     await overlay(b, vp, 'isla-con-panel', async p => {
       await p.evaluate(([src, s]) => { (0, eval)(src); window.TVAgent.render(s); }, [agentSource(PUB), PANEL]);
-      await island(p, [timer]); await p.waitForTimeout(1500);
+      await island(p, [timer]);
+      await p.evaluate(() => window.TVIsland.dim(1, true));   // lo que hace talk-view.js con el panel a la vista
+      await p.waitForTimeout(1500);
     }); n++;
-    await overlay(b, vp, 'emparejar', async p => { await p.evaluate(`(${pairInPage})(${JSON.stringify({ code: '4821', name: 'iPhone de Ana' })})`); await p.waitForTimeout(400); }); n++;
+    await overlay(b, vp, 'emparejar', async p => { await p.evaluate(`(${pairInPage})(${JSON.stringify({ code: '4821', name: 'iPhone de Ana', tok: readTokens(PUB) })})`); await p.waitForTimeout(400); }); n++;
   }
   await b.close(); srv.close();
   for (const e of errs) console.log('✗ ' + e);

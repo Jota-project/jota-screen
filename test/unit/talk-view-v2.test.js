@@ -941,7 +941,7 @@ test('la isla de actividades: a la vista con el panel (dim(1)), apartada bajo la
   v.onHide(() => told++);
   v.turn('panel'); v.you('hola', true);
   await step(t);
-  assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(1)'), 'panel: la isla se ve');
+  assert.ok(cdp.exprs.at(-1).includes('window.TVIsland&&window.TVIsland.dim(1,true)'), 'panel: la isla se ve, a su izquierda');
   v.turn('island'); v.you('hola', true); v.jota('buenas'); v.done();
   await step(t);
   assert.equal(last(cdp).form, 'pill');

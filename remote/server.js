@@ -20,6 +20,7 @@ const createAccessCommands = require('./src/auth/commands');
 const createPairRoutes = require('./src/auth/pair-http');
 const { createCdp } = require('./src/tv/cdp');
 const { createPointer, createAudio, createPairScreen } = require('./src/tv/devices');
+const { readTokens } = require('./src/tv/tokens');
 const { createPagePoll } = require('./src/tv/page-poll');
 const { createAndroidTv } = require('./src/tv/android-tv');
 const { createGatewayClient } = require('./src/gateway/client');
@@ -109,7 +110,8 @@ const pagePoll = createPagePoll({ cdp, state, broadcast, watched: () => ws.clien
   active: () => talkView.watching(), onPlayback: on => talkView.playback(on) });
 
 // ───────────────────────── acceso: token maestro, dispositivos, roles y emparejamiento
-const tvPair = createPairScreen(cdp); // el código de emparejar se pinta encima de lo que haya en la tele
+// el código de emparejar se pinta encima de lo que haya en la tele, con sus tokens (si no se leen, su pila de reserva)
+const tvPair = createPairScreen(cdp, () => { try { return readTokens(PUB); } catch { return ''; } });
 acc = createAccess({ files: CFG.FILES, adminUrl: CFG.ADMIN_URL, log, sessions: sessions.forAccess, tv: tvPair });
 const limiter = createRateLimiter({ max: 5, ms: 60_000 }); // 5 fallos -> 60 s bloqueada esa IP
 

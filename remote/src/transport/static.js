@@ -8,15 +8,15 @@ const crypto = require('node:crypto');
 const { TYPES, send } = require('./http-util');
 
 // el mando: su CSS y su JS van en ficheros (mando/styles/mando.css, mando/theme.js, mando/app.js), así que nada en línea;
-// solo las fuentes de Jota Dusk (Fraunces, Inter) vienen de Google, como en el reposo
-const CSP = "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'; " +
+// las fuentes de Jota Dusk (Fraunces, Inter) también son nuestras (public/fonts, shared/fonts.css), como en el reposo
+const CSP = "default-src 'self'; style-src 'self'; font-src 'self'; script-src 'self'; " +
   "connect-src 'self' ws: wss:; img-src 'self' data: https://*.scdn.co https://*.spotifycdn.com; media-src 'self' data: blob:; manifest-src 'self'; base-uri 'none'; " +
   "form-action 'none'; object-src 'none'; frame-ancestors 'none'";
 // páginas del escenario: pueden cargar imágenes, fuentes, vídeo y librerías de internet, pero no hablar con otros servicios
 const STAGE_CSP = "default-src 'self' https: data: blob:; style-src 'self' 'unsafe-inline' https:; script-src 'self' 'unsafe-inline' https:; " +
   "img-src * data: blob:; media-src * data: blob:; font-src * data:; connect-src 'self'; base-uri 'none'; form-action 'none'";
 // el reposo: su CSS y su JS van en ficheros (idle.css, idle-app.js, shared/tokens-tv.css), así que nada en línea
-const IDLE_CSP = "default-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; " +
+const IDLE_CSP = "default-src 'self'; style-src 'self'; font-src 'self' data:; " +
   "script-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; connect-src 'self' ws:; base-uri 'none'; form-action 'none'";
 
 // rutas que ya tienen dueño: una carpeta de public/ con ese nombre quedaría tapada (o taparía la ruta)

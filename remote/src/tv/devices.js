@@ -106,27 +106,31 @@ function createPlaybackWatch({ dwellMs = PLAYBACK_DWELL_MS, minArea = PLAYBACK_M
   };
 }
 
-// ── código de emparejar en la tele: se pinta encima de lo que haya (también a pantalla completa)
+// ── código de emparejar en la tele: se pinta encima de lo que haya (también a pantalla completa), en Jota Dusk: `o.tok`
+// son los tokens de la tele (shared/tokens-tv.css, como a la isla), puestos en el propio elemento porque la web de debajo
+// no los tiene. Las medidas, en --u (1 px de la tele de 1920×1080)
 function pairInPage(o) {
   const old = document.getElementById('__tvpair'); if (old) old.remove();
   if (!o) return;
   const host = document.fullscreenElement || document.documentElement;
+  const u = n => `calc(${n} * var(--u))`;
   const b = document.createElement('div'); b.id = '__tvpair';
-  b.style.cssText = 'position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(5,7,10,.78);font-family:system-ui,sans-serif;color:#f3f6fb;text-align:center';
+  b.style.cssText = (o.tok || '') + ';position:fixed;inset:0;z-index:2147483647;display:grid;place-items:center;background:rgba(10,8,14,.78);' +
+    'font-family:var(--tv-sans);color:var(--tv-text);text-align:center;-webkit-font-smoothing:antialiased';
   const c = document.createElement('div');
-  c.style.cssText = 'background:#12161c;border:1px solid rgba(255,255,255,.14);border-radius:28px;padding:44px 64px;box-shadow:0 30px 90px rgba(0,0,0,.6)';
-  const k = document.createElement('div'); k.textContent = 'Nuevo mando'; k.style.cssText = 'font-size:22px;letter-spacing:.18em;text-transform:uppercase;color:#8ba7ff;font-weight:650';
-  const n = document.createElement('div'); n.textContent = o.name + ' quiere conectarse'; n.style.cssText = 'font-size:28px;margin-top:10px;opacity:.85';
-  const d = document.createElement('div'); d.textContent = o.code.split('').join(' '); d.style.cssText = 'font-size:120px;font-weight:800;letter-spacing:.06em;margin:22px 0 6px;font-variant-numeric:tabular-nums';
-  const h = document.createElement('div'); h.textContent = 'Escribe este código en el mando'; h.style.cssText = 'font-size:22px;opacity:.6';
+  c.style.cssText = `background:var(--tv-surface);border-radius:${u(32)};padding:${u(44)} ${u(64)};box-shadow:var(--tv-shadow-float)`;
+  const k = document.createElement('div'); k.textContent = 'Nuevo mando'; k.style.cssText = `font-size:${u(22)};letter-spacing:.18em;text-transform:uppercase;color:var(--tv-accent);font-weight:500`;
+  const n = document.createElement('div'); n.textContent = o.name + ' quiere conectarse'; n.style.cssText = `font-size:${u(28)};margin-top:${u(10)};color:var(--tv-text-soft)`;
+  const d = document.createElement('div'); d.textContent = o.code.split('').join(' '); d.style.cssText = `font-size:${u(120)};font-weight:500;letter-spacing:.06em;margin:${u(22)} 0 ${u(6)};font-variant-numeric:tabular-nums`;
+  const h = document.createElement('div'); h.textContent = 'Escribe este código en el mando'; h.style.cssText = `font-size:${u(22)};color:var(--tv-text-soft)`;
   c.append(k, n, d, h); b.appendChild(c); host.appendChild(b);
   b.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 220 });
 }
-/** @param {{ ready: boolean, session: string | null, call: Function }} cdp */
-function createPairScreen(cdp) {
+/** @param {{ ready: boolean, session: string | null, call: Function }} cdp @param {() => string} [tok] los tokens de la tele */
+function createPairScreen(cdp, tok = () => '') {
   return {
     ready: () => !!(cdp.ready && cdp.session),
-    showCode: (code, name) => cdp.call('Runtime.evaluate', { expression: `(${pairInPage})(${JSON.stringify({ code, name })})` }).catch(() => {}),
+    showCode: (code, name) => cdp.call('Runtime.evaluate', { expression: `(${pairInPage})(${JSON.stringify({ code, name, tok: tok() })})` }).catch(() => {}),
     hideCode: () => { cdp.call('Runtime.evaluate', { expression: `(${pairInPage})(null)` }).catch(() => {}); },
   };
 }

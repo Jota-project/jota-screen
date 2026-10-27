@@ -20,13 +20,14 @@ const PAGE_FUNCTION_FILES = [
   'remote/src/tv/{devices,talk-view}.js',
   'e2e/mando-capturas.js',
   'e2e/reposo-solapes.js',
+  'e2e/tele-capturas.js',
 ];
 
 module.exports = [
   {
     ignores: [
       '**/node_modules/',
-      'e2e/capturas/', 'e2e/capturas-mando/', // salida de las capturas (e2e/*-capturas.js)
+      'e2e/capturas/', 'e2e/capturas-mando/', 'e2e/capturas-tele/', // salida de las capturas (e2e/*-capturas.js)
       'tmp/', 'stage/', 'backup/', 'chrome-profile/', 'spotify/', // estado local (ver .gitignore)
       '.claude/',
     ],
@@ -70,8 +71,8 @@ module.exports = [
     languageOptions: { sourceType: 'module' },
   },
   {
-    // tv-island.js lee los colores que src/tv/tokens.js pone delante al inyectarla en la página
+    // tv-island.js lee los colores y los iconos que src/tv/tokens.js pone delante al inyectarla en la página
     files: ['remote/public/tv-island.js'],
-    languageOptions: { globals: { __TV_TOKENS: 'readonly' } },
+    languageOptions: { globals: { __TV_TOKENS: 'readonly', __TV_ICONS: 'readonly' } },
   },
 ];

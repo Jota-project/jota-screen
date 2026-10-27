@@ -12,7 +12,6 @@ const http = require('http'), fs = require('fs'), path = require('path');
 const PUB = path.resolve(process.env.REPOSO_PUBLIC || path.join(__dirname, '..', 'remote', 'public'));
 let IDLE_CSP = null;
 try { ({ IDLE_CSP } = require(path.join(__dirname, '..', 'remote', 'src', 'transport', 'static.js'))); } catch { console.warn('sin remote/src: prueba sin CSP'); }
-const FRAUNCES = require.resolve('@fontsource-variable/fraunces/files/fraunces-latin-full-normal.woff2');
 const arg = n => { const i = process.argv.indexOf(n); return i > 0 ? process.argv[i + 1] : null; };
 const SHOTS = arg('--capturas') ? path.resolve(arg('--capturas')) : null;
 if (SHOTS) fs.mkdirSync(SHOTS, { recursive: true });
@@ -187,9 +186,6 @@ function check(m) {
       await p.addInitScript(() => { Math.random = () => 0.5; });
       p.on('pageerror', e => errs.push(tag + ': ' + e.message));
       p.on('console', m => { if (m.type() === 'error' && /Content Security Policy/.test(m.text())) errs.push(tag + ': ' + m.text()); });
-      await p.route(/fonts\.googleapis\.com/, x => x.fulfill({ contentType: 'text/css',
-        body: "@font-face{font-family:Fraunces;font-weight:100 900;src:url(https://fonts.gstatic.com/fraunces.woff2) format('woff2')}" }));
-      await p.route(/fonts\.gstatic\.com/, x => x.fulfill({ contentType: 'font/woff2', body: fs.readFileSync(FRAUNCES) }));
       await p.goto(`http://127.0.0.1:${srv.address().port}/`);
       // «rotar» (la distribución con la que arranca, así que no hay reacomodo animado) recorre las 9 escenas:
       // margen 0–2, zonas 0–2 y apilada 0–2; TVIdle.place coloca cada una al momento

@@ -28,7 +28,6 @@ const arg = n => { const i = process.argv.indexOf(n); return i > 0 ? process.arg
 const ONLY = arg('--solo') ? arg('--solo').split(',') : null;
 const outArg = process.argv[2] && !process.argv[2].startsWith('--') ? process.argv[2] : null;
 const OUT = path.resolve(outArg || path.join(__dirname, 'capturas-agente'));
-const FRAUNCES = require.resolve('@fontsource-variable/fraunces/files/fraunces-latin-full-normal.woff2');
 fs.mkdirSync(OUT, { recursive: true });
 
 // la fuente tal como la inyecta el servidor (tokens delante); si aún no existe agentSource, se arma igual que él
@@ -244,9 +243,6 @@ const LOOK = (() => {
     p.on('console', m => { if (m.type() === 'error' && !/WebSocket connection to/.test(m.text())) errs.push(m.text()); });
     await p.clock.setFixedTime(NOW);
     await p.addInitScript(() => { Math.random = () => 0.5; });
-    await p.route(/fonts\.googleapis\.com/, x => x.fulfill({ contentType: 'text/css',
-      body: "@font-face{font-family:Fraunces;font-weight:100 900;src:url(https://fonts.gstatic.com/fraunces.woff2) format('woff2')}" }));
-    await p.route(/fonts\.gstatic\.com/, x => x.fulfill({ contentType: 'font/woff2', body: fs.readFileSync(FRAUNCES) }));
     await p.goto(base() + c.url);
     if (c.url === '/') await p.evaluate(d => window.onData(d), idleData(NOW, c, night)); // onData: global de idle-app.js
     await p.evaluate(() => document.fonts.ready);

@@ -1,4 +1,5 @@
-/* Jota Dusk para la tele: los valores que comparten el reposo (idle.html) y la isla de Live Activities (tv-island.js).
+/* Jota Dusk para la tele: los valores que comparten el reposo (idle.html), el escenario (stage.css) y la isla de Live
+   Activities (tv-island.js). --u: 1 px de la tele de 1920×1080 (en cualquier pantalla todo se mide en múltiplos de ella).
    Un solo bloque :root de declaraciones simples: el servidor lo lee tal cual y se lo inyecta a la isla (src/tv/tokens.js). */
 :root{
   --tv-text:#ddd6d0;
@@ -12,6 +13,7 @@
   --tv-shadow-float:0 0 0 1px rgba(246,243,240,.08),0 12px 40px rgba(0,0,0,.45);
   --tv-serif:"Fraunces",Georgia,serif;
   --tv-sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --u:min(calc(100vw / 1920), calc(100vh / 1080));
   --tv-ease:cubic-bezier(.32,.72,0,1);
   --tv-pulse:1.6s;
   --tv-tick:1s;
