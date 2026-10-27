@@ -34,5 +34,9 @@
 :root{
   --serif:"Fraunces",Georgia,serif;--sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   --ease:cubic-bezier(.32,.72,0,1);  /* ease-salon, como --tv-ease */
+  /* radios: una escala (los botones, en --r-m; las cápsulas, 999px) */
+  --r-s:12px;--r-m:16px;--r-l:24px;--r-xl:32px;
+  /* sombras: lo que se levanta un poco (carátulas, tarjetas) y lo que flota (avisos, carátula grande); --shadow es del tema */
+  --shadow-1:0 10px 26px var(--shadow);--shadow-2:0 18px 50px var(--shadow);
   --malva:#7c6aae;--cielo:#6e8cc4;    /* las luces del reposo */
 }
