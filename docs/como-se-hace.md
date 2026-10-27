@@ -126,7 +126,9 @@ ninguna carpeta de `public/` lo tape. Pruebas: `test/transport.test.js` (contrat
 Se cambian en `remote/public/shared/tokens-tv.css` (Jota Dusk de la tele): un solo bloque `:root{…}` de declaraciones
 simples, sin nada fuera. El reposo lo enlaza (`idle.html`) y la isla lo recibe del servidor delante de
 `tv-island.js` (`src/tv/tokens.js`). No poner colores sueltos en `tv-island.js` (`test/unit/tv.test.js` lo vigila).
-El mando (`shared/tokens-mando.css`) y las plantillas del escenario (`stage.css`) tienen sus propios tokens. Como los
+Las plantillas del escenario (`stage.css`) importan `tokens-tv.css` y sacan de ahí sus nombres de siempre (`--fg`, `--acc`…);
+el mando tiene los suyos (`shared/tokens-mando.css`). Las fuentes (Fraunces e Inter, OFL) están en `public/fonts/` y
+las declara `shared/fonts.css`: nada se pide a Google. Como los
 estáticos se cargan al arrancar, en la tele el reposo cambia tras reiniciar `jota-screen`. Comprobar con las capturas
 del reposo.
 

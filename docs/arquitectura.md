@@ -437,8 +437,8 @@ Nunca se reinicia solo. A mano, lo mismo: `systemctl --user restart jota-screen-
   `shared/tokens-tv.css` como texto (`__TV_TOKENS`), y por eso ese fichero debe tener un solo bloque `:root{…}` de
   declaraciones simples. La isla se relee en cada inyección; el reposo, no (va por estáticos).
 - El mando tiene sus propios tokens en `shared/tokens-mando.css` (mismos valores de base que la tele: tinta, malva,
-  cielo, Fraunces y ease-salon) y las plantillas del escenario los suyos en `stage.css`; `tokens-tv.css` es solo de la
-  tele (reposo e isla).
+  cielo, Fraunces y ease-salon); las plantillas del escenario (`stage.css`) importan los de la tele. `tokens-tv.css` es de la
+  tele (reposo, escenario e isla).
 - **Ambiente del mando**: con el reposo en pantalla, el mensaje `state` lleva `amb` (perfil y dos colores `[h, s, l]` de
   la carátula, de `idle.js`, que avisa con `onAmbient` solo si cambian). `mando/features/ambient.js` decide el color de
   las luces (reposo, carátula o app por su dominio) y lo recorta en luminancia para que el texto secundario no baje de
