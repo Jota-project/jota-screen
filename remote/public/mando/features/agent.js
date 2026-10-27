@@ -24,6 +24,7 @@ let out = 'tv';                                         // dónde suena la respu
 let quit = false, quitT = 0;                            // «Quitar de la tele» disponible (la tele aún enseña la respuesta)
 let talking = false;                                    // Jota responde con voz (del primer token a `silent`, `stopped` o `error`)
 let asked = 0;                                          // número de la pregunta: el resultado de una ya sustituida no se pinta
+let lastAsk = '', retry = false;                         // la última pregunta en texto (escrita o ya transcrita) y si se ofrece repetirla
 /** La voz sincronizada de la respuesta en curso (`at`: cuándo llegó, para avanzar la cabeza) o null.
  *  @type {{ anchors: [number, number][], rate: number, head: number, upto: number, at: number } | null} */
 let vox = null;
@@ -54,9 +55,10 @@ export function voiceWords(text, c) {
   return { words: ws.slice(0, vis).map(m => m[0]), said };
 }
 
-/** Los botones de la respuesta: Parar y Quitar de la tele. */
+/** Los botones de la respuesta: Parar, Quitar de la tele y, tras un error, Reintentar. */
 function acts() {
   const st = $('#agS').dataset.st, playing = player.playing();
+  $('#agRetry').hidden = !(retry && st === 'idle');
   $('#agStop').hidden = !(st === 'wait' || talking || playing);
   $('#agHide').hidden = !(quit && st === 'done' && !talking && !playing);
 }
@@ -121,12 +123,20 @@ function voiceEnd(show) {
   if (rep.dataset.voice !== undefined) delete rep.dataset.voice;
   if (was && show && voxText) { rep.className = 'rep'; rep.textContent = voxText; }
 }
+/** Un error de Jota (en rojo, que no parezca una respuesta); `again`: se ofrece repetir la última pregunta, si la hay.
+ *  @param {string} msg @param {boolean} [again] */
+function fail(msg, again = true) {
+  const rep = $('#rep'); rep.className = 'rep err'; rep.textContent = msg;
+  retry = again && !!lastAsk;
+  stage('idle');
+}
 /** Pregunta nueva: la voz y el texto de la anterior ya no cuentan. */
 function voiceReset() { voiceEnd(false); voxText = ''; }
 
 function ask(text) {
   cut();
   voiceReset();
+  lastAsk = text; retry = false;
   out = outSel();
   if (out === 'phone') ensureAudioCtx();                // dentro del gesto (iOS); el audio llega después
   said(text);
@@ -137,7 +147,7 @@ function ask(text) {
   const me = ++asked;
   rpc({ t: 'ask', text, out, interrupt: interruptOn() }).then(r => {
     if (me !== asked) return;                           // la sustituyó otra (p. ej. al interrumpir): su «Parado.» no va encima
-    if (r && r.error && r.error !== 'sin respuesta' && $('#agS').dataset.st === 'wait') { rep.className = 'rep'; rep.textContent = r.error; stage('idle'); }
+    if (r && r.error && r.error !== 'sin respuesta' && $('#agS').dataset.st === 'wait') fail(r.error);
   });
 }
 function onTalk(j) {
@@ -145,7 +155,7 @@ function onTalk(j) {
   const rep = $('#rep');
   // la parcial es la frase acumulada mientras se habla: sustituye sin animar (las palabras animadas, para la final)
   if (j.ev === 'partial') { const q = $('#agQ'); q.classList.remove('said'); q.textContent = j.text || ''; return; }
-  if (j.ev === 'final') { player.stop(); said(j.text || ''); return; }   // los frames de la respuesta anterior ya no valen
+  if (j.ev === 'final') { player.stop(); said(j.text || ''); lastAsk = j.text || ''; return; }   // si falla, se repite por escrito   // los frames de la respuesta anterior ya no valen
   if (j.ev === 'voice') { onVoice(j); return; }
   // la respuesta acumulada, en directo (con voz, la pinta la voz)
   if (j.ev === 'token') { talking = out !== 'none'; voxText = j.text || ''; if (!vox) { rep.className = 'rep'; rep.textContent = voxText; } stage('wait'); return; }
@@ -157,7 +167,7 @@ function onTalk(j) {
     return;
   }
   if (j.ev === 'silent') { talking = false; if (quit) armQuit(); acts(); return; }   // Jota dejó de hablar
-  if (j.ev === 'error') { talking = false; voiceReset(); player.stop(); voice.abort(); rep.className = 'rep'; rep.textContent = j.error || 'Jota no está disponible.'; stage('idle'); return; }
+  if (j.ev === 'error') { talking = false; voiceReset(); player.stop(); voice.abort(); fail(j.error || 'Jota no está disponible.'); return; }
   // el turno se paró (aquí o desde otro móvil): el audio se corta; si estaba pensando, «Parado.» (grabando otra frase, nada más)
   if (j.ev === 'stopped') {
     talking = false; voiceEnd(true); player.stop(); noQuit();
@@ -173,7 +183,7 @@ function stop() {
   const st = $('#agS').dataset.st;
   if (st === 'wait') { const rep = $('#rep'); rep.className = 'rep'; rep.textContent = STOPPED; stage('idle'); }
   acts();
-  rpc({ t: 'stop' }).then(r => { if (r && r.error && r.error !== 'sin respuesta') { const rep = $('#rep'); rep.className = 'rep'; rep.textContent = r.error; } });
+  rpc({ t: 'stop' }).then(r => { if (r && r.error && r.error !== 'sin respuesta') fail(r.error, false); });
 }
 
 export const agent = {
@@ -197,10 +207,11 @@ export const agent = {
       if (!v) return;
       agin.value = ''; ask(v);
     });
-    const rep = (t, cls = '') => { const r = $('#rep'); r.className = 'rep' + (cls ? ' ' + cls : ''); r.textContent = t; };
+    const rep = (t, cls = '') => { if (cls === 'err') return fail(t, false); const r = $('#rep'); r.className = 'rep' + (cls ? ' ' + cls : ''); r.textContent = t; };
     onWs('bin', b => player.play(b));
-    mic = voice.init({ stage, said, rep, press: () => { cut(); voiceReset(); out = outSel(); asked++; talking = false; }, focus: () => { buzz(8); agin.focus(); } });
+    mic = voice.init({ stage, said, rep, press: () => { cut(); voiceReset(); out = outSel(); asked++; talking = false; lastAsk = ''; retry = false; }, focus: () => { buzz(8); agin.focus(); } });
     $('#agStop').addEventListener('click', stop);
+    $('#agRetry').addEventListener('click', () => { buzz(8); if (lastAsk) ask(lastAsk); });
     $('#agHide').addEventListener('click', () => { buzz(7); noQuit(); acts(); cmd({ t: 'hide' }); });
     // sin micrófono propio (http): el orbe enfoca el campo y el teclado del móvil trae el suyo
     if (!mic) $('#agOrb').addEventListener('click', () => { buzz(8); agin.focus(); });

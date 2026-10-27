@@ -76,7 +76,7 @@ function go() {
   rpc({ t: 'vstart', out: out(), interrupt: interruptOn() }).then(r => {
     if (!r || !r.error || r.error === 'sin respuesta' || me !== press) return;
     if (started) { started = false; held = false; release(); }   // ocupado, sin permiso o Jota caído: no se sigue grabando
-    ui.rep(r.error); ui.stage('idle');                  // (también si ya se soltó: no se queda en «Pensando»)
+    ui.rep(r.error, 'err');                  // (también si ya se soltó: no se queda en «Pensando»)
   });
   for (const p of pending) sendBin(p);
   pending = [];
@@ -90,7 +90,7 @@ async function start(key = false) {
   const me = ++press;
   // iOS: el contexto se crea (o se reanuda) dentro del propio gesto, antes de cualquier await
   if (!ensureAudioCtx()) {
-    ui.rep('Este navegador no puede usar el micrófono.'); held = false; return;
+    ui.rep('Este navegador no puede usar el micrófono.', 'err'); held = false; return;
   }
   if (!key) tapT = setTimeout(() => { long = true; go(); }, TAP_MS);
   if (!mod) mod = ctx.audioWorklet.addModule('/mando/features/mic-worklet.js').catch(e => { mod = null; throw e; });
@@ -99,7 +99,7 @@ async function start(key = false) {
   const s = g.status === 'fulfilled' ? g.value : null;
   if (!s || w.status === 'rejected') {
     if (s) s.getTracks().forEach(t => t.stop());
-    if (me === press) { clearTimeout(tapT); held = false; ui.rep(s ? NOT_READY : 'No tengo permiso para usar el micrófono.'); ui.stage('idle'); }
+    if (me === press) { clearTimeout(tapT); held = false; ui.rep(s ? NOT_READY : 'No tengo permiso para usar el micrófono.', 'err'); }
     return;
   }
   if (me !== press || !held) {                          // se soltó (o se cerró la hoja) mientras se pedía el micrófono
@@ -114,7 +114,7 @@ async function start(key = false) {
     node.port.onmessage = e => { if (me === press && e.data instanceof Float32Array) chunk(e.data); };
     src.connect(node); node.connect(ctx.destination);  // la salida es silencio; sin destino Safari no lo procesa
   } catch {
-    release(); held = false; ui.rep(NOT_READY); ui.stage('idle'); return;
+    release(); held = false; ui.rep(NOT_READY, 'err'); return;
   }
   buzz(10); ui.rep(''); ui.stage('rec');
   stopT = setTimeout(stop, MAX_MS);

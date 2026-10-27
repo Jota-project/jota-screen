@@ -273,6 +273,7 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .vzQ.said .w{opacity:1;filter:none}
 .rep{min-height:0;margin-top:16px;font-size:17px;line-height:1.55;color:var(--text-soft);max-width:34em;transition:opacity .6s ease,transform .8s var(--ease)}
 .rep:empty{display:none}
+.rep.err{color:var(--bad)}
 /* con voz: la frase en curso en tenue y lo ya dicho iluminado (agent.js) */
 .rep[data-voice] .vw{color:var(--text-faint);transition:color .15s var(--ease)}
 .rep[data-voice] .vw.said{color:var(--text)}
