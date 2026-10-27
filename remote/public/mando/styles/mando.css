@@ -287,6 +287,8 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 /* voz con micrófono propio: mantener el orbe para hablar (grabando, late más deprisa) y adónde va la respuesta */
 .vzOrb{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 #agS[data-st=rec] .vzOrb{animation:listen .8s ease-in-out infinite;box-shadow:0 0 0 22px rgba(124,106,174,.22),0 0 110px rgba(124,106,174,.7)}
+/* tu voz en el orbe (voice.js pone --lv a cada trozo de 100 ms): scale aparte del transform que respira */
+.vzOrb{scale:calc(1 + .14 * var(--lv, 0));transition:scale var(--lvt, .25s) ease-out}
 .vzOut{min-height:48px;margin-top:-10px;padding:0 16px;border:0;background:transparent;color:var(--accent-text);font:500 14px var(--sans);cursor:pointer}
 .vzOut[hidden]{display:none}
 .vzOut:focus-visible{outline:2px solid var(--accent-text);outline-offset:-6px;border-radius:999px}
@@ -553,6 +555,7 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 
 /* movimiento reducido: luces quietas, orbe sin respirar y sin transiciones */
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
+@media (prefers-reduced-motion:reduce){.vzOrb{scale:none}}   /* sin transición iría a saltos de 100 ms */
 
 /* utilidades: sustituyen a los antiguos style= del HTML; van al final para ganar a .acts y .foot con igual especificidad */
 .sprite{position:absolute;width:0;height:0;overflow:hidden}

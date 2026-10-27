@@ -32,6 +32,7 @@ let long = false;                                       // la pulsación ya pasa
 let started = false;                                    // vstart enviado: el audio va al servidor
 let press = 0;                                          // número de la pulsación (lo que llega tarde de otra se ignora)
 let tapT = 0, stopT = 0, flushT = 0;
+let lv = 0;                                             // nivel de tu voz en el orbe (0–1)
 /** @type {Float32Array[]} */
 let pending = [];                                       // los primeros trozos, en memoria hasta saber que no es un toque
 /** @type {{ stage: (st: string) => void, said: (t: string) => void, rep: (t: string, cls?: string) => void, focus: () => void, press?: () => void }} */
@@ -60,10 +61,26 @@ function release() {
   if (src) { src.disconnect(); src = null; }
   if (stream) stream.getTracks().forEach(t => t.stop());
   stream = null; pending = [];
+  meter(0);
+}
+
+/** El orbe sigue tu voz: crece con el nivel del trozo (-50 dBFS → 0, -10 → 1); sube en 50 ms y baja en 250.
+ *  @param {number} x */
+function meter(x) {
+  const o = $('#agOrb');
+  o.style.setProperty('--lvt', x > lv ? '.05s' : '.25s');
+  o.style.setProperty('--lv', x.toFixed(2));
+  lv = x;
+}
+/** @param {Float32Array} pcm */
+function level(pcm) {
+  let p = 0; for (const x of pcm) p += x * x;
+  return p ? Math.max(0, Math.min(1, (10 * Math.log10(p / pcm.length) + 50) / 40)) : 0;
 }
 
 /** Un trozo de 100 ms del worklet: en memoria mientras puede ser un toque; luego, al servidor. @param {Float32Array} pcm */
 function chunk(pcm) {
+  meter(level(pcm));
   if (started) sendBin(pcm); else pending.push(pcm);
 }
 

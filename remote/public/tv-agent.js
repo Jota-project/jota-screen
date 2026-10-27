@@ -106,7 +106,8 @@
   };
   const RADIUS_U = { pill: 70, open: 64, rest: 48 }; // radio de las esquinas (en --u): píldora, escuchando/pensando, resto
   // pulso de la membrana (amp, 0–1): lo que suma cada evento, cuánto queda tras 1 s y el mínimo por estado (escucha late)
-  const PULSE = { gain: 0.4, word: 0.6, event: 1, keep: 0.05, rest: 0.01, think: 0.05, listen: { base: 0.14, depth: 0.06, hz: 2.6 } };
+  // `voice`: el pulso con tu voz a tope (level 1), mientras escucha: el orbe crece hasta 1 + voice·ORB_SCALE
+  const PULSE = { gain: 0.4, word: 0.6, event: 1, keep: 0.05, rest: 0.01, think: 0.05, voice: 0.5, listen: { base: 0.14, depth: 0.06, hz: 2.6 } };
   const ORB_SCALE = 0.28;          // cuánto crece el orbe con el pulso
   const RADIUS_RATE = 4;           // 1/s: velocidad con la que el radio va al de su estado
   const MAX_DT = 0.05;             // s: un frame largo (pestaña de fondo) no hace saltar los muelles
@@ -1101,6 +1102,14 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
   }
 
   window.TVAgent = {
+    /** Nivel de tu voz (0–1, del servidor cada 100 ms) mientras escucha: el orbe y la membrana lo siguen (sube ya y baja
+     *  con el decaimiento del pulso). En calma, nada. */
+    level(x) {
+      if (!dom || !last || last.state !== 'listen' || calmNow()) return;
+      const a = Math.max(0, Math.min(1, Number(x) || 0)) * PULSE.voice;
+      if (a > amp) amp = a;
+      wake();
+    },
     render(o) {
       // script de documento nuevo: aún no hay documentElement; se pinta en cuanto lo haya
       if (!parentNow()) { waitForRoot(o); return true; }

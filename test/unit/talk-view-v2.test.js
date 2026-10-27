@@ -1030,3 +1030,23 @@ test('voice: va en la foto solo con voz, saneada (≤ VOICE_ANCHORS_MAX anclas, 
   v.turn('panel'); await step(t);
   assert.ok(!('voice' in last(cdp)), 'un turno nuevo empieza sin la voz del anterior');
 });
+
+test('level(): solo escuchando y con la capa pintada, uno en vuelo a la vez; pensando, nada', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { cdp, v } = make();
+  const lv = () => cdp.exprs.filter(e => e.includes('TVAgent.level('));
+  v.level(-20);
+  assert.equal(lv().length, 0, 'sin foto aún');
+  v.turn('panel', { voice: true });
+  await step(t, 200);
+  v.level(-20); v.level(-20);
+  assert.equal(lv().length, 1, 'el segundo espera a que vuelva el primero');
+  assert.match(lv()[0], /level\(0\.75\)/, '-20 dBFS → 0,75');
+  await flushMicro();
+  v.level(-80);
+  assert.match(lv().at(-1), /level\(0\.00\)/, 'silencio → 0');
+  await flushMicro();
+  v.you('Pon la tele', true);
+  v.level(-20);
+  assert.equal(lv().length, 2, 'pensando ya no escucha');
+});

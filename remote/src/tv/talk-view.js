@@ -43,6 +43,7 @@ const LEAVE_HIDE = 'try{window.TVAgent&&window.TVAgent.hide(true)}finally{window
 const REVEALED = '(()=>{try{return window.TVAgent&&typeof window.TVAgent.revealed==="function"?window.TVAgent.revealed():null}catch(e){return null}})()';
 const FROM_WAIT_MS = 100;                    // lo que se espera esa respuesta antes de pintar sin ella
 
+const LEVEL_FLOOR_DB = 50, LEVEL_RANGE_DB = 40;   // nivel de la voz: -50 dBFS (silencio) → 0, -10 dBFS (voz alta) → 1
 const KEEP_TURNS = 2;                        // turnos en el panel (el anterior, atenuado)
 const CLOSE_BASE_MS = 4000;                  // se cierra esto tras el fin real…
 const CLOSE_PER_CHAR_MS = 45;                // …más esto por letra de la respuesta
@@ -289,6 +290,7 @@ function createTalkView({ cdp, pub, batchMs = 100, log = () => {}, context, onAs
   let open = false;      // hay un intercambio en curso (entre turn y done/error)
   let shown = false;     // la capa está (o va a estar) en pantalla
   let injected = false;  // la página actual tiene la capa (según lo último que sabemos)
+  let levelBusy = false; // un nivel de la voz en vuelo hacia la página
   let painted = false;   // se mandó alguna foto (hay capa que quitar)
   let retried = false;   // ya se reenvió la fuente tras un render sin capa (una vez por página: hasta reset o un render bueno)
   let muted = false;     // quitada con hide(): lo que quede de ese turno no se pinta (hasta el turn() siguiente)
@@ -590,6 +592,15 @@ function createTalkView({ cdp, pub, batchMs = 100, log = () => {}, context, onAs
       begin(decided ? (decide(l).form === 'pill' ? 'island' : 'panel') : m, !!(o && o.voice));
       schedule();
       emitForm(true);
+    },
+    /** Nivel de tu voz (dBFS de un trozo de 100 ms) mientras escucha: el orbe de la tele lo sigue. Sin foto (ni la
+     *  conversación a la vista) o con uno aún en vuelo, se salta: el siguiente llega en 100 ms. @param {number} db */
+    level(db) {
+      if (state !== 'listen' || !painted || !visible() || levelBusy || !cdp.session) return;
+      levelBusy = true;
+      const lv = Math.max(0, Math.min(1, (db + LEVEL_FLOOR_DB) / LEVEL_RANGE_DB));
+      cdp.call('Runtime.evaluate', { expression: `window.TVAgent&&window.TVAgent.level&&window.TVAgent.level(${lv.toFixed(2)})` })
+        .catch(() => {}).finally(() => { levelBusy = false; });
     },
     /** @param {string} text frase acumulada (sustituye a la anterior) @param {boolean} final */
     you(text, final) {

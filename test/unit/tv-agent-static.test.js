@@ -316,6 +316,26 @@ test('fuera de calma, la capa abierta y quieta también para el rAF; escuchando 
   assert.equal(A._debug().rafRunning, true, 'escuchando: late');
 });
 
+test('level(): escuchando, tu voz agranda el orbe; hablando o en calma no hace nada', () => {
+  const p = loadPage();
+  const A = p.win.TVAgent;
+  const ring = () => p.host().shadowRoot.all().find(n => n.tagName === 'I');
+  const scale = () => Number(/scale\(([\d.]+)\)/.exec(ring().style.transform)[1]);
+  const listen = o => snap({ state: 'listen', turns: [{ ...snap().turns[0], you: '', jota: '', youFinal: false }], ...o });
+  A.render(listen()); p.advance(500);
+  const quiet = scale();
+  A.level(1); p.advance(16);
+  assert.ok(scale() > quiet + 0.05, `con voz crece (${quiet} → ${scale()})`);
+  p.advance(1500);
+  assert.ok(scale() < quiet + 0.03, 'sin voz vuelve a latir como antes');
+  A.render(snap({ state: 'talk' })); p.advance(500);
+  const talk = scale(); A.level(1); p.advance(16);
+  assert.ok(scale() <= talk + 0.001, 'hablando Jota, tu nivel no cuenta');
+  A.render(listen({ calm: true })); p.advance(500);
+  A.level(1); p.advance(16);
+  assert.equal(scale(), 1, 'en calma, quieto');
+});
+
 test('hide() a mitad de turno (escuchando o pensando) termina por la vía normal, antes del temporizador de seguridad', () => {
   for (const state of ['listen', 'think']) {
     const p = loadPage();

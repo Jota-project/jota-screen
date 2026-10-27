@@ -520,7 +520,9 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     /** Audio del mando: solo el del socket que hizo vstart y mientras graba; lo demás se descarta. */
     onBinary(/** @type {Buffer} */ buf, /** @type {any} */ ws) {
       if (!turn || turn.voice !== 'rec' || turn.ws !== ws) return;
-      turn.frames = (turn.frames || 0) + 1; turn.peak = Math.max(turn.peak ?? -Infinity, dbfs(buf));
+      const db = dbfs(buf);
+      turn.frames = (turn.frames || 0) + 1; turn.peak = Math.max(turn.peak ?? -Infinity, db);
+      v('level', db);                                   // el orbe de la tele sigue la voz (un trozo cada 100 ms)
       gw.audio(buf);
     },
     /** El mando se fue: si estaba grabando o esperando la final, se cancela el turno. */
