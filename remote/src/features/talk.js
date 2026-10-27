@@ -38,6 +38,13 @@ const VOICE_EARLY_MS = 300;                                // antes de que los c
 const VOICE_MIN_GAP_MS = 250;                              // …y nunca más a menudo que esto
 const VOICE_RATE_STEP = 0.05;                              // cambio de rate (ms por carácter) que se avisa
 
+/** Nivel RMS en dBFS de un trozo PCM Float32 LE (el del mando), como lo mide el Gateway. @param {Buffer} b */
+function dbfs(b) {
+  let p = 0; const n = b.length >> 2;
+  for (let i = 0; i < n; i++) { const x = b.readFloatLE(i * 4); if (x === x) p += x * x; }
+  return n && p > 0 ? 10 * Math.log10(p / n) : -Infinity;
+}
+
 /**
  * Instrucciones que van delante de cada mensaje: con el nombre de la pantalla (TV_NAME) y, si se da, el del dueño (TV_OWNER).
  * @param {string} name @param {string} [owner]
@@ -96,7 +103,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
    *  `held`: eventos `tool` que llegan mientras `maybeGhost` (aún puede ser el parado): a la vista solo si el turno resulta nuestro.
    *  @type {null | { ws: any, turnId: string | null, sent: boolean, reply: string, timer: any, finish: (r: object) => void,
    *    voice?: 'rec' | 'wait' | 'sent', out?: string, seq?: number, mode?: string, who?: string, cap?: any, waitTimer?: any, heard?: boolean, maybeGhost?: boolean,
-   *    cards?: Set<string>, held?: any[] }} */
+   *    cards?: Set<string>, held?: any[], frames?: number, peak?: number }} */
   let turn = null;
   /** La cola del audio: el TTS puede seguir llegando tras turn_end. Con el `seq` del turno acabado, sigue sonando hasta que pasan
    *  audioTailMs sin frames (entonces `speaker.end()`); un turno nuevo o una caída la cortan al momento.
@@ -486,7 +493,8 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     const t = turn;
     if (!t || t.voice !== 'rec' || t.ws !== ws) return { error: 'no hay grabación' };
     t.voice = 'wait'; clearTimeout(t.cap);
-    t.waitTimer = setTimeout(() => { if (turn === t) { log.warn('talk: sin final'); fail(NOT_HEARD); } }, finalMs);
+    // trozos y pico (dBFS, como la compuerta de energía del Gateway, -45): 0 trozos = el móvil no manda; pico bajo = micro mudo
+    t.waitTimer = setTimeout(() => { if (turn === t) { log.warn(`talk: sin final (${t.frames || 0} trozos, pico ${(t.peak ?? -Infinity).toFixed(1)} dBFS)`); fail(NOT_HEARD); } }, finalMs);
     if (t.waitTimer.unref) t.waitTimer.unref();
     gw.end();
     return { ok: 1 };
@@ -510,7 +518,11 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     /** Jota sigue hablando la respuesta (en la tele o en el móvil). */
     speaking: () => !!play,
     /** Audio del mando: solo el del socket que hizo vstart y mientras graba; lo demás se descarta. */
-    onBinary(/** @type {Buffer} */ buf, /** @type {any} */ ws) { if (turn && turn.voice === 'rec' && turn.ws === ws) gw.audio(buf); },
+    onBinary(/** @type {Buffer} */ buf, /** @type {any} */ ws) {
+      if (!turn || turn.voice !== 'rec' || turn.ws !== ws) return;
+      turn.frames = (turn.frames || 0) + 1; turn.peak = Math.max(turn.peak ?? -Infinity, dbfs(buf));
+      gw.audio(buf);
+    },
     /** El mando se fue: si estaba grabando o esperando la final, se cancela el turno. */
     onClose(/** @type {any} */ ws) { if (turn && turn.ws === ws && (turn.voice === 'rec' || turn.voice === 'wait')) cancel(); },
     /** @type {import('../transport/commands').Command[]} */

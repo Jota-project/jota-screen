@@ -1044,3 +1044,17 @@ test('voz: con audio a tiempo no hay plazo que la apague; un atasco se avisa al 
   assert.ok(v.head >= 100 && v.head < 150, 'la cabeza sigue donde se quedó, no corrida por el atasco');
   t.gw.emit({ type: 'turn_end', turnId: 'a' }); await p;
 });
+
+test('sin final: el log dice cuántos trozos llegaron y su pico en dBFS (sin contenido)', async () => {
+  const { lines, log } = logs();
+  const t = make({ finalMs: 30, log });
+  await t.vcmd({ t: 'vstart' }); await t.vcmd({ t: 'vend' }); await sleep(60);
+  assert.deepEqual(lines, ['talk: sin final (0 trozos, pico -Infinity dBFS)']);
+  lines.length = 0;
+  const u = make({ finalMs: 30, log });
+  await u.vcmd({ t: 'vstart' });
+  const loud = Buffer.alloc(6400); for (let i = 0; i < 1600; i++) loud.writeFloatLE(0.5, i * 4);
+  u.talk.onBinary(Buffer.alloc(6400), u.ws); u.talk.onBinary(loud, u.ws);
+  await u.vcmd({ t: 'vend' }); await sleep(60);
+  assert.deepEqual(lines, ['talk: sin final (2 trozos, pico -6.0 dBFS)']);
+});
