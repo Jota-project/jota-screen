@@ -263,15 +263,17 @@ test('voz de invitado: el prefijo es el del socket que hizo vstart', async () =>
   assert.equal(t.sent[0], createTalk.prompts('Salón', 'Alfonso').askGuest + '(Se llama Ana.) hola');
 });
 
-test('final vacía, o sin final a los finalMs tras vend: ev:error «No te he entendido…», busy false y sin send', async () => {
+const voz = () => { const b = Buffer.alloc(6400); for (let i = 0; i < 1600; i++) b.writeFloatLE(0.3, i * 4); return b; };
+
+test('final vacía, o sin final a los finalMs tras vend, con voz: ev:error «No te he entendido…», busy false y sin send', async () => {
   const t = make({ finalMs: 50 });
-  await t.vcmd({ t: 'vstart' }); await t.vcmd({ t: 'vend' });
+  await t.vcmd({ t: 'vstart' }); t.talk.onBinary(voz(), t.ws); await t.vcmd({ t: 'vend' });
   t.gw.emit({ type: 'final', text: '  ' });
   assert.deepEqual(t.msgs.at(-1), { t: 'talk', ev: 'error', error: 'No te he entendido. Prueba otra vez.' });
   assert.equal(t.views.at(-1)[0], 'error');
   assert.equal(t.talk.busy(), false);
   const u = make({ finalMs: 50 });
-  await u.vcmd({ t: 'vstart' }); await u.vcmd({ t: 'vend' });
+  await u.vcmd({ t: 'vstart' }); u.talk.onBinary(voz(), u.ws); await u.vcmd({ t: 'vend' });
   assert.equal(u.talk.busy(), true);
   await sleep(90);
   assert.deepEqual(u.msgs.at(-1), { t: 'talk', ev: 'error', error: 'No te he entendido. Prueba otra vez.' });
@@ -279,6 +281,20 @@ test('final vacía, o sin final a los finalMs tras vend: ev:error «No te he ent
   u.gw.emit({ type: 'final', text: 'tarde' });
   assert.equal(u.sent.length, 0);
   assert.equal(t.sent.length, 0);
+});
+
+test('sin voz (ningún trozo, o solo silencio bajo -45 dBFS): «No te he oído…», tanto con final vacía como sin final', async () => {
+  const t = make({ finalMs: 50 });
+  await t.vcmd({ t: 'vstart' }); await t.vcmd({ t: 'vend' });
+  t.gw.emit({ type: 'final', text: '' });
+  assert.deepEqual(t.msgs.at(-1), { t: 'talk', ev: 'error', error: 'No te he oído. Prueba otra vez.' });
+  assert.equal(t.talk.busy(), false);
+  const u = make({ finalMs: 50 });
+  await u.vcmd({ t: 'vstart' }); u.talk.onBinary(Buffer.alloc(6400), u.ws); await u.vcmd({ t: 'vend' });
+  await sleep(90);
+  assert.deepEqual(u.msgs.at(-1), { t: 'talk', ev: 'error', error: 'No te he oído. Prueba otra vez.' });
+  assert.equal(u.talk.busy(), false);
+  assert.equal(t.sent.length + u.sent.length, 0);
 });
 
 test('vcancel, onClose del dueño o tope de grabación: gw.end() una vez, busy libre y la final tardía se descarta', async () => {

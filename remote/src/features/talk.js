@@ -25,6 +25,8 @@ const { createVoiceSync } = require('./voice-sync');
 const DOWN = 'Jota no está disponible.';
 const BUSY = 'Sigo con la petición anterior. Espera un momento.';
 const NOT_HEARD = 'No te he entendido. Prueba otra vez.';
+const NOT_HEARD_SILENT = 'No te he oído. Prueba otra vez.';
+const SILENCE_DB = -45;                                     // compuerta de energía del Gateway: por debajo, el micro no mandó voz
 const NO_REPLY = 'No he recibido respuesta.';
 const STOPPED = 'Parado.';
 const NO_FORMS = 'La tele no puede cambiar el formato de la conversación.';
@@ -39,6 +41,9 @@ const VOICE_MIN_GAP_MS = 250;                              // …y nunca más a 
 const VOICE_RATE_STEP = 0.05;                              // cambio de rate (ms por carácter) que se avisa
 
 /** Nivel RMS en dBFS de un trozo PCM Float32 LE (el del mando), como lo mide el Gateway. @param {Buffer} b */
+/** Sin texto: si no llegó voz (0 trozos o pico bajo la compuerta) «No te he oído»; si llegó, «No te he entendido». @param {any} t */
+function notHeard(t) { return (t.peak ?? -Infinity) < SILENCE_DB ? NOT_HEARD_SILENT : NOT_HEARD; }
+
 function dbfs(b) {
   let p = 0; const n = b.length >> 2;
   for (let i = 0; i < n; i++) { const x = b.readFloatLE(i * 4); if (x === x) p += x * x; }
@@ -379,7 +384,7 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
         if (t.voice === 'rec') { if (text) (t.phrases || (t.phrases = [])).push(text); return; }
         if (t.voice !== 'wait') return;
         const all = heardWith(t, text);
-        if (!all) return fail(NOT_HEARD);
+        if (!all) return fail(notHeard(t));
         return sendHeard(t, all);
       }
       case 'down': fail(DOWN); return;
@@ -506,12 +511,12 @@ module.exports = function createTalk({ gw, cfg, media, view = NO_VIEW, speaker =
     t.voice = 'wait'; clearTimeout(t.cap);
     // trozos y pico (dBFS, como la compuerta de energía del Gateway, -45): 0 trozos = el móvil no manda; pico bajo = micro mudo
     // con frases ya confirmadas en pausas puede no llegar otra final (no queda audio sin confirmar): se espera poco y se
-    // manda lo oído; sin nada oído, la final de siempre o «No te he entendido»
+    // manda lo oído; sin nada oído, la final de siempre o «No te he oído» / «No te he entendido» (ver notHeard)
     const had = heardWith(t);
     t.waitTimer = setTimeout(() => {
       if (turn !== t || t.voice !== 'wait') return;
       if (had) return sendHeard(t, had);
-      log.warn(`talk: sin final (${t.frames || 0} trozos, pico ${(t.peak ?? -Infinity).toFixed(1)} dBFS)`); fail(NOT_HEARD);
+      log.warn(`talk: sin final (${t.frames || 0} trozos, pico ${(t.peak ?? -Infinity).toFixed(1)} dBFS)`); fail(notHeard(t));
     }, had ? heardTailMs : finalMs);
     if (t.waitTimer.unref) t.waitTimer.unref();
     gw.end();
