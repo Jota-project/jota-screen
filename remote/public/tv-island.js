@@ -26,11 +26,12 @@
   background:color-mix(in srgb,var(--a) 22%,transparent);transition:width .55s var(--tv-ease),height .55s var(--tv-ease),font-size .55s}
 .exp .ic{width:${u(76)};height:${u(76)};font-size:${u(38)}}
 .tx{flex:1;min-width:0;display:flex;flex-direction:column;justify-content:center}
-.t{font-size:${u(24)};font-weight:500;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:font-size .55s}
+.t{font-size:${u(26)};font-weight:500;letter-spacing:-.01em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:font-size .55s}
 .exp .t{font-size:${u(30)}}
 .s{font-size:0;opacity:0;color:var(--tv-text-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:opacity .4s,font-size .55s}
 .exp .s{font-size:${u(26)};opacity:1;margin-top:${u(4)}}
-.v{flex:none;font-family:var(--tv-serif);font-size:${u(28)};font-weight:400;color:var(--a);letter-spacing:-.01em;display:flex;align-items:center;gap:${u(8)};transition:font-size .55s}
+/* la cifra siempre en el color del texto: un acento oscuro no se lee sobre la isla (el acento queda para anillo y barra) */
+.v{flex:none;font-family:var(--tv-serif);font-size:${u(28)};font-weight:400;color:var(--tv-text);letter-spacing:-.01em;display:flex;align-items:center;gap:${u(8)};transition:font-size .55s}
 .exp .v{font-size:${u(48)};font-weight:380}
 .ring{width:${u(32)};height:${u(32)};transform:rotate(-90deg);transition:width .55s,height .55s}
 .exp .ring{width:${u(52)};height:${u(52)}}

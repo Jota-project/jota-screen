@@ -3,7 +3,9 @@
 // más actividades y debajo del panel del agente) y el código de emparejar. Para comparar antes/después de un cambio
 // visual (K3 de la auditoría de experiencia).
 //   node tele-capturas.js [carpeta]     (por defecto e2e/capturas-tele)
-// Avisa de errores de la página y de la CSP; los cuenta en la última línea.
+// En el escenario comprueba además (K4, legible a 3 m) que lo visible queda dentro del área segura (5 % del ancho, 6 %
+// del alto) y que ningún texto baja de 24u, también con una diapositiva y una tarea que no caben.
+// Avisa de errores de la página y de la CSP; los cuenta en la última línea (y sale con 1 si hay alguno).
 const { chromium } = require('playwright');
 const http = require('http'), fs = require('fs'), path = require('path');
 
@@ -34,6 +36,14 @@ const STAGE = [
   { name: 'recordatorio', tpl: 'tpl-reminder.html', data: { icon: '⏰', kicker: 'Recordatorio', title: 'Sacar la ropa de la lavadora', text: 'Ha terminado el programa de algodón', time: '19:30' } },
   { name: 'diapositiva-lista', tpl: 'tpl-slides.html', data: { auto: 0, slides: [{ kicker: 'Viaje a Lisboa', title: 'Tres días por la ciudad', subtitle: 'Lo esencial, sin prisas', bullets: ['Alfama y el castillo', 'Pastéis en Belém', 'Atardecer en el mirador'] }] } },
   { name: 'diapositiva-cifra', tpl: 'tpl-slides.html', data: { auto: 0, slides: [{ kicker: 'Este mes', big: '42 km', title: 'Has caminado más que en marzo', subtitle: '+18 % respecto al mes pasado' }] } },
+  // lo que el agente puede mandar sin medir: nada debe salirse del área segura ni de la pantalla
+  { name: 'diapositiva-larga', tpl: 'tpl-slides.html', data: { auto: 0, slides: [{ kicker: 'Resumen de la semana en casa',
+    title: 'Todo lo que ha pasado esta semana en casa, con las compras, las facturas, las visitas y los recados pendientes',
+    subtitle: 'Un subtítulo también largo que explica con demasiado detalle de dónde salen los datos y por qué hay que mirarlos hoy',
+    bullets: ['Revisar la factura de la luz, que ha subido otra vez', 'Llamar al fontanero por la fuga del baño', 'Comprar regalos', 'Devolver el paquete', 'Pedir cita en el taller', 'Regar las plantas del balcón'] }, { title: 'Otra' }] } },
+  { name: 'tareas-largas', tpl: 'tpl-tasks.html', data: { kicker: 'Casa', title: 'Recados', items: [
+    { text: 'Supercalifragilisticoespialidosoextraordinariamentelargoysinespaciosporningunlado', tag: 'raro' },
+    { text: 'Una tarea normal con fecha', due: 'mañana a las 9:30' }] } },
   { name: 'tareas', tpl: 'tpl-tasks.html', data: { kicker: 'Hoy', title: 'Lista de la compra', subtitle: '2 de 4 hechas', items: [
     { text: 'Pan', done: true }, { text: 'Tomates de rama', done: true, tag: 'mercado' }, { text: 'Aceite de oliva', due: 'hoy' }, { text: 'Café en grano', tag: 'súper' }] } },
 ];
@@ -53,6 +63,25 @@ async function stage(b, vp, s) {
   await p.goto(`${base()}/${s.tpl}`);
   await p.evaluate(d => { window.tv.data = d; for (const f of window.tv._h) f(d); }, s.data);
   await p.waitForTimeout(2000);
+  // a 3 m: lo visible dentro del área segura (5 % del ancho, 6 % del alto) y ningún texto por debajo de 24u
+  const bad = await p.evaluate(() => {
+    const W = innerWidth, H = innerHeight, u = Math.min(W / 1920, H / 1080), out = [];
+    for (const e of document.querySelectorAll('body *')) {
+      if (['SCRIPT', 'STYLE'].includes(e.tagName) || e.id === 'pr' || e.closest('.sl:not(.on)')) continue;
+      const cs = getComputedStyle(e), r = e.getBoundingClientRect();
+      if (cs.visibility === 'hidden' || cs.display === 'none' || !r.width || !r.height) continue;
+      const clip = e.closest('.sl'); const c = clip ? clip.getBoundingClientRect() : null;
+      const l = c ? Math.max(r.left, c.left) : r.left, t = c ? Math.max(r.top, c.top) : r.top;
+      const rr = c ? Math.min(r.right, c.right) : r.right, bb = c ? Math.min(r.bottom, c.bottom) : r.bottom;
+      if (rr <= l || bb <= t) continue; // recortado del todo
+      const own = [...e.childNodes].some(n => n.nodeType === 3 && n.textContent.trim());
+      if (own && parseFloat(cs.fontSize) < 24 * u - 0.5) out.push(`${e.tagName}.${e.className} a ${(parseFloat(cs.fontSize) / u).toFixed(0)}u`);
+      if (['MAIN', 'HEADER', 'SECTION'].includes(e.tagName) || e.id === 'st' || e.id === 'l' || e.classList.contains('wrap')) continue;
+      if (l < W * .05 - 1 || rr > W * .95 + 1 || t < H * .06 - 1 || bb > H * .94 + 1) out.push(`${e.tagName}.${e.className} fuera del área segura`);
+    }
+    return out;
+  });
+  for (const x of bad) errs.push(`${vp.width}x${vp.height} ${s.name}: ${x}`);
   await p.screenshot({ path: path.join(OUT, `${vp.width}x${vp.height}-escenario-${s.name}.png`) });
   await p.close();
 }

@@ -2,25 +2,24 @@
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tareas</title><link rel="icon" href="data:,"><link rel="stylesheet" href="/stage.css">
 <style>
-main{height:100%;display:grid;grid-template-rows:auto 1fr;padding:6vh 7vw 5vh;gap:3.2vh}
-header .k{font-size:calc(20 * var(--u));letter-spacing:.18em;text-transform:uppercase;color:var(--acc)}
-header h1{font-size:calc(64 * var(--u));margin-top:.5vh}
-header .sub{font-size:calc(24 * var(--u));margin-top:.6vh}
-.bar{height:calc(6 * var(--u));border-radius:999px;background:var(--line);margin-top:2.2vh;overflow:hidden}
+main{height:100%;display:grid;grid-template-rows:auto minmax(0,1fr);padding:6vh 7vw;gap:3.2vh}
+header .k{font-size:calc(24 * var(--u));letter-spacing:.18em;text-transform:uppercase;color:var(--acc)}
+header h1{font-size:calc(64 * var(--u));margin-top:.5vh;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+header .sub{font-size:calc(28 * var(--u));margin-top:.6vh}
+.bar{height:calc(8 * var(--u));border-radius:999px;background:var(--line);margin-top:2.2vh;overflow:hidden}
 .bar i{display:block;height:100%;width:0;background:var(--acc);border-radius:999px;transition:width .6s var(--ease)}
 .list{display:flex;flex-direction:column;gap:1.4vh;overflow:auto;padding-right:.5vw;scrollbar-width:none}
 .it{display:flex;align-items:center;gap:1.8vw;padding:2vh 2vw;border-radius:calc(24 * var(--u));background:var(--tv-veil);border:1px solid var(--line);
-  opacity:0;animation:rise .5s var(--ease) forwards;cursor:pointer;transition:background .25s,transform .25s}
-.it:hover{background:var(--tv-track-2);transform:translateX(calc(4 * var(--u)))}
+  opacity:0;animation:rise .5s var(--ease) forwards}
 .ck{flex:none;width:calc(40 * var(--u));aspect-ratio:1;border-radius:50%;border:2.5px solid var(--mut);display:grid;place-items:center;transition:all .3s var(--ease)}
 .ck svg{width:62%;stroke:#07110c;stroke-width:3.4;fill:none;stroke-linecap:round;stroke-linejoin:round;stroke-dasharray:24;stroke-dashoffset:24;transition:stroke-dashoffset .4s .1s var(--ease)}
 .it.done .ck{background:var(--ok);border-color:var(--ok);animation:pop .4s var(--ease)}
 .it.done .ck svg{stroke-dashoffset:0}
-.tx{flex:1;font-size:calc(36 * var(--u));line-height:1.2;transition:color .3s,opacity .3s}
+.tx{flex:1;min-width:0;overflow-wrap:anywhere;font-size:calc(36 * var(--u));line-height:1.2;transition:color .3s,opacity .3s}
 .it.done .tx{color:var(--mut);text-decoration:line-through;text-decoration-thickness:2px;opacity:.7}
-.meta{display:flex;gap:.8vw;align-items:center}
-.tag{font-size:calc(18 * var(--u));padding:.5vh 1vw;border-radius:99px;border:1px solid var(--line);color:var(--mut)}
-.due{font-size:calc(20 * var(--u));color:var(--warn)}
+.meta{flex:none;display:flex;gap:.8vw;align-items:center}
+.tag{font-size:calc(26 * var(--u));padding:.5vh 1vw;border-radius:99px;border:1px solid var(--line);color:var(--mut)}
+.due{font-size:calc(26 * var(--u));color:var(--warn)}
 .empty{margin:auto;text-align:center;font-size:calc(34 * var(--u))}
 </style></head><body>
 <main><header><div class="k" id="k"></div><h1 id="t"></h1><div class="sub mut" id="s"></div><div class="bar"><i id="p"></i></div></header>

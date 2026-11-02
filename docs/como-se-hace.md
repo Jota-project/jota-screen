@@ -128,7 +128,12 @@ simples, sin nada fuera. El reposo lo enlaza (`idle.html`) y la isla lo recibe d
 `tv-island.js` (`src/tv/tokens.js`). No poner colores sueltos en `tv-island.js` (`test/unit/tv.test.js` lo vigila).
 Las plantillas del escenario (`stage.css`) importan `tokens-tv.css` y sacan de ahí sus nombres de siempre (`--fg`, `--acc`…);
 el mando tiene los suyos (`shared/tokens-mando.css`). Las fuentes (Fraunces e Inter, OFL) están en `public/fonts/` y
-las declara `shared/fonts.css`: nada se pide a Google. Como los
+las declara `shared/fonts.css`: nada se pide a Google.
+
+Tamaños de la tele (se leen a 3 m): todo en `--u` (1 px de la tele de 1920×1080). Ningún texto por debajo de 26u
+(24u solo en mayúsculas con `letter-spacing` de .14em o más), barras de progreso de 8u y, si un texto puede no caber,
+`line-clamp` a 2 o 3 líneas antes que «…» a media palabra. Nada fuera del área segura (5 % del ancho, 6 % del alto) y
+sin `:hover` ni textos de teclado («Esc para…»): la tele no tiene ratón ni teclado. Como los
 estáticos se cargan al arrancar, en la tele el reposo cambia tras reiniciar `jota-screen`. Comprobar con las capturas
 del reposo.
 
