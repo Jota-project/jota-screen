@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="tv-secure" content="{{TV_SECURE_URL}}">
 <meta name="theme-color" content="#211b2a">
 <meta name="color-scheme" content="dark">
@@ -240,7 +240,7 @@
 <!-- dirección -->
 <div class="sheet" id="goS" role="dialog" aria-label="Ir a una dirección">
   <div class="grab"></div>
-  <input class="in" id="gin" placeholder="Dirección o búsqueda" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
+  <input class="in" id="gin" aria-label="Dirección o búsqueda" placeholder="Dirección o búsqueda" inputmode="url" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go">
 </div>
 
 <!-- emparejar -->
@@ -250,7 +250,7 @@
     <h1>Mando · {{TV_NAME}}</h1>
     <p id="pMsg">Pide acceso al administrador o escribe el código que aparecerá en la tele.</p>
     <div id="p1" class="pc">
-      <input class="in" id="pName" placeholder="Tu nombre (opcional)" maxlength="24" autocomplete="given-name" autocapitalize="words" enterkeyhint="go">
+      <input class="in" id="pName" aria-label="Tu nombre (opcional)" placeholder="Tu nombre (opcional)" maxlength="24" autocomplete="given-name" autocapitalize="words" enterkeyhint="go">
       <button class="bt big" id="pAsk" hidden>Pedir acceso al administrador</button>
       <button class="bt" id="pGo">Mostrar un código en la tele</button>
       <button class="bt ghost" id="pAdm">Tengo un código de administrador</button>
@@ -287,7 +287,7 @@
     <button class="b2 spX" id="spX" type="button" aria-label="Cerrar Spotify"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></button>
     <button class="b2 spQ" id="spQ" type="button" aria-label="Buscar en Spotify" aria-expanded="false"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg></button>
   </div>
-  <input class="in" id="spin" placeholder="Busca y reproduce: artista, canción…" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
+  <input class="in" id="spin" aria-label="Buscar en Spotify" placeholder="Busca y reproduce: artista, canción…" autocomplete="off" autocorrect="off" spellcheck="false" enterkeyhint="search">
   <div class="spArt" id="spArt"></div>
   <div class="spMeta">
     <div class="spCtx spTx"><span class="eq" id="spEq" aria-hidden="true"><i></i><i></i><i></i></span><span id="spCtx"></span></div>
@@ -296,7 +296,7 @@
       <button class="spIc" id="spLike" aria-label="Me gusta" hidden><svg><use href="#i-heart"/></svg></button>
     </div>
   </div>
-  <div class="spBar"><div class="spTrk" id="spTrk"><i id="spFill"></i></div><div class="spTm"><span id="spP">0:00</span><span id="spD">0:00</span></div></div>
+  <div class="spBar"><div class="spTrk" id="spTrk" role="slider" tabindex="0" aria-label="Posición en la canción" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0" aria-valuetext="0:00"><i id="spFill"></i></div><div class="spTm"><span id="spP">0:00</span><span id="spD">0:00</span></div></div>
   <div class="spCtl">
     <button class="spIc" id="spShuf" aria-label="Aleatorio"><svg><use href="#i-shuf"/></svg></button>
     <button class="spIc spBig" data-sp="prev" aria-label="Anterior"><svg><use href="#i-prev"/></svg></button>
@@ -308,7 +308,7 @@
   <div class="spList" id="spList"></div>
   <div class="spLogin" id="spDead" hidden><span>Spotify no ve el altavoz de la tele. Suele pasar tras un corte de red.</span><button class="bt" id="spRestart" type="button">Reiniciar altavoz</button></div>
   <div class="spLogin" id="spLogin" hidden><span>Para ver tus playlists, lo último que has escuchado y marcar «Me gusta», vuelve a conectar Spotify una vez.</span><a id="spLoginA" target="_blank" rel="noopener">Conectar Spotify</a></div>
-  <div class="fld spVol"><span>Volumen de Spotify</span><span id="spV">—</span><input type="range" id="rSp" min="0" max="100" step="1"></div>
+  <div class="fld spVol"><span>Volumen de Spotify</span><span id="spV">—</span><input type="range" id="rSp" min="0" max="100" step="1" aria-label="Volumen de Spotify"></div>
   <button class="bt" id="spTv" type="button">Ver Spotify en la tele</button>
   </div>
 </div>
@@ -324,7 +324,7 @@
   <div class="vzFh" id="agFh" aria-hidden="true" hidden><span data-f="pill">← Píldora</span><span data-f="panel">Panel →</span></div>
   <div class="vzA"><button class="b2" id="agStop" type="button" hidden>Parar</button><button class="b2" id="agRetry" type="button" hidden>Reintentar</button><button class="b2" id="agHide" type="button" hidden>Quitar de la tele</button><button class="b2" id="agForm" type="button" hidden>Ampliar en la tele</button></div>
   <div class="vzSr" id="agFs" role="status"></div>
-  <input class="in vzIn" id="agin" placeholder="Pídele algo a Jota…" autocomplete="off" autocorrect="on" spellcheck="true" enterkeyhint="send">
+  <input class="in vzIn" id="agin" aria-label="Escribe a Jota" placeholder="Pídele algo a Jota…" autocomplete="off" autocorrect="on" spellcheck="true" enterkeyhint="send">
   <div class="vzO">
     <button class="vzOrb" id="agOrb" type="button" aria-label="Escribir o dictar a Jota"></button>
     <span class="vzH" id="agH">Para dictar, usa el micrófono del teclado</span>

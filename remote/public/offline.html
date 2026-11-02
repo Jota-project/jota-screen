@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#211b2a">
+<meta name="color-scheme" content="dark">
+<script src="/mando/theme.js"></script>
+<link rel="stylesheet" href="/shared/fonts.css">
+<link rel="stylesheet" href="/shared/tokens-mando.css">
+<link rel="stylesheet" href="/mando/styles/mando.css">
+<link rel="icon" href="/icon-192.png">
+<title>Mando · sin conexión</title>
+</head>
+<body>
+<!-- la sirve sw.js cuando no hay red: el mismo aspecto que emparejar (.pairV) y un enlace que vuelve a intentarlo -->
+<main class="pairV">
+  <div class="pc">
+    <svg class="lg" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="5" width="17" height="13" rx="3"/><path d="M8 21h8"/><path d="M4 4l16 16"/></svg>
+    <h1>Sin conexión con la pantalla</h1>
+    <p>Este móvil no llega a {{TV_NAME}}. Comprueba que estás en la wifi de casa y que la pantalla está encendida.</p>
+    <a class="bt big" href="/">Reintentar</a>
+  </div>
+</main>
+</body>
+</html>

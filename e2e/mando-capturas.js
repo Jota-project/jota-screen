@@ -231,6 +231,18 @@ async function adminScenes(theme, admin) {
     await p.waitForTimeout(800);
     await shot(p, T('teclado-contrasena'));
   });
+  // K5: las hojas son diálogos modales: detrás, inert; el foco, dentro; con Esc se cierran y el foco vuelve al botón
+  await run('hoja-dialogo', async p => {
+    await tap(p, 'Ajustes', 600);
+    const open = await p.evaluate(() => {
+      const s = document.querySelector('#setS'), a = document.activeElement;
+      return { inert: document.querySelector('main.app2').inert, modal: s.getAttribute('aria-modal'), inside: s.contains(a) };
+    });
+    if (!open.inert || open.modal !== 'true' || !open.inside) errors.push(`${T('hoja-dialogo')}: al abrir ${JSON.stringify(open)}`);
+    await p.keyboard.press('Escape'); await p.waitForTimeout(400);
+    const closed = await p.evaluate(() => ({ inert: document.querySelector('main.app2').inert, focus: document.activeElement && document.activeElement.getAttribute('aria-label') }));
+    if (closed.inert || closed.focus !== 'Ajustes') errors.push(`${T('hoja-dialogo')}: al cerrar ${JSON.stringify(closed)}`);
+  });
   await focusTv({ kind: 'none' });
   await run('hoja-direccion', async p => { await tap(p, 'Abrir una dirección'); await p.keyboard.type('elpais.com'); await shot(p, T('hoja-direccion')); });
   await run('hoja-agente', async p => {

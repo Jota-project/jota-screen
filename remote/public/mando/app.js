@@ -50,3 +50,7 @@ for (const p of [status, trackpad, gestures, actions, sheets, keyboard, go, agen
 
 // tras canjear enlaces (el maestro nunca viaja): por http y con una URL https que responde, se salta a ella (voz)
 settle().finally(() => { connect(); toSecure(state.token); });
+
+// sin red (fuera de casa, el servidor caído), sw.js enseña offline.html en vez del error del navegador. Solo en https o
+// localhost: por http (mando.local) el navegador no deja service workers
+if ('serviceWorker' in navigator && window.isSecureContext) navigator.serviceWorker.register('/sw.js').catch(() => {});
