@@ -197,6 +197,8 @@ ${Object.entries(LOOK.tiers).map(([k, v]) => `.w[data-tier=${k}]{--blur:${u(v.bl
 .body.off,.w[data-pass] .body{pointer-events:none}
 .w[data-drag] .body{cursor:grabbing}
 .halo{box-shadow:0 ${u(2)} ${u(6)} rgba(10,6,16,.35),0 ${u(30)} ${u(70)} ${u(-18)} rgba(10,6,16,.6)}
+/* sobre una web clara la sombra entera deja un borrón alrededor del cristal: ahí, a un cuarto */
+.w[data-ctx=web] .halo:not(.off){opacity:.25}
 .body{overflow:hidden;background:color-mix(in srgb,var(--sheet) calc(var(--tint) * 100%),transparent);
   -webkit-backdrop-filter:blur(var(--blur)) saturate(var(--sat)) brightness(var(--br));
   backdrop-filter:blur(var(--blur)) saturate(var(--sat)) brightness(var(--br));
@@ -327,15 +329,18 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
    real en la tele (ambiente 848, fotograma 342, tarjeta 665): el panel mide 640, así que se ven nítidas */
 .md:empty{display:none}
 .tn:not(:last-child) .md,.w[data-form=pill] .md{display:none}
-.mp{position:relative;border-radius:${u(30)};overflow:hidden;aspect-ratio:4/3;background:color-mix(in srgb,${LOOK.card.fill} ${LOOK.card.alpha * 100}%,transparent);
+/* el pie va en el flujo, por debajo de la franja del ▶: si el título y el episodio ocupan dos líneas, la tarjeta crece
+   (4/3 es su mínimo: el ::before y el pie comparten la única celda de la rejilla) en vez de que el texto suba bajo el botón */
+.mp{position:relative;border-radius:${u(30)};overflow:hidden;display:grid;background:color-mix(in srgb,${LOOK.card.fill} ${LOOK.card.alpha * 100}%,transparent);
   box-shadow:inset 0 0 0 .5px rgba(255,255,255,.1),0 ${u(18)} ${u(44)} rgba(0,0,0,.35);animation:bud .9s var(--tv-ease) backwards} /* filo fino, ver .body */
 .mpi{position:absolute;inset:0}
 .mpi img,.ms img,.mli-i img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity .8s var(--tv-ease)}
 :is(.mpi,.ms,.mli-i) img[data-on]{opacity:1}
 .mp::after{content:"";position:absolute;inset:0;pointer-events:none;
   background:linear-gradient(to top,rgba(${LOOK.media.shade},${LOOK.media.fade[0]}) 0%,rgba(${LOOK.media.shade},${LOOK.media.fade[1]}) 38%,rgba(${LOOK.media.shade},0) 72%)}
-.mpc{position:absolute;z-index:1;left:${u(30)};right:${u(30)};bottom:${u(26)};display:flex;flex-direction:column;gap:${u(12)}}
-.mk{display:flex;align-items:center;gap:${u(10)};font:600 ${u(20)}/1 var(--tv-sans);letter-spacing:.14em;text-transform:uppercase;color:var(--t-soft)}
+.mp::before{content:"";grid-area:1/1;padding-top:75%}
+.mpc{grid-area:1/1;align-self:end;position:relative;z-index:1;margin:${u(176)} ${u(30)} ${u(26)};display:flex;flex-direction:column;gap:${u(12)}}
+.mk{display:flex;align-items:center;gap:${u(10)};font:600 ${u(24)}/1 var(--tv-sans);letter-spacing:.14em;text-transform:uppercase;color:var(--t-soft)}
 .mk i{width:${u(10)};height:${u(10)};border-radius:50%;background:${LOOK.media.red};box-shadow:0 0 ${u(12)} ${LOOK.media.red}}
 .mt{font:420 ${u(44)}/1.05 var(--tv-serif);font-variation-settings:'opsz' 36;color:var(--t-main);letter-spacing:-.01em;
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
@@ -343,13 +348,14 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
 .ms{position:relative;flex:none;width:${u(168)};aspect-ratio:16/9;border-radius:${u(12)};overflow:hidden;
   background:color-mix(in srgb,var(--t-you) 14%,transparent);box-shadow:0 0 0 .5px rgba(255,255,255,.12)} /* filo fino, ver .body */
 .mx{min-width:0;display:flex;flex-direction:column;gap:${u(6)}}
-.msub{font:500 ${u(26)}/1.2 var(--tv-sans);color:var(--t-main);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.mleft{font:400 ${u(24)}/1.2 var(--tv-sans);color:var(--t-soft);white-space:nowrap}
+/* textos de lectura: nunca por debajo de 26u (24u solo en mayúsculas espaciadas, como .mk); el episodio en 2 líneas */
+.msub{font:500 ${u(26)}/1.2 var(--tv-sans);color:var(--t-main);display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.mleft{font:400 ${u(26)}/1.2 var(--tv-sans);color:var(--t-soft);white-space:nowrap}
 .msub:empty,.mleft:empty{display:none}
-.mbar{display:block;height:${u(5)};border-radius:${u(3)};background:rgba(246,243,240,.2);overflow:hidden}
+.mbar{display:block;height:${u(8)};border-radius:${u(4)};background:rgba(246,243,240,.2);overflow:hidden}
 .mbar i{display:block;height:100%;background:${LOOK.media.red};transform-origin:left;transition:transform .8s var(--tv-ease)}
 /* el ▶: en el centro de la imagen; al pulsarlo se hunde, se enciende y suelta una onda */
-.mplay{position:absolute;z-index:1;left:50%;top:25%;width:${u(96)};height:${u(96)};margin:${u(-48)} 0 0 ${u(-48)};border-radius:50%;
+.mplay{position:absolute;z-index:1;left:50%;top:${u(104)};width:${u(96)};height:${u(96)};margin:${u(-48)} 0 0 ${u(-48)};border-radius:50%;
   background:rgba(${LOOK.media.shade},${LOOK.media.play});box-shadow:0 0 0 ${u(2.5)} rgba(246,243,240,.9);backdrop-filter:blur(${u(8)});
   transition:transform .35s var(--tv-ease),background .35s var(--tv-ease)}
 .mplay i{position:absolute;left:54%;top:50%;transform:translate(-50%,-50%);border-style:solid;border-color:transparent transparent transparent #f6f3f0;
@@ -365,7 +371,7 @@ ${BREATHE_STATES.map(k => `.w[data-state=${k}] .orbe`).join(',')}{animation:brea
 .mli-i{position:relative;aspect-ratio:16/9;border-radius:${u(14)};overflow:hidden;background:color-mix(in srgb,var(--t-you) 14%,transparent);
   box-shadow:0 0 0 .5px rgba(255,255,255,.12),0 ${u(10)} ${u(26)} rgba(0,0,0,.3)} /* filo fino, ver .body */
 .mli .mt{font-size:${u(32)};-webkit-line-clamp:1}
-.mli .msub{font-weight:400;font-size:${u(24)};color:var(--t-soft)}
+.mli .msub{font-weight:400;font-size:${u(26)};color:var(--t-soft)}
 .mli .mbar{margin-top:${u(4)}}
 .w[data-calm] .md[data-press] .mplay::after{animation:none}
 

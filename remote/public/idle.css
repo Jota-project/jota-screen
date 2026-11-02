@@ -2,6 +2,7 @@
    Cada widget ocupa su celda entera (contenedor de tamaño: unidades cqw/cqh) y su contenido (.wi) se alinea dentro.
    Las medidas van en --s: la unidad de escala de la pantalla (--u) por el ajuste de su celda (--fit, lo pone el JS si el
    contenido no cabe, p. ej. con dos actividades). La hora se ajusta sola a su celda con cqh/cqw.
+   Legible a 3 m: ningún texto por debajo de 26 --u (24 solo en mayúsculas con .14em de espaciado) y barras de 8.
    Tokens: Jota Dusk en oscuro para la tele (shared/tokens-tv.css; aquí, alias locales). Presupuestos: TVC Diseño - Reposo v2 (diagnóstico). */
 @property --ca{syntax:'<color>';inherits:true;initial-value:#7c6aae}
 @property --cb{syntax:'<color>';inherits:true;initial-value:#6e8cc4}
@@ -108,15 +109,16 @@ html.tv-agent-talk #wCtx{opacity:0}
 .tt{font-family:var(--serif);font-size:calc(46 * var(--s));font-weight:450;line-height:1.15;margin-top:calc(12 * var(--s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .ar{font-size:calc(30 * var(--s));color:var(--soft);margin-top:calc(4 * var(--s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .pb{display:none;align-items:center;gap:calc(24 * var(--s));font-size:calc(30 * var(--s));color:var(--soft);margin-top:calc(22 * var(--s))}
-.pb .tr{flex:1;height:calc(6 * var(--s));border-radius:var(--tv-track-radius);background:var(--track);overflow:hidden}
+.pb .tr{flex:1;height:calc(8 * var(--s));border-radius:var(--tv-track-radius);background:var(--track);overflow:hidden}
 .pb .tr i{display:block;height:100%;background:var(--text);transform-origin:left;transform:scaleX(0);transition:transform var(--tv-tick) linear}
 #wMus[data-v=line] .tt{margin-top:calc(6 * var(--s))} /* en línea cabe en una fila de la rejilla (y media separación) */
 #wMus[data-v=band] .art{width:calc(108 * var(--s));height:calc(108 * var(--s));border-radius:calc(20 * var(--s))}
 #wMus[data-v=band] .meta{display:flex;align-items:center;gap:calc(36 * var(--s))}
-#wMus[data-v=band] .mt{flex:0 1 calc(640 * var(--s));min-width:0}
+/* la barra va pegada a su título (no al otro extremo de la pantalla): el título mide lo que su texto, hasta 640 */
+#wMus[data-v=band] .mt{flex:0 1 auto;max-width:calc(640 * var(--s));min-width:0}
 #wMus[data-v=band] .eq{display:none}
 #wMus[data-v=band] .tt{font-size:calc(52 * var(--s));margin-top:0}
-#wMus[data-v=band] .pb{display:flex;flex:1 1 calc(240 * var(--s));margin:0}
+#wMus[data-v=band] .pb{display:flex;flex:0 1 calc(560 * var(--s));min-width:calc(240 * var(--s));margin:0}
 #wMus[data-v=band] .pb .tr i{background:var(--soft)}
 /* grande: la carátula nunca pasa del 44 % del ancho de la celda, así el título siempre tiene columna; y hasta dos líneas */
 #wMus[data-v=big]>.wi{align-items:flex-end;gap:calc(36 * var(--s))}
@@ -156,7 +158,7 @@ body.night,body.cinema{--text:#808080;--clock:#7a7a7a;--clock2:#767676;--soft:#7
   display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;text-wrap:balance}
 .nf-p{display:flex;align-items:center;gap:calc(22 * var(--s));margin-top:calc(22 * var(--s));font-size:calc(28 * var(--s));color:var(--soft);white-space:nowrap}
 .nf-p #nfS{color:var(--text);font-weight:500}
-.nf-tr,.nf-bar{display:block;height:calc(6 * var(--s));border-radius:var(--tv-track-radius);background:var(--track);overflow:hidden}
+.nf-tr,.nf-bar{display:block;height:calc(8 * var(--s));border-radius:var(--tv-track-radius);background:var(--track);overflow:hidden}
 .nf-tr{flex:1;max-width:calc(260 * var(--s))}
 .nf-tr i,.nf-bar i{display:block;height:100%;background:var(--nf);transform-origin:left;transform:scaleX(0);transition:transform 1s var(--ease)}
 .nf-side{flex:1;min-width:0;display:flex;flex-direction:column;gap:calc(40 * var(--s))}
@@ -175,8 +177,8 @@ body.night,body.cinema{--text:#808080;--clock:#7a7a7a;--clock2:#767676;--soft:#7
 .nf-row{display:flex;gap:calc(32 * var(--s))}
 .nf-card{flex:none;width:calc(392 * var(--s));min-width:0}
 .nf-cimg{position:relative;aspect-ratio:16/9;border-radius:calc(16 * var(--s));overflow:hidden;background:var(--tv-veil);box-shadow:0 calc(14 * var(--s)) calc(34 * var(--s)) rgba(0,0,0,.36),0 0 0 1px rgba(246,243,240,.06)}
-.nf-cimg .nf-bar{position:absolute;z-index:1;left:0;right:0;bottom:0;border-radius:0;height:calc(5 * var(--s));background:rgba(246,243,240,.22)}
-.nf-cs{font-size:calc(24 * var(--s));color:var(--soft);margin-top:calc(12 * var(--s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nf-cimg .nf-bar{position:absolute;z-index:1;left:0;right:0;bottom:0;border-radius:0;height:calc(8 * var(--s));background:rgba(246,243,240,.22)}
+.nf-cs{font-size:calc(26 * var(--s));color:var(--soft);margin-top:calc(12 * var(--s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nf-more:empty,.nf-row:empty{display:none}
 .night #wNfx,.cinema #wNfx,.dim #wNfx{opacity:0!important}
 
@@ -209,8 +211,8 @@ body.night,body.cinema{--text:#808080;--clock:#7a7a7a;--clock2:#767676;--soft:#7
 .sg-c[data-size=row] .sg-t{font-size:calc(40 * var(--s))}
 .sg-s{font-size:calc(28 * var(--s));color:var(--soft);margin-top:calc(14 * var(--s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sg-c[data-size=row] .sg-s{font-size:calc(26 * var(--s))}
-.sg-bar{display:block;height:calc(6 * var(--s));border-radius:var(--tv-track-radius);background:var(--track);overflow:hidden}
-.sg-img .sg-bar{position:absolute;z-index:1;left:0;right:0;bottom:0;border-radius:0;height:calc(5 * var(--s));background:rgba(246,243,240,.22)}
+.sg-bar{display:block;height:calc(8 * var(--s));border-radius:var(--tv-track-radius);background:var(--track);overflow:hidden}
+.sg-img .sg-bar{position:absolute;z-index:1;left:0;right:0;bottom:0;border-radius:0;height:calc(8 * var(--s));background:rgba(246,243,240,.22)}
 .sg-m .sg-bar{margin-top:calc(20 * var(--s));max-width:calc(300 * var(--s))}
 .sg-bar i{display:block;height:100%;background:var(--dot);transform-origin:left;transform:scaleX(0)}
 .night .sg,.cinema .sg,.dim .sg{opacity:0!important}
@@ -222,11 +224,11 @@ body.night,body.cinema{--text:#808080;--clock:#7a7a7a;--clock2:#767676;--soft:#7
 .sg-card{flex:none;width:calc(var(--iw) * var(--s));min-width:0}
 .sg-card .sg-img{border-radius:calc(16 * var(--s));aspect-ratio:16/9}
 .sg-ct{font-size:calc(28 * var(--s));font-weight:500;margin-top:calc(12 * var(--s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sg-cs{font-size:calc(24 * var(--s));color:var(--soft);margin-top:calc(4 * var(--s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sg-cs{font-size:calc(26 * var(--s));color:var(--soft);margin-top:calc(4 * var(--s));white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sg-c[data-size=tile]{flex-direction:column;align-items:flex-start;gap:calc(20 * var(--s))}
 .sg[data-dir=rev] .sg-c[data-size=tile]{flex-direction:column;align-items:flex-end}
 .sg-c[data-size=tile] .sg-m{max-width:100%}
 .sg-c[data-size=tile] .sg-t,.sg-c[data-size=mini] .sg-t{font-size:calc(36 * var(--s))}
-.sg-c[data-size=tile] .sg-s,.sg-c[data-size=mini] .sg-s{font-size:calc(24 * var(--s))}
+.sg-c[data-size=tile] .sg-s,.sg-c[data-size=mini] .sg-s{font-size:calc(26 * var(--s))}
 .sg-c[data-size=mini]{gap:calc(24 * var(--s))}
 .sg-c[data-size=mini] .sg-img{border-radius:calc(16 * var(--s))}
