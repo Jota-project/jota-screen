@@ -75,6 +75,16 @@ function spTick() {
   const p = sp.drag !== null ? sp.drag * d : spPos();
   $('#spP').textContent = mmss(p); $('#spD').textContent = mmss(d);
   $('#spFill').style.width = d ? (p / d * 100).toFixed(2) + '%' : '0';
+  // la barra es un slider (lector de pantalla, Switch Control): en segundos, con el texto «1:23 de 3:45»
+  const trk = $('#spTrk');
+  trk.setAttribute('aria-valuemax', String(Math.round(d / 1000))); trk.setAttribute('aria-valuenow', String(Math.round(p / 1000)));
+  trk.setAttribute('aria-valuetext', d ? `${mmss(p)} de ${mmss(d)}` : 'Nada sonando');
+}
+/* saltar a una fracción de la canción (al soltar la barra o con las flechas) */
+function spSeek(f) {
+  if (!sp.now || sp.now.empty) return;
+  sp.now.progress = f * sp.now.duration; sp.recv = Date.now(); spTick();
+  rpc({ t: 'spotify', a: 'seek', ms: Math.round(f * sp.now.duration) });
 }
 
 export const spotify = {
@@ -94,7 +104,15 @@ export const spotify = {
     trk.addEventListener('pointerup', e => {
       if (sp.drag === null) return;
       const f = frac(e); sp.drag = null; trk.classList.remove('drag'); buzz(8);
-      if (sp.now && !sp.now.empty) { sp.now.progress = f * sp.now.duration; sp.recv = Date.now(); spTick(); rpc({ t: 'spotify', a: 'seek', ms: Math.round(f * sp.now.duration) }); }
+      spSeek(f);
+    });
+    // con teclado: ← → 10 s, Inicio y Fin
+    trk.addEventListener('keydown', e => {
+      const d = sp.now && !sp.now.empty ? sp.now.duration : 0; if (!d) return;
+      const at = spPos() / d, step = 10000 / d;
+      const to = { ArrowLeft: at - step, ArrowDown: at - step, ArrowRight: at + step, ArrowUp: at + step, Home: 0, End: 0.999 }[e.key];
+      if (to === undefined) return;
+      e.preventDefault(); spSeek(Math.min(0.999, Math.max(0, to)));
     });
     trk.addEventListener('pointercancel', () => { sp.drag = null; trk.classList.remove('drag'); spTick(); });
     document.addEventListener('click', e => {

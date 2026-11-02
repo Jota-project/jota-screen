@@ -10,6 +10,11 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
    En el navegador y en Android no aplica o no cambia nada. */
 @media (display-mode:standalone){html{min-height:max(100lvh,calc(100% + env(safe-area-inset-top)))}}
 
+/* foco con teclado o Switch Control en todo lo que no tenga el suyo (las reglas propias, más abajo, ganan); la hoja que
+   recibe el foco al abrirse (ui/sheets.js) no se marca */
+:focus-visible{outline:2px solid var(--accent-text);outline-offset:2px}
+.sheet:focus,.kbV:focus{outline:none}
+
 /* punto de estado */
 .dot{width:9px;height:9px;border-radius:50%;background:var(--warn);flex:none;box-shadow:0 0 0 4px color-mix(in srgb,var(--warn) 16%,transparent);transition:background .3s,box-shadow .3s}
 .dot.ok{background:var(--status);box-shadow:0 0 0 4px color-mix(in srgb,var(--status) 16%,transparent)}
@@ -18,6 +23,7 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 /* botones de las hojas */
 .bt{height:var(--b);border-radius:var(--r-m);background:var(--surface);border:1px solid var(--edge);color:var(--tx);display:grid;place-items:center;font:inherit;font-weight:600;letter-spacing:.2px;transition:transform .08s,background .15s,opacity .2s;touch-action:none;cursor:pointer}
 .bt.dn{transform:scale(.94);background:var(--s3)}
+a.bt{text-decoration:none}
 .bt svg{width:24px;height:24px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 .bt.big{background:var(--accent);color:var(--on-accent);border-color:transparent}
 .bt.big.dn{background:var(--accent-press)}
@@ -32,7 +38,7 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 /* hojas */
 .shade{position:fixed;inset:0;background:var(--shade);opacity:0;pointer-events:none;transition:opacity .2s;z-index:5}
 .shade.on{opacity:1;pointer-events:auto}
-.sheet{position:fixed;left:0;right:0;bottom:var(--kb);z-index:6;margin:0 auto;max-width:640px;background:var(--sheet);border:1px solid var(--edge);border-bottom:0;border-radius:var(--r-xl) var(--r-xl) 0 0;padding:12px 16px max(16px,env(safe-area-inset-bottom));transform:translateY(110%);visibility:hidden;transition:transform .24s var(--ease),bottom .12s,visibility 0s .24s;touch-action:pan-y;max-height:86%;overflow:auto}
+.sheet{position:fixed;left:0;right:0;bottom:var(--kb);z-index:6;margin:0 auto;max-width:640px;background:var(--sheet);border:1px solid var(--edge);border-bottom:0;border-radius:var(--r-xl) var(--r-xl) 0 0;padding:12px 16px max(16px,env(safe-area-inset-bottom));transform:translateY(110%);visibility:hidden;transition:transform .24s var(--ease),bottom .12s,visibility 0s .24s;touch-action:pan-y pinch-zoom;max-height:86%;overflow:auto}
 .sheet.on{transform:none;visibility:visible;transition:transform .24s var(--ease),bottom .12s}  /* cerradas, ocultas: si no, suben con el teclado y se ven a través de él */
 .grab{width:38px;height:4px;border-radius:2px;background:var(--grab);margin:0 auto 14px}
 .in{width:100%;height:52px;border-radius:var(--r-m);border:1px solid var(--line);background:var(--surface);color:var(--tx);font:500 17px "Inter",system-ui,-apple-system,sans-serif;padding:0 16px;outline:none;-webkit-user-select:text;user-select:text;touch-action:manipulation;-webkit-appearance:none}
@@ -125,7 +131,7 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .sw::before{content:"";position:absolute;inset:-9px 0}
 .fld.wrap .tms{grid-column:1/-1}.fld.wrap .tm{flex:1}
 .fld>.hint{grid-column:1/-1;display:block;color:var(--dim);font-size:12.5px;margin:2px 2px 0}
-.tm,.sel{height:38px;border-radius:var(--r-s);border:1px solid var(--line);background:var(--surface);color:var(--tx);font:600 15px "Inter",system-ui,-apple-system,sans-serif;padding:0 10px;-webkit-appearance:none;appearance:none;touch-action:manipulation}
+.tm,.sel{height:44px;border-radius:var(--r-s);border:1px solid var(--line);background:var(--surface);color:var(--tx);font:600 16px "Inter",system-ui,-apple-system,sans-serif;padding:0 10px;-webkit-appearance:none;appearance:none;touch-action:manipulation}
 .tms{display:flex;gap:8px;align-items:center}
 .wk{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px 10px;align-items:center;padding:4px 2px 10px}
 .wk span{color:var(--dim);font-size:13.5px;font-weight:600;width:38px}
@@ -146,7 +152,7 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .spLa{left:-160px;top:-40px;width:600px;height:600px;background:radial-gradient(closest-side,var(--sa),transparent);animation:orbA 59s linear infinite}
 .spLb{left:40px;top:240px;width:520px;height:520px;background:radial-gradient(closest-side,var(--sb),transparent);animation:orbB 79s linear infinite}
 :root.ambOff .spL{animation-play-state:paused}
-.spIn{position:relative;height:100%;overflow:auto;overscroll-behavior:contain;padding:12px 24px max(20px,env(safe-area-inset-bottom));touch-action:pan-y}
+.spIn{position:relative;height:100%;overflow:auto;overscroll-behavior:contain;padding:12px 24px max(20px,env(safe-area-inset-bottom));touch-action:pan-y pinch-zoom}
 .spTop{display:flex;align-items:center;justify-content:space-between;height:48px;margin:4px -12px 0}
 .spTop .b2{width:48px;height:48px}
 #spS:not(.q) #spin{display:none}
@@ -181,11 +187,12 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .spIc b{position:absolute;top:9px;right:8px;font:700 9px var(--sans);display:none}.spIc.one b{display:block}
 .spIc[hidden]{display:none}
 .spBar{margin-top:14px}
-.spTrk{height:24px;display:flex;align-items:center;touch-action:none;position:relative;cursor:pointer}
+.spTrk{height:44px;margin:-10px 0;display:flex;align-items:center;touch-action:none;position:relative;cursor:pointer;border-radius:var(--r-s)}
 .spTrk::before{content:"";position:absolute;left:0;right:0;height:4px;border-radius:2px;background:var(--sp-track)}
 .spTrk i{position:relative;height:4px;border-radius:2px;background:var(--text);width:0}
 .spTrk i::after{content:"";position:absolute;right:-7px;top:-5px;width:14px;height:14px;border-radius:50%;background:var(--text);box-shadow:0 1px 4px rgba(0,0,0,.4);opacity:0;transition:opacity .15s}
-.spTrk.drag i::after,.spTrk:hover i::after{opacity:1}
+.spTrk.drag i::after,.spTrk:focus-visible i::after{opacity:1}
+@media (hover:hover){.spTrk:hover i::after{opacity:1}}
 .spTm{display:flex;justify-content:space-between;margin-top:2px;font-size:13px;color:var(--text-soft);font-variant-numeric:tabular-nums}
 .spCtl{display:flex;align-items:center;justify-content:space-between;height:84px;margin-top:2px}
 .spCtl .bt.big{width:76px;height:76px;border-radius:999px;box-shadow:var(--play-shadow);transition:transform .2s var(--ease)}
@@ -238,8 +245,11 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .chip{display:inline-block;font-size:11px;font-weight:700;letter-spacing:.3px;padding:2px 7px;border-radius:999px;margin-left:6px;vertical-align:1px;background:var(--s3);color:var(--dim)}
 .chip.admin{background:var(--accent-tint);color:var(--ac)}.chip.member{background:color-mix(in srgb,var(--status) 18%,transparent);color:var(--ok)}
 .chip.on{background:transparent;color:var(--ok);padding:0;margin-left:6px}
-.dvb{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
-.dvb .sel{height:36px;font-size:13px}
+/* filas de dispositivos: si nombre y botones no caben juntos (los selectores van a 16 px), los botones bajan a su línea */
+#devs .fld{display:flex;flex-wrap:wrap}
+#devs .fld>span{flex:1 1 170px;min-width:0}
+.dvb{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
+.dvb .sel,.dvb .dv{height:44px;font-size:16px;font-weight:500}
 .req{position:fixed;left:12px;right:12px;top:max(14px,env(safe-area-inset-top));z-index:30;max-width:520px;margin:0 auto;background:var(--surface);border:1px solid var(--accent);border-radius:var(--r-l);padding:16px;box-shadow:var(--shadow-2);animation:rqin .3s var(--ease)}
 .req[hidden]{display:none}
 @keyframes rqin{from{transform:translateY(-20px);opacity:0}}
@@ -248,7 +258,7 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .rqb{display:grid;grid-template-columns:1fr 1fr 1.2fr;gap:8px}.rqb .bt{height:46px;font-size:14px}
 .spin2{width:34px;height:34px;margin:6px auto;border-radius:50%;border:3px solid var(--s3);border-top-color:var(--ac);animation:spn .9s linear infinite}
 [data-hide]{display:none!important}
-.dv{height:36px;padding:0 14px;font-size:13px;border-radius:var(--r-s);display:block}
+.dv{height:44px;padding:0 14px;font-size:14px;border-radius:var(--r-s);display:block}
 .dv.sure{background:color-mix(in srgb,var(--bad) 16%,transparent);border-color:color-mix(in srgb,var(--bad) 40%,transparent);color:var(--bad)}
 /* hablar con Jota (v3): la hoja es transparente y la sombra se vuelve un velo con dos luces que crecen mientras piensa */
 .shade.vz{background:var(--veil);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);overflow:hidden}
@@ -420,7 +430,7 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 .srcRow{display:flex;align-items:center;justify-content:space-between;margin-top:2px}
 .srcRow[hidden]{display:none}
 .srcSeg{position:relative;display:flex;padding:3px;border-radius:999px;background:var(--pad)}
-.srcSeg button{position:relative;z-index:1;height:38px;padding:0 18px;border:0;border-radius:999px;background:transparent;color:var(--text-soft);font:600 14px var(--sans);cursor:pointer;touch-action:manipulation;transition:color .4s ease}
+.srcSeg button{position:relative;z-index:1;height:44px;padding:0 18px;border:0;border-radius:999px;background:transparent;color:var(--text-soft);font:600 14px var(--sans);cursor:pointer;touch-action:manipulation;transition:color .4s ease}
 .srcSeg button[aria-checked=true]{color:var(--text)}
 .srcSeg button:focus-visible{outline:2px solid var(--accent-text);outline-offset:2px}
 .srcSeg .ind{position:absolute;top:3px;bottom:3px;left:3px;border-radius:999px;background:var(--accent-tint);box-shadow:inset 0 0 0 1px var(--accent);transition:transform .55s var(--ease),width .55s var(--ease)}
@@ -556,6 +566,8 @@ body{position:fixed;inset:0;width:100%;background:var(--bg)}
 /* movimiento reducido: luces quietas, orbe sin respirar y sin transiciones */
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{transition:none!important;animation:none!important}}
 @media (prefers-reduced-motion:reduce){.vzOrb{scale:none}}   /* sin transición iría a saltos de 100 ms */
+@media (prefers-reduced-motion:reduce){.spin2,.rep.wait::after,.kbSt.busy i{animation:rmPulse 1.6s ease-in-out infinite!important}}
+@keyframes rmPulse{50%{opacity:.35}}
 
 /* utilidades: sustituyen a los antiguos style= del HTML; van al final para ganar a .acts y .foot con igual especificidad */
 .sprite{position:absolute;width:0;height:0;overflow:hidden}

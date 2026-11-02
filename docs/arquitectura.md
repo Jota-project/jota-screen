@@ -108,7 +108,8 @@ remote/
     listen.js             escucha en bucle local, red privada y Tailscale
   public/
     index.html            esqueleto del mando: hojas, botones, un modulepreload por módulo
-    manifest.webmanifest, icon-*.png
+    manifest.webmanifest, icon-*.png   PWA: iconos de 192 y 512, también maskable
+    sw.js, offline.html   service worker: sin red, offline.html en vez del error del navegador (solo en https o localhost)
     mando/theme.js        script clásico del <head>: pone el tema antes de pintar
     mando/app.js          registra los descriptores de features y llama a los init()
     mando/core/           dom, store (estado, ajustes, avisos), api (WebSocket, rpc, handle, onWs, setGate), perms
