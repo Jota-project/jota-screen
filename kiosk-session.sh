@@ -51,6 +51,7 @@ exec "$CHROME" \
   --remote-debugging-address=127.0.0.1 \
   --no-first-run --no-default-browser-check \
   --noerrdialogs --disable-infobars \
+  --hide-scrollbars \
   --password-store=basic \
   --autoplay-policy=no-user-gesture-required \
   "$start"

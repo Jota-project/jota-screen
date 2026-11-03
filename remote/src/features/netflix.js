@@ -30,6 +30,9 @@ const HIDE = `(()=>{window.__tvHidden=true;if(!window.__tvGuard){window.__tvGuar
 const UNHIDE = 'window.__tvHidden=false';
 /** órdenes que enseñan lo que ve el perfil: no para invitados */
 const PRIVATE = new Set(['watching', 'history', 'last', 'play_last', 'refresh']);
+// tras este rato detrás, la pestaña se recarga antes de enseñarla: si no, sale lo que se veía (la serie del finde) y la
+// portada con su caché vieja («Seguir viendo» con capítulos ya vistos)
+const STALE_MS = 30 * 60e3;
 
 /**
  * @typedef {{ profile?: string, profiles?: Record<string, string>, titles?: Record<string, { id: string, title: string }>,
@@ -55,6 +58,8 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
   let tab = null;
   /** @type {string | null} perfil en el que está la pestaña de Netflix (la cookie de perfil es de todo Chrome) */
   let tabGuid = null;
+  /** cuándo pasó detrás (0: no se sabe, p. ej. adoptada tras reiniciar el servidor: cuenta como vieja) */
+  let leftAt = 0;
   /** órdenes de más (las de «Seguir viendo», src/features/netflix-watch.js) */
   /** @type {Record<string, (m: any) => any>} */
   const extra = {};
@@ -108,19 +113,20 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
 
   /**
    * Antes de enseñar la pestaña de fondo: si está en «¿Quién eres?» (Netflix la vuelve a sacar tras un rato) o en otro
-   * perfil, se entra en el pedido mientras sigue detrás (sesión aparte), así nunca se ve esa pantalla.
-   * @param {string} id @param {string} want
+   * perfil, se entra en el pedido mientras sigue detrás (sesión aparte), así nunca se ve esa pantalla. Si lleva mucho
+   * detrás (stale), se entra igual: es una recarga entera que la deja en la portada.
+   * @param {string} id @param {string} want @param {boolean} stale   devuelve true si la ha recargado
    */
-  async function ready(id, want) {
+  async function ready(id, want, stale) {
     const g = guidOf(want);
-    if (!g || !cdp.request) return;
+    if (!g || !cdp.request) return false;
     const req = /** @type {Function} */ (cdp.request);
     let sid = null;
     try {
       ({ sessionId: sid } = await cdp.call('Target.attachToTarget', { targetId: id, flatten: true }, true));
       const probe = async () => { try { return (await req('Runtime.evaluate', { expression: PROBE, returnByValue: true }, sid))?.result?.value; } catch { return null; } };
       const p = await probe();
-      if (!p || (!p.gate && p.cur === g)) return;
+      if (!p || (!p.gate && p.cur === g && !stale)) return false;
       await req('Page.navigate', { url: `${ORIGIN}/SwitchProfile?tkn=${g}` }, sid);
       const t0 = now();
       for (;;) {
@@ -129,7 +135,8 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
         if ((q && !q.gate && q.cur === g && q.u && !/SwitchProfile/i.test(q.u)) || now() - t0 > 10000) break;
       }
       tabGuid = g;
-    } catch {} finally { if (sid) cdp.call('Target.detachFromTarget', { sessionId: sid }, true).catch(() => {}); }
+      return true;
+    } catch { return false; } finally { if (sid) cdp.call('Target.detachFromTarget', { sessionId: sid }, true).catch(() => {}); }
   }
 
   /** Deja la pestaña de Netflix delante, con la web cargada y en el perfil pedido. */
@@ -137,9 +144,15 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
     const want = (profile || defaultProfile()).trim();
     let p = null;
     if (alive()) {
-      if (!isActive()) { await ready(/** @type {string} */ (tab), want); await cdp.show(/** @type {string} */ (tab)); }
+      let stale = false;
+      if (!isActive()) {
+        stale = now() - leftAt > STALE_MS;
+        if (stale) log('netflix: llevaba mucho detrás, se recarga');
+        if (await ready(/** @type {string} */ (tab), want, stale)) stale = false;
+        await cdp.show(/** @type {string} */ (tab));
+      }
       try { await ev(UNHIDE); p = await ev(PROBE); } catch {}
-      if (!p || !isNetflix(p.u)) p = null;                       // congelada o fuera de Netflix: se recarga
+      if (!p || !isNetflix(p.u) || stale) p = null;              // congelada, fuera de Netflix o vieja sin recargar detrás: se recarga
     } else {
       tab = await cdp.newTab();
       log('netflix: pestaña nueva');
@@ -238,6 +251,7 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
   async function leave() {
     if (!isActive()) return;
     try { await ev(HIDE); } catch {}
+    leftAt = now();
     // lo último que se estaba viendo (el id del capítulo de /watch/): para «ponme la última que puse»
     const vid = Number(((cdp.pages.get(/** @type {string} */ (tab)) || { url: '' }).url.match(/\/watch\/(\d+)/) || [])[1]) || null;
     if (vid) { const l = data.last; data.last = { ...(l && l.id && now() - l.at < 6 * 3600e3 ? l : {}), at: now(), vid }; save(); }
