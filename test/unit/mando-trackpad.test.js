@@ -22,10 +22,13 @@ function fakes() {
     send(s) { this.sent.push(s); }
     close() { this.readyState = 3; }
   }
-  const node = () => ({ hidden: false, style: {}, h: {}, classList: { add() {}, remove() {}, contains: () => false, toggle() {} },
-    addEventListener(t, f) { this.h[t] = f; }, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, right: 300, top: 0 }) });
-  const els = {}, rail = node(); rail.hidden = true;
-  const doc = { hidden: false, addEventListener() {}, querySelector: s => (s === '#rail' ? rail : (els[s] ||= node())) };
+  const node = () => {
+    const c = new Set();
+    return { hidden: false, style: {}, h: {}, classList: { add: k => c.add(k), remove: k => c.delete(k), contains: k => c.has(k), toggle() {} },
+      addEventListener(t, f) { this.h[t] = f; }, setPointerCapture() {}, getBoundingClientRect: () => ({ left: 0, right: 300, top: 0, height: 300 }) };
+  };
+  const els = {};
+  const doc = { hidden: false, addEventListener() {}, querySelector: s => (els[s] ||= node()) };
   const def = (k, v) => Object.defineProperty(g, k, { value: v, configurable: true, writable: true });
   def('WebSocket', WS); def('document', doc); def('location', { protocol: 'http:', host: 'mando' });
   def('performance', { now: () => now });
@@ -35,7 +38,8 @@ function fakes() {
   /** avanza `ms` y corre los fotogramas pendientes */
   const frame = (ms = 16) => { now += ms; const run = frames; frames = []; for (const f of run) if (f) f(now); };
   const restore = () => { for (const k of keys) { const d = saved[k]; if (d) Object.defineProperty(g, k, d); else delete g[k]; } };
-  return { sockets, frame, restore, pad: () => els['#pad'], at: () => now, tick: ms => { now += ms; } };
+  els['#rail'] = node(); els['#rail'].classList.add('off');   // sin dato de scroll: sin carril, como en index.html
+  return { sockets, frame, restore, pad: () => els['#pad'], thumb: () => els['#railT'], at: () => now, tick: ms => { now += ms; } };
 }
 
 async function setup() {
@@ -46,7 +50,7 @@ async function setup() {
   const api = await import(pathToFileURL(path.join(tmp, 'mando', 'core', 'api.js')).href);
   const { cfg } = await import(pathToFileURL(path.join(tmp, 'mando', 'core', 'store.js')).href);
   Object.assign(cfg, { speed: 1.6, scroll: 1, natural: true, haptic: false });   // los de store.js (los pone app.js al arrancar)
-  const { trackpad } = await import(pathToFileURL(path.join(tmp, 'mando', 'features', 'trackpad.js')).href);
+  const { trackpad, paintRail } = await import(pathToFileURL(path.join(tmp, 'mando', 'features', 'trackpad.js')).href);
   await api.connect(); const ws = f.sockets[0]; ws.readyState = 1; ws.onopen(); ws.onmessage({ data: "p" + f.at() });   // eco del sondeo: si no, send() calla
   trackpad.init();
   const h = f.pad().h;
@@ -62,7 +66,7 @@ async function setup() {
   };
   const sent = () => { const s = ws.sent.slice(); ws.sent.length = 0; return s; };
   const wheel = s => s.filter(m => m.startsWith('w ')).map(m => +m.split(' ')[2]);
-  return { f, tmp, down, move, up, swipe2, sent, wheel };
+  return { f, tmp, down, move, up, swipe2, sent, wheel, paintRail };
 }
 
 test('mando trackpad: tocar para frenar la inercia no hace clic', async () => {
@@ -107,5 +111,35 @@ test('mando trackpad: el dedo que queda de un gesto de dos no mueve el cursor', 
     const y = t.swipe2(4); t.up(2, 160, y); t.sent();
     for (let i = 1; i <= 4; i++) { t.f.tick(16); t.move(1, 100 + 20 * i, y); t.f.frame(0); }
     assert.ok(!t.sent().some(m => m.startsWith('m ')), 'sin orden de cursor');
+  } finally { t.f.restore(); fs.rmSync(t.tmp, { recursive: true, force: true }); }
+});
+
+test('mando trackpad: en la franja del carril, en horizontal es el cursor y en vertical desplaza', async () => {
+  const t = await setup();
+  try {
+    t.paintRail({ pos: 0.5, size: 0.3 });                // carril a la vista: la franja son los 44 px de la derecha
+    t.down(1, 280, 200);
+    for (let i = 1; i <= 4; i++) { t.f.tick(16); t.move(1, 280 - 5 * i, 201); t.f.frame(0); }
+    let s = t.sent();
+    assert.ok(s.some(m => m.startsWith('m ')) && !s.some(m => m.startsWith('w ')), 'horizontal: cursor, sin rueda');
+    t.up(1, 260, 201); t.sent();
+    t.f.tick(500); t.down(2, 280, 200);
+    for (let i = 1; i <= 4; i++) { t.f.tick(16); t.move(2, 281, 200 + 5 * i); t.f.frame(0); }
+    s = t.sent();
+    assert.ok(s.some(m => m.startsWith('w ')) && !s.some(m => m.startsWith('m ')), 'vertical: rueda, sin cursor');
+  } finally { t.f.restore(); fs.rmSync(t.tmp, { recursive: true, force: true }); }
+});
+
+test('mando trackpad: en el extremo, el pulgar se aplasta mientras el dedo empuja y vuelve al soltar', async () => {
+  const t = await setup();
+  try {
+    t.paintRail({ pos: 1, size: 0.5 });                  // ya abajo del todo
+    t.down(1, 280, 100);
+    for (let i = 1; i <= 6; i++) { t.f.tick(16); t.move(1, 280, 100 + 10 * i); t.f.frame(0); }
+    const tr = t.f.thumb().style.transform, s = +/scaleY\(([\d.]+)\)/.exec(tr)[1];
+    assert.ok(s < 1 && s >= 0.85, `aplastado sin pasar del 85 %: ${tr}`);
+    assert.equal(t.f.thumb().style.transformOrigin, '50% 100%');
+    t.up(1, 280, 160);
+    assert.ok(!/scaleY/.test(t.f.thumb().style.transform), 'al soltar vuelve');
   } finally { t.f.restore(); fs.rmSync(t.tmp, { recursive: true, force: true }); }
 });

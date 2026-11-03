@@ -11,11 +11,21 @@ import { inTv, padGesture } from './tele.js';
 const P = new Map();
 let ax = 0, ay = 0, sxa = 0, sya = 0, raf = 0;
 let downT = 0, moved = 0, maxN = 0, twoT = 0, twoMoved = 0, rcDone = false, dragging = false, tdArm = false, lastTap = 0;
-let svy = 0, inertia = 0, inertiaEnd = null, x0 = 0, y0 = 0;
-/* caught: el dedo cayó con la inercia en marcha (ese toque solo frena, no hace clic); lastMv: último movimiento que
-   desplaza. Si al soltar han pasado más de STALE ms, los dedos estaban quietos y no hay inercia */
-let caught = false, lastMv = 0;
-const STALE = 80;
+let inertia = 0, inertiaEnd = null, x0 = 0, y0 = 0;
+/* caught: el dedo cayó con la inercia en marcha (ese toque solo frena, no hace clic) */
+let caught = false;
+/* Velocidad de salida: lo que se ha desplazado la página en los últimos VWIN ms, no una media por evento (que cambia con
+   los Hz de la pantalla y pesa de más el frenazo al levantar el dedo). Ventana vacía: los dedos estaban quietos, sin inercia */
+const VWIN = 80;
+let vs = [];
+/** Un desplazamiento de `d` px de página en el movimiento que acaba en `t` (y empezó `dt` ms antes). */
+function track(t, d, dt) { vs.push({ t, d, dt }); while (vs[0].t <= t - VWIN) vs.shift(); }
+/** px por ms al soltar en `t`; vacía la ventana. */
+function releaseV(t) {
+  const w = vs.filter(s => s.t > t - VWIN); vs = [];
+  if (!w.length) return 0;
+  return w.reduce((a, s) => a + s.d, 0) / Math.max(1, t - w[0].t + Math.min(w[0].dt, VWIN));
+}
 const r2 = n => Math.round(n * 100) / 100;
 /* un halo malva sigue al dedo mientras toca (en vez de la onda) y la ayuda se esconde solo mientras se toca */
 let haloId = null;
@@ -26,13 +36,30 @@ let uses = 0;
 function haloAt(e) { const b = pad.getBoundingClientRect(); halo.style.left = (e.clientX - b.left) + 'px'; halo.style.top = (e.clientY - b.top) + 'px'; }
 
 /* Carril: la franja de RAIL_ZONE px del borde derecho, solo si se ve el carril (hay dato de scroll) y fuera del modo Tele.
-   El gesto es del carril si el primer dedo cae en ella. Toque corto: clic, como en el resto. Arrastre (más de RAIL_ARM px en
-   vertical): desplazamiento relativo con aceleración e inercia, en el sentido de una barra (bajar el pulgar baja la página),
-   sea cual sea «Desplazamiento natural». Activo, crece y el pulgar se enciende en malva. Sin halo: con el mapeo relativo el
-   dedo no está sobre el pulgar, y un halo a su lado diría que sí. */
-const RAIL_ZONE = 44, RAIL_ARM = 6, RAIL_HOLD = 600, VMAX = 8;   // VMAX: px por ms, tope de la inercia
+   El gesto es del carril si el primer dedo cae en ella. Toque corto: clic, como en el resto. Pasados RAIL_ARM px se decide el
+   eje: en horizontal (|dx| > 1,5·|dy|) el gesto pasa al cursor; si no, arrastre: desplazamiento relativo con aceleración e
+   inercia, en el sentido de una barra (bajar el pulgar baja la página), sea cual sea «Desplazamiento natural». Activo, crece
+   y el pulgar se enciende en malva. Sin halo: con el mapeo relativo el dedo no está sobre el pulgar, y un halo a su lado diría
+   que sí. En un extremo, si el dedo sigue empujando, el pulgar se aplasta contra el borde (rubber-banding) */
+const RAIL_ZONE = 44, RAIL_ARM = 10, RAIL_HOLD = 600, VMAX = 8;   // VMAX: px por ms, tope de la inercia
 let rail, railT, railId = null, railDrag = false, railOff = 0, railPos = -1, railBuzzed = false;
-const inRail = e => !rail.hidden && !inTv() && e.clientX >= pad.getBoundingClientRect().right - RAIL_ZONE;
+let railY = 0, railOver = 0, railBack = 0;   // posición del pulgar (% de su alto) y lo que el dedo empuja pasado el extremo
+const inRail = e => !rail.classList.contains('off') && !inTv() && e.clientX >= pad.getBoundingClientRect().right - RAIL_ZONE;
+/** Resistencia de Apple: cuanto más se pasa del borde, menos sigue. */
+const rubberband = (o, d, c = 0.55) => (o * d * c) / (d + c * o);
+/** Pinta el pulgar: posición y, si el dedo empuja contra un extremo, aplastado hacia ese borde (como mucho al 85 %). */
+function thumb() {
+  const H = railOver ? rail.getBoundingClientRect().height : 1;
+  const s = railOver ? 1 - Math.min(0.15, rubberband(railOver, H) / H) : 1;
+  railT.style.transformOrigin = railPos >= 0.5 ? '50% 100%' : '50% 0';
+  railT.style.transform = 'translateY(' + railY.toFixed(2) + '%)' + (s < 1 ? ' scaleY(' + s.toFixed(3) + ')' : '');
+}
+/** Suelta lo aplastado: vuelve con la curva de las hojas, sin rebote. */
+function railRelease() {
+  if (!railOver) return;
+  railOver = 0; railT.classList.remove('rb'); railT.classList.add('back'); thumb();
+  clearTimeout(railBack); railBack = setTimeout(() => railT.classList.remove('back'), 300);
+}
 /** Vuelve a reposo tras `ms` (0: ya). */
 function railRest(ms) {
   clearTimeout(railOff);
@@ -47,11 +74,12 @@ function flush() {
 const sched = () => { if (!raf) raf = requestAnimationFrame(flush); };
 function endInertia() { const f = inertiaEnd; inertiaEnd = null; if (f) f(); }
 function stopInertia() { if (inertia) { cancelAnimationFrame(inertia); inertia = 0; } endInertia(); }
-/** @param {() => void} [onEnd] al acabar (o al pararla otro toque); también si no llega a arrancar */
-function startInertia(onEnd) {
+/** @param {number} v0 px por ms, ya con el signo final @param {() => void} [onEnd] al acabar (o al pararla otro toque);
+ *  también si no llega a arrancar */
+function startInertia(v0, onEnd) {
   stopInertia();
   inertiaEnd = onEnd || null;
-  let v = Math.max(-VMAX, Math.min(VMAX, svy));  // px por ms ya con el signo final; tope: un toque raro no lanza la página
+  let v = Math.max(-VMAX, Math.min(VMAX, v0));   // tope: un toque raro no lanza la página
   if (Math.abs(v) < 0.35) { endInertia(); return; }
   let last = performance.now();
   const step = t => {
@@ -72,8 +100,8 @@ function hintBack() {
 
 function railUp(e) {
   P.delete(e.pointerId); railId = null;
-  hintBack(); pad.classList.remove('on');
-  if (railDrag) { if (e.timeStamp - lastMv > STALE) svy = 0; startInertia(() => railRest(RAIL_HOLD)); return; }
+  hintBack(); pad.classList.remove('on'); railRelease();
+  if (railDrag) { startInertia(releaseV(e.timeStamp), () => railRest(RAIL_HOLD)); return; }
   if (e.type === 'pointerup' && !caught && e.timeStamp - downT < 240 && moved < 9) click(1);
   railRest(0);
 }
@@ -98,7 +126,7 @@ function up(e) {
     maxN = 0;
   } else if (n === 2 && !inTv()) {
     if (ok && !rcDone && e.timeStamp - twoT < 280 && twoMoved < 10) { rcDone = true; click(3, p); }
-    else if (twoMoved > 14) { if (e.timeStamp - lastMv > STALE) svy = 0; startInertia(); }
+    else if (twoMoved > 14) startInertia(releaseV(e.timeStamp));
   }
 }
 
@@ -106,13 +134,16 @@ function up(e) {
  *  a un extremo durante un arrastre del carril (o su inercia), vibra una vez. @param {{pos?: number, size?: number} | null} sc */
 export function paintRail(sc) {
   if (!rail) { rail = $('#rail'); railT = $('#railT'); }  // puede llegar antes que init()
-  rail.hidden = !sc;
-  if (!sc) { railPos = -1; return; }
+  const off = rail.classList.contains('off');
+  if (!sc) { railPos = -1; railOver = 0; rail.classList.add('off'); return; }
   const pos = Math.min(1, Math.max(0, +sc.pos || 0)), h = Math.max(0.08, Math.min(1, +sc.size || 0));
-  railT.style.top = (pos * (1 - h) * 100).toFixed(2) + '%'; railT.style.height = (h * 100).toFixed(2) + '%';
   const edge = p => p <= 0.001 || p >= 0.999;
   if (railDrag && !railBuzzed && edge(pos) && railPos >= 0 && !edge(railPos)) { railBuzzed = true; buzz(10); }
+  if (!edge(pos)) railRelease();
   railPos = pos;
+  // alto sin transición (solo cambia con la longitud de la página); la posición, con transform sobre el alto del propio pulgar
+  railT.style.height = (h * 100).toFixed(2) + '%'; railY = pos * (1 - h) / h * 100; thumb();
+  if (off) { void railT.offsetWidth; rail.classList.remove('off'); }   // al aparecer, el pulgar ya está en su sitio: solo funde
 }
 
 export const trackpad = {
@@ -127,7 +158,7 @@ export const trackpad = {
       if (!P.size && inRail(e)) {
         caught = !!inertia; stopInertia(); clearTimeout(railOff);
         P.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
-        railId = e.pointerId; railDrag = false; railBuzzed = false; svy = 0;
+        railId = e.pointerId; railDrag = false; railBuzzed = false; vs = [];
         downT = e.timeStamp; x0 = e.clientX; y0 = e.clientY; moved = 0;
         hint.classList.add('off');
         rail.classList.add('on'); pad.classList.add('on');
@@ -136,9 +167,9 @@ export const trackpad = {
       P.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
       if (haloId === null) { haloId = e.pointerId; haloAt(e); halo.classList.add('on'); } hint.classList.add('off');
       if (P.size === 1) {
-        caught = !!inertia; stopInertia(); downT = e.timeStamp; x0 = e.clientX; y0 = e.clientY; moved = 0; maxN = 1; dragging = false; svy = 0;
+        caught = !!inertia; stopInertia(); downT = e.timeStamp; x0 = e.clientX; y0 = e.clientY; moved = 0; maxN = 1; dragging = false; vs = [];
         tdArm = e.timeStamp - lastTap < 240; pad.classList.add('on');
-      } else if (P.size === 2) { maxN = 2; twoT = e.timeStamp; twoMoved = 0; rcDone = false; svy = 0; }
+      } else if (P.size === 2) { maxN = 2; twoT = e.timeStamp; twoMoved = 0; rcDone = false; vs = []; }
     });
     pad.addEventListener('pointermove', e => {
       const p = P.get(e.pointerId); if (!p) return;
@@ -147,12 +178,22 @@ export const trackpad = {
         moved += Math.abs(e.clientX - p.x) + Math.abs(dy);
         p.x = e.clientX; p.y = e.clientY; p.t = e.timeStamp;
         if (!railDrag) {
-          if (Math.abs(e.clientY - y0) <= RAIL_ARM) return;
+          const ddx = e.clientX - x0, ddy = e.clientY - y0;
+          if (Math.hypot(ddx, ddy) <= RAIL_ARM) return;
+          if (Math.abs(ddx) > 1.5 * Math.abs(ddy)) {      // en horizontal: era el cursor; se lleva lo recorrido hasta aquí
+            railId = null; railRest(0); maxN = 1; dragging = false; tdArm = false;
+            haloId = e.pointerId; haloAt(e); halo.classList.add('on');
+            ax += ddx * cfg.speed; ay += ddy * cfg.speed; sched();
+            return;
+          }
           railDrag = true; buzz(8);
         }
         const v = dy * cfg.scroll * (1 + Math.min(Math.abs(dy) / dt / 1.1, 2.6));   // la misma aceleración que el cursor
-        sya += v; sched(); lastMv = e.timeStamp;
-        svy = svy * 0.6 + Math.max(-VMAX, Math.min(VMAX, v / dt)) * 0.4;   // tope: un toque raro no lanza la página
+        sya += v; sched(); track(e.timeStamp, v, dt);
+        if (railPos >= 0 && ((railPos <= 0.001 && dy < 0) || (railPos >= 0.999 && dy > 0))) {   // empuja contra el extremo
+          if (!railOver) railT.classList.add('rb');
+          railOver += Math.abs(dy); thumb();
+        } else if (dy) railRelease();
         return;
       }
       if (e.pointerId === haloId) haloAt(e);
@@ -168,8 +209,7 @@ export const trackpad = {
       } else if (P.size === 2) {
         twoMoved += Math.abs(dx) + Math.abs(dy);
         const k = (cfg.natural ? -1 : 1) * cfg.scroll * 0.5;                          // cada dedo aporta la mitad
-        sxa += dx * k; sya += dy * k; sched(); lastMv = e.timeStamp;
-        svy = svy * 0.6 + (dy * k * 2 / dt) * 0.4;                                    // la página va a la velocidad de un dedo
+        sxa += dx * k; sya += dy * k; sched(); track(e.timeStamp, dy * k, dt);       // los dos dedos suman en la ventana
       }
     });
     pad.addEventListener('pointerup', up);
