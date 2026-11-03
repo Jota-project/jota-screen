@@ -245,3 +245,20 @@ test('Netflix: si la pestaña de fondo está en «¿Quién eres?», entra en el 
   assert.deepEqual(await n.open(), { ok: 1, profile: 'Alfonso' });
   assert.deepEqual(order, ['switch', 'show:NF'], 'nunca se ve «¿Quién eres?»');
 });
+
+test('control: ±10 s en Netflix va por su reproductor, sin tocar el <video> (si no, la web se cae)', async () => {
+  const vm = require('node:vm');
+  const p = { ms: 60000, getCurrentTime() { return this.ms; }, seek(ms) { this.ms = ms; } };
+  const video = { currentTime: 60, touched: false };
+  const page = vm.createContext({
+    netflix: { appContext: { state: { playerApp: { getAPI: () => ({ videoPlayer: { getAllPlayerSessionIds: () => ['watch-1'], getVideoPlayerBySessionId: () => p } }) } } } },
+    document: { querySelector: () => new Proxy(video, { set(o, k, v) { o.touched = true; o[k] = v; return true; } }) },
+  });
+  const cdp = { call: async (m, prm) => ({ result: { value: vm.runInContext(prm.expression, page) } }) };
+  const c = createControl({ cdp, state: {}, broadcast() {}, key() {}, audio: {}, cfg: { HOME_URL: 'x', SELF: 'x' }, leaveStage() {} });
+  assert.deepEqual(await c.seek(-10), { ok: 1, t: 50 });
+  assert.equal(p.ms, 50000);
+  assert.equal(video.touched, false);
+  delete page.netflix;
+  assert.deepEqual(await c.seek(10), { ok: 1, t: 70 }, 'en otras webs, el <video>');
+});

@@ -144,8 +144,9 @@ module.exports = function createControl({ cdp, state, broadcast, key, audio, cfg
   async function seek(s) {
     s = Number(s);
     if (!Number.isFinite(s)) return { error: 'segundos no válidos' };
+    // en Netflix, con su reproductor: si se toca currentTime del <video>, la web lo toma por manipulación y se cae (M7375)
     const r = await cdp.call('Runtime.evaluate', {
-      expression: `(()=>{const v=document.querySelector("video");if(!v)return -1;v.currentTime=Math.max(0,v.currentTime+(${s}));return v.currentTime})()`,
+      expression: `(()=>{try{const vp=netflix.appContext.state.playerApp.getAPI().videoPlayer;const ids=vp.getAllPlayerSessionIds();const p=vp.getVideoPlayerBySessionId(ids.find(i=>i.startsWith("watch"))||ids[0]);const t=Math.max(0,p.getCurrentTime()+(${s})*1000);p.seek(t);return t/1000}catch{}const v=document.querySelector("video");if(!v)return -1;v.currentTime=Math.max(0,v.currentTime+(${s}));return v.currentTime})()`,
       returnByValue: true,
     });
     return r?.result?.value === -1 ? { error: 'no hay vídeo' } : { ok: 1, t: r?.result?.value };
