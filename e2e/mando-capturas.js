@@ -209,6 +209,9 @@ async function padGesture(page, steps) {
   }, steps);
 }
 
+// x (relativa al trackpad) del centro de la franja del carril, en el borde derecho
+const railX = async page => (await page.getByRole('region', { name: /^Trackpad/ }).boundingBox()).width - 16;
+
 // ───────────────────────── escenas
 async function adminScenes(theme, admin) {
   const T = s => `${theme}-${s}`;
@@ -216,6 +219,13 @@ async function adminScenes(theme, admin) {
 
   await run('principal', p => shot(p, T('principal')));
   await run('trackpad-tocando', async p => { await padGesture(p, [['pointerdown', 1, 150, 200]]); await shot(p, T('trackpad-tocando')); await padGesture(p, [['pointerup', 1, 150, 200]]); });
+  // carril (TVC Diseño - Carril de desplazamiento): el dedo en la franja del borde derecho, quieto y arrastrando
+  await run('carril-tocando', async p => {
+    const x = await railX(p);
+    await padGesture(p, [['pointerdown', 1, x, 200]]); await shot(p, T('carril-tocando'));
+    await padGesture(p, [['pointermove', 1, x, 230], ['pointermove', 1, x, 260]]); await shot(p, T('carril-arrastrando'));
+    await padGesture(p, [['pointerup', 1, x, 260]]);
+  });
   await run('teclado-sin-campo', async p => { await focusTv({ kind: 'none' }); await tap(p, 'Escribir en la tele', 700); await shot(p, T('teclado-sin-campo')); });
   await run('teclado-texto', async p => {
     await focusTv({ kind: 'search', placeholder: 'Buscar en YouTube', value: '' });
@@ -357,6 +367,12 @@ async function walk(admin) {
     await padGesture(p, [['pointerdown', 1, 100, 250], ['pointerdown', 2, 160, 250], ['pointermove', 1, 100, 240], ['pointermove', 2, 160, 240], ['pointermove', 1, 100, 230], ['pointermove', 2, 160, 230], ['pointerup', 1, 100, 230], ['pointerup', 2, 160, 230]]);
     await p.waitForTimeout(1500);                                                                // inercia
     await takeLog(p, 'recorrido: trackpad');
+    const rx = await railX(p);
+    await padGesture(p, [['pointerdown', 1, rx, 200], ['pointerup', 1, rx, 200]]);              // carril: toque corto, clic
+    await p.waitForTimeout(400);
+    await padGesture(p, [['pointerdown', 1, rx, 200], ['pointermove', 1, rx, 220], ['pointermove', 1, rx, 240], ['pointermove', 1, rx, 260], ['pointerup', 1, rx, 260]]);
+    await p.waitForTimeout(1500);                                                                // carril: arrastre hacia abajo
+    await takeLog(p, 'recorrido: carril');
     await tap(p, 'Abrir una dirección'); await p.keyboard.type('elpais.com'); await p.keyboard.press('Enter'); await p.waitForTimeout(400);
     await takeLog(p, 'recorrido: dirección');
     await focusTv({ kind: 'text', placeholder: 'Buscar', value: '' });

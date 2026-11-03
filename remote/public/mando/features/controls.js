@@ -5,6 +5,7 @@ import { cfg, state, on, emit } from '../core/store.js';
 import { cmd, rpc } from '../core/api.js';
 import { paintAmbient } from './ambient.js';
 import { inTv, tvRpc } from './tele.js';
+import { paintRail } from './trackpad.js';
 
 /* accesos del mando: salen de cfg.apps (M5 los hará configurables), con el logo de cada servicio (símbolos l-* de index.html) */
 const APPS = {
@@ -63,12 +64,7 @@ function paint2(s) {
   v.classList.toggle('muted', muted && !unknown); v.classList.toggle('unknown', unknown);
   v.setAttribute('aria-label', muted ? 'Volumen silenciado' + (unknown ? '' : ', ' + s.vol + ' %') : unknown ? 'Volumen desconocido' : 'Volumen ' + s.vol + ' %');
   m.setAttribute('aria-pressed', String(muted)); m.setAttribute('aria-label', muted ? 'Activar sonido' : 'Silenciar');
-  const sc = s.scroll, rail = $('#rail');
-  rail.hidden = !sc;                                    // sin dato (o página sin scroll), sin carril
-  if (sc) {
-    const h = Math.max(0.08, Math.min(1, +sc.size || 0)), th = $('#railT');
-    th.style.top = (Math.min(1, Math.max(0, +sc.pos || 0)) * (1 - h) * 100).toFixed(2) + '%'; th.style.height = (h * 100).toFixed(2) + '%';
-  }
+  paintRail(s.scroll || null);                          // sin dato (o página sin scroll), sin carril
 }
 /* el número del volumen cae (o sube) al cambiar, como los minutos del reposo: el nuevo entra desde arriba si sube */
 let volN = null, volT = 0, volAt = 0;
