@@ -12,6 +12,10 @@ const P = new Map();
 let ax = 0, ay = 0, sxa = 0, sya = 0, raf = 0;
 let downT = 0, moved = 0, maxN = 0, twoT = 0, twoMoved = 0, rcDone = false, dragging = false, tdArm = false, lastTap = 0;
 let svy = 0, inertia = 0, inertiaEnd = null, x0 = 0, y0 = 0;
+/* caught: el dedo cayó con la inercia en marcha (ese toque solo frena, no hace clic); lastMv: último movimiento que
+   desplaza. Si al soltar han pasado más de STALE ms, los dedos estaban quietos y no hay inercia */
+let caught = false, lastMv = 0;
+const STALE = 80;
 const r2 = n => Math.round(n * 100) / 100;
 /* un halo malva sigue al dedo mientras toca (en vez de la onda) y la ayuda se esconde solo mientras se toca */
 let haloId = null;
@@ -26,7 +30,7 @@ function haloAt(e) { const b = pad.getBoundingClientRect(); halo.style.left = (e
    vertical): desplazamiento relativo con aceleración e inercia, en el sentido de una barra (bajar el pulgar baja la página),
    sea cual sea «Desplazamiento natural». Activo, crece y el pulgar se enciende en malva. Sin halo: con el mapeo relativo el
    dedo no está sobre el pulgar, y un halo a su lado diría que sí. */
-const RAIL_ZONE = 44, RAIL_ARM = 6, RAIL_HOLD = 600, RAIL_VMAX = 8;   // RAIL_VMAX: px por ms
+const RAIL_ZONE = 44, RAIL_ARM = 6, RAIL_HOLD = 600, VMAX = 8;   // VMAX: px por ms, tope de la inercia
 let rail, railT, railId = null, railDrag = false, railOff = 0, railPos = -1, railBuzzed = false;
 const inRail = e => !rail.hidden && !inTv() && e.clientX >= pad.getBoundingClientRect().right - RAIL_ZONE;
 /** Vuelve a reposo tras `ms` (0: ya). */
@@ -47,7 +51,7 @@ function stopInertia() { if (inertia) { cancelAnimationFrame(inertia); inertia =
 function startInertia(onEnd) {
   stopInertia();
   inertiaEnd = onEnd || null;
-  let v = svy;                                   // px por ms ya con el signo final
+  let v = Math.max(-VMAX, Math.min(VMAX, svy));  // px por ms ya con el signo final; tope: un toque raro no lanza la página
   if (Math.abs(v) < 0.35) { endInertia(); return; }
   let last = performance.now();
   const step = t => {
@@ -69,8 +73,8 @@ function hintBack() {
 function railUp(e) {
   P.delete(e.pointerId); railId = null;
   hintBack(); pad.classList.remove('on');
-  if (railDrag) { startInertia(() => railRest(RAIL_HOLD)); return; }
-  if (e.type === 'pointerup' && e.timeStamp - downT < 240 && moved < 9) click(1);
+  if (railDrag) { if (e.timeStamp - lastMv > STALE) svy = 0; startInertia(() => railRest(RAIL_HOLD)); return; }
+  if (e.type === 'pointerup' && !caught && e.timeStamp - downT < 240 && moved < 9) click(1);
   railRest(0);
 }
 
@@ -90,11 +94,11 @@ function up(e) {
     pad.classList.remove('on');
     if (dragging) { send('b 1 0'); dragging = false; }
     else if (inTv()) { if (ok && maxN === 1) padGesture(e.clientX - x0, e.clientY - y0); }
-    else if (ok && maxN === 1 && e.timeStamp - downT < 240 && moved < 9) { click(1, p); lastTap = e.timeStamp; }
+    else if (ok && maxN === 1 && !caught && e.timeStamp - downT < 240 && moved < 9) { click(1, p); lastTap = e.timeStamp; }
     maxN = 0;
   } else if (n === 2 && !inTv()) {
     if (ok && !rcDone && e.timeStamp - twoT < 280 && twoMoved < 10) { rcDone = true; click(3, p); }
-    else if (twoMoved > 14) startInertia();
+    else if (twoMoved > 14) { if (e.timeStamp - lastMv > STALE) svy = 0; startInertia(); }
   }
 }
 
@@ -121,7 +125,7 @@ export const trackpad = {
       if (railId !== null) return;                    // con el carril en marcha, los demás dedos no cuentan
       try { pad.setPointerCapture(e.pointerId); } catch {}
       if (!P.size && inRail(e)) {
-        stopInertia(); clearTimeout(railOff);
+        caught = !!inertia; stopInertia(); clearTimeout(railOff);
         P.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
         railId = e.pointerId; railDrag = false; railBuzzed = false; svy = 0;
         downT = e.timeStamp; x0 = e.clientX; y0 = e.clientY; moved = 0;
@@ -132,7 +136,7 @@ export const trackpad = {
       P.set(e.pointerId, { x: e.clientX, y: e.clientY, t: e.timeStamp });
       if (haloId === null) { haloId = e.pointerId; haloAt(e); halo.classList.add('on'); } hint.classList.add('off');
       if (P.size === 1) {
-        stopInertia(); downT = e.timeStamp; x0 = e.clientX; y0 = e.clientY; moved = 0; maxN = 1; dragging = false; svy = 0;
+        caught = !!inertia; stopInertia(); downT = e.timeStamp; x0 = e.clientX; y0 = e.clientY; moved = 0; maxN = 1; dragging = false; svy = 0;
         tdArm = e.timeStamp - lastTap < 240; pad.classList.add('on');
       } else if (P.size === 2) { maxN = 2; twoT = e.timeStamp; twoMoved = 0; rcDone = false; svy = 0; }
     });
@@ -147,8 +151,8 @@ export const trackpad = {
           railDrag = true; buzz(8);
         }
         const v = dy * cfg.scroll * (1 + Math.min(Math.abs(dy) / dt / 1.1, 2.6));   // la misma aceleración que el cursor
-        sya += v; sched();
-        svy = svy * 0.6 + Math.max(-RAIL_VMAX, Math.min(RAIL_VMAX, v / dt)) * 0.4;   // tope: un toque raro no lanza la página
+        sya += v; sched(); lastMv = e.timeStamp;
+        svy = svy * 0.6 + Math.max(-VMAX, Math.min(VMAX, v / dt)) * 0.4;   // tope: un toque raro no lanza la página
         return;
       }
       if (e.pointerId === haloId) haloAt(e);
@@ -156,6 +160,7 @@ export const trackpad = {
       const dx = e.clientX - p.x, dy = e.clientY - p.y, dt = Math.max(1, e.timeStamp - p.t);
       p.x = e.clientX; p.y = e.clientY; p.t = e.timeStamp;
       if (P.size === 1) {
+        if (maxN === 2) return;                       // queda un dedo de un gesto de dos: no es el cursor
         moved += Math.abs(dx) + Math.abs(dy);
         if (tdArm && !dragging && moved > 6) { dragging = true; send('b 1 1'); }
         const g = cfg.speed * (1 + Math.min(Math.hypot(dx, dy) / dt / 1.1, 2.6));   // aceleración según la velocidad
@@ -163,8 +168,8 @@ export const trackpad = {
       } else if (P.size === 2) {
         twoMoved += Math.abs(dx) + Math.abs(dy);
         const k = (cfg.natural ? -1 : 1) * cfg.scroll * 0.5;                          // cada dedo aporta la mitad
-        sxa += dx * k; sya += dy * k; sched();
-        svy = svy * 0.6 + (dy * k / dt) * 0.4;
+        sxa += dx * k; sya += dy * k; sched(); lastMv = e.timeStamp;
+        svy = svy * 0.6 + (dy * k * 2 / dt) * 0.4;                                    // la página va a la velocidad de un dedo
       }
     });
     pad.addEventListener('pointerup', up);
