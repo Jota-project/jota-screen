@@ -92,7 +92,7 @@ test('sondeo de la página: solo con mandos conectados, y avisa si cambia', asyn
   assert.equal(calls, 0, 'sin nadie mirando no pregunta a Chrome');
   watched = true;
   await poll.poll();
-  assert.deepEqual([state.media, state.scroll, bc], [1, { pos: 0, size: 0.5 }, 1]);
+  assert.deepEqual([state.media, state.scroll, bc], [1, { pos: 0, size: 0.5, max: 1000 }, 1]);
   await poll.poll();
   assert.equal(bc, 1, 'sin cambios no se difunde');
 });

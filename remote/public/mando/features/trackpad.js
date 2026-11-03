@@ -42,8 +42,26 @@ function haloAt(e) { const b = pad.getBoundingClientRect(); halo.style.left = (e
    y el pulgar se enciende en malva. Sin halo: con el mapeo relativo el dedo no está sobre el pulgar, y un halo a su lado diría
    que sí. En un extremo, si el dedo sigue empujando, el pulgar se aplasta contra el borde (rubber-banding) */
 const RAIL_ZONE = 44, RAIL_ARM = 10, RAIL_HOLD = 600, VMAX = 8;   // VMAX: px por ms, tope de la inercia
+/* Medido en la tele el 2026-11-03 (Chrome 155 del kiosco, DPR 1,5): un golpe de rueda XTest desplaza 120 px CSS, que Chromium
+   anima en ~165 ms. pointer.py da un golpe cada 30 px de dedo (TICK), así que la página va a WHEEL_PX px por px de dedo.
+   INERTIA_MIN: a 0,2 px/ms sale un golpe cada 150 ms y sus animaciones aún se solapan; más despacio, la página iría a pulsos.
+   shortcut: valores de esa tele y ese Chrome; si cambia TICK, el navegador o su escala, hay que volver a medirlos */
+const WHEEL_PX = 120 / 30, INERTIA_MIN = 0.2;
+/* Pulgar estimado: mientras el mando desplaza, el pulgar sigue a lo enviado (Δpos = px de dedo · WHEEL_PX / max) sin esperar
+   al sondeo (250 ms más lo que tarde la tele). EST_HOLD ms después del último envío vuelve a mandar el dato de la tele */
+const EST_HOLD = 700;
 let rail, railT, railId = null, railDrag = false, railOff = 0, railPos = -1, railBuzzed = false;
 let railY = 0, railOver = 0, railBack = 0;   // posición del pulgar (% de su alto) y lo que el dedo empuja pasado el extremo
+let railH = 1, railMax = 0, railSc = null, estPos = -1, estT = 0;
+/** Dónde se ve el pulgar: lo estimado mientras se desplaza; si no, lo que dice la tele. */
+const shownPos = () => (estPos >= 0 ? estPos : railPos);
+/** El mando acaba de mandar `d` px de dedo de rueda: el pulgar se adelanta a la tele. */
+function railEstimate(d) {
+  if (railPos < 0 || !railMax) return;
+  estPos = Math.min(1, Math.max(0, shownPos() + d * WHEEL_PX / railMax));
+  railY = estPos * (1 - railH) / railH * 100; railT.classList.add('live'); thumb();
+  clearTimeout(estT); estT = setTimeout(() => { estPos = -1; railT.classList.remove('live'); paintRail(railSc); }, EST_HOLD);
+}
 const inRail = e => !rail.classList.contains('off') && !inTv() && e.clientX >= pad.getBoundingClientRect().right - RAIL_ZONE;
 /** Resistencia de Apple: cuanto más se pasa del borde, menos sigue. */
 const rubberband = (o, d, c = 0.55) => (o * d * c) / (d + c * o);
@@ -51,7 +69,7 @@ const rubberband = (o, d, c = 0.55) => (o * d * c) / (d + c * o);
 function thumb() {
   const H = railOver ? rail.getBoundingClientRect().height : 1;
   const s = railOver ? 1 - Math.min(0.15, rubberband(railOver, H) / H) : 1;
-  railT.style.transformOrigin = railPos >= 0.5 ? '50% 100%' : '50% 0';
+  railT.style.transformOrigin = shownPos() >= 0.5 ? '50% 100%' : '50% 0';
   railT.style.transform = 'translateY(' + railY.toFixed(2) + '%)' + (s < 1 ? ' scaleY(' + s.toFixed(3) + ')' : '');
 }
 /** Suelta lo aplastado: vuelve con la curva de las hojas, sin rebote. */
@@ -69,7 +87,7 @@ function railRest(ms) {
 function flush() {
   raf = 0;
   if (ax || ay) { send('m ' + r2(ax) + ' ' + r2(ay)); ax = ay = 0; }
-  if (sxa || sya) { send('w ' + r2(sxa) + ' ' + r2(sya)); sxa = sya = 0; }
+  if (sxa || sya) { send('w ' + r2(sxa) + ' ' + r2(sya)); if (sya) railEstimate(sya); sxa = sya = 0; }
 }
 const sched = () => { if (!raf) raf = requestAnimationFrame(flush); };
 function endInertia() { const f = inertiaEnd; inertiaEnd = null; if (f) f(); }
@@ -86,7 +104,8 @@ function startInertia(v0, onEnd) {
     const dt = Math.min(40, t - last); last = t;
     sya += v * dt; v *= Math.pow(0.0035, dt / 1000);   // frena en ~0,9 s
     sched();
-    inertia = Math.abs(v) > 0.03 ? requestAnimationFrame(step) : 0;
+    // se corta a INERTIA_MIN y no antes: por debajo, los golpes de rueda llegan más espaciados que lo que dura su animación
+    inertia = Math.abs(v) > INERTIA_MIN ? requestAnimationFrame(step) : 0;
     if (!inertia) endInertia();
   };
   inertia = requestAnimationFrame(step);
@@ -131,18 +150,20 @@ function up(e) {
 }
 
 /** Pinta el carril con la posición que manda la tele ({pos, size} de 0 a 1, o null: sin scroll y sin carril). Al llegar
- *  a un extremo durante un arrastre del carril (o su inercia), vibra una vez. @param {{pos?: number, size?: number} | null} sc */
+ *  a un extremo durante un arrastre del carril (o su inercia), vibra una vez. @param {{pos?: number, size?: number, max?: number} | null} sc */
 export function paintRail(sc) {
   if (!rail) { rail = $('#rail'); railT = $('#railT'); }  // puede llegar antes que init()
   const off = rail.classList.contains('off');
-  if (!sc) { railPos = -1; railOver = 0; rail.classList.add('off'); return; }
+  railSc = sc;
+  if (!sc) { railPos = -1; railOver = 0; estPos = -1; rail.classList.add('off'); return; }
   const pos = Math.min(1, Math.max(0, +sc.pos || 0)), h = Math.max(0.08, Math.min(1, +sc.size || 0));
   const edge = p => p <= 0.001 || p >= 0.999;
   if (railDrag && !railBuzzed && edge(pos) && railPos >= 0 && !edge(railPos)) { railBuzzed = true; buzz(10); }
-  if (!edge(pos)) railRelease();
-  railPos = pos;
-  // alto sin transición (solo cambia con la longitud de la página); la posición, con transform sobre el alto del propio pulgar
-  railT.style.height = (h * 100).toFixed(2) + '%'; railY = pos * (1 - h) / h * 100; thumb();
+  if (!edge(pos) && estPos < 0) railRelease();
+  railPos = pos; railH = h; railMax = +sc.max || 0;
+  // alto sin transición (solo cambia con la longitud de la página); la posición, con transform sobre el alto del propio
+  // pulgar. Mientras se estima, manda lo estimado: el dato de la tele llega con retraso
+  railT.style.height = (h * 100).toFixed(2) + '%'; if (estPos < 0) railY = pos * (1 - h) / h * 100; thumb();
   if (off) { void railT.offsetWidth; rail.classList.remove('off'); }   // al aparecer, el pulgar ya está en su sitio: solo funde
 }
 
@@ -190,7 +211,8 @@ export const trackpad = {
         }
         const v = dy * cfg.scroll * (1 + Math.min(Math.abs(dy) / dt / 1.1, 2.6));   // la misma aceleración que el cursor
         sya += v; sched(); track(e.timeStamp, v, dt);
-        if (railPos >= 0 && ((railPos <= 0.001 && dy < 0) || (railPos >= 0.999 && dy > 0))) {   // empuja contra el extremo
+        const at = shownPos();
+        if (at >= 0 && ((at <= 0.001 && dy < 0) || (at >= 0.999 && dy > 0))) {   // empuja contra el extremo
           if (!railOver) railT.classList.add('rb');
           railOver += Math.abs(dy); thumb();
         } else if (dy) railRelease();

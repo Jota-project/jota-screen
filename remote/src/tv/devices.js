@@ -66,12 +66,13 @@ const PLAYBACK_PROBE = '(()=>{let b=null;const f=document.fullscreenElement,W=in
 const PAGE_PROBE = '(()=>{const v=document.querySelector("video"),e=document.scrollingElement||document.documentElement;' +
   'return [v?(v.paused?0:1):-1,scrollY,e?e.scrollHeight:0,innerHeight,' + PLAYBACK_PROBE + ']})()';
 const r3 = n => Math.round(n * 1000) / 1000;
-/** Traduce lo que devuelve PAGE_PROBE: { media, scroll: {pos, size} de 0 a 1 o null si no hay scroll } */
+/** Traduce lo que devuelve PAGE_PROBE: { media, scroll: {pos, size} de 0 a 1 y max (recorrido en px CSS), o null si no hay
+ *  scroll }. Con max, el mando estima el pulgar mientras desplaza, sin esperar al sondeo */
 function parseProbe(v) {
   if (!Array.isArray(v)) return null;
   const [m, y, h, ih] = v.slice(0, 4).map(Number);
   const max = h - ih;
-  const scroll = Number.isFinite(max) && max > 4 && ih > 0 ? { pos: r3(Math.min(1, Math.max(0, y / max))), size: r3(Math.min(1, ih / h)) } : null;
+  const scroll = Number.isFinite(max) && max > 4 && ih > 0 ? { pos: r3(Math.min(1, Math.max(0, y / max))), size: r3(Math.min(1, ih / h)), max: Math.round(max) } : null;
   return { media: Number.isFinite(m) ? m : null, scroll };
 }
 /**

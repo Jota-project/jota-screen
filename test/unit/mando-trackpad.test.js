@@ -143,3 +143,32 @@ test('mando trackpad: en el extremo, el pulgar se aplasta mientras el dedo empuj
     assert.ok(!/scaleY/.test(t.f.thumb().style.transform), 'al soltar vuelve');
   } finally { t.f.restore(); fs.rmSync(t.tmp, { recursive: true, force: true }); }
 });
+
+test('mando trackpad: con el recorrido de la página, el pulgar sigue a lo enviado sin esperar a la tele', async () => {
+  const t = await setup();
+  try {
+    t.paintRail({ pos: 0.5, size: 0.5, max: 1200 });     // translateY = 0,5·0,5/0,5·100 = 50 %
+    assert.match(t.f.thumb().style.transform, /translateY\(50\.00%\)/);
+    t.down(1, 280, 100);
+    for (let i = 1; i <= 4; i++) { t.f.tick(100); t.move(1, 280, 100 + 15 * i); t.f.frame(0); }   // despacio: sin aceleración
+    const y = +/translateY\(([\d.]+)%\)/.exec(t.f.thumb().style.transform)[1];
+    // el primer movimiento ya arma (15 > 10 px): 60 px de dedo a 0,15 px/ms, con la aceleración del carril (1 + 0,15/1,1),
+    // por 4 px de página por px de dedo, sobre 1.200 px de recorrido: pos 0,5 + 0,227 → translateY 72,7 %
+    const want = (0.5 + 60 * (1 + 0.15 / 1.1) * 4 / 1200) * 100;
+    assert.ok(Math.abs(y - want) < 0.5, `pulgar estimado en ${y} %, se esperaba ${want.toFixed(1)} %`);
+    t.paintRail({ pos: 0.52, size: 0.5, max: 1200 });    // llega un dato viejo de la tele: no tira el pulgar hacia atrás
+    assert.match(t.f.thumb().style.transform, new RegExp('translateY\\(' + y.toFixed(2) + '%\\)'));
+    t.up(1, 280, 160);
+  } finally { t.f.restore(); fs.rmSync(t.tmp, { recursive: true, force: true }); }
+});
+
+test('mando trackpad: la inercia se corta a 0,2 px/ms, antes de que la rueda vaya a pulsos', async () => {
+  const t = await setup();
+  try {
+    const y = t.swipe2(8); t.up(1, 100, y); t.up(2, 160, y); t.sent();
+    const w = [];
+    for (let i = 0; i < 120; i++) { t.f.frame(16); w.push(...t.wheel(t.sent())); }
+    assert.ok(w.length > 5, 'hubo inercia');
+    assert.ok(Math.abs(w.at(-1)) >= 0.2 * 16 * 0.95, `último paso ${w.at(-1)} px: no baja de 0,2 px/ms`);
+  } finally { t.f.restore(); fs.rmSync(t.tmp, { recursive: true, force: true }); }
+});

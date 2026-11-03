@@ -10,7 +10,7 @@ const { createCdp } = require(path.join(R, 'cdp'));
 const { startFakeCdp } = require('../helpers/fake-cdp');
 
 test('sondeo de la página: vídeo y carril de scroll', () => {
-  assert.deepEqual(parseProbe([1, 500, 2000, 1000]), { media: 1, scroll: { pos: 0.5, size: 0.5 } });
+  assert.deepEqual(parseProbe([1, 500, 2000, 1000]), { media: 1, scroll: { pos: 0.5, size: 0.5, max: 1000 } });
   assert.deepEqual(parseProbe([-1, 0, 1000, 1000]), { media: -1, scroll: null }, 'sin scroll no hay carril');
   assert.deepEqual(parseProbe([0, 9999, 2000, 1000]).scroll.pos, 1, 'acotado a 1');
   assert.equal(parseProbe(null), null);
@@ -228,7 +228,7 @@ test('tokens de la tele: la isla los lleva delante y tv-island.js no repite sus 
 // ── reproducción de verdad (ronda 2): señal aparte de `media`, para el paso del panel a la píldora
 const dev = require(path.join(R, 'devices'));
 test('PAGE_PROBE: `media` sigue igual (4 primeros valores) y el 5.º es el vídeo que suena con más área', () => {
-  assert.deepEqual(parseProbe([1, 500, 2000, 1000, [0.9, 12.5]]), { media: 1, scroll: { pos: 0.5, size: 0.5 } }, 'parseProbe no cambia');
+  assert.deepEqual(parseProbe([1, 500, 2000, 1000, [0.9, 12.5]]), { media: 1, scroll: { pos: 0.5, size: 0.5, max: 1000 } }, 'parseProbe no cambia');
   assert.deepEqual(dev.parsePlayback([1, 0, 0, 0, [0.9, 12.5]]), { area: 0.9, t: 12.5 });
   assert.equal(dev.parsePlayback([1, 0, 0, 0, null]), null);
   assert.equal(dev.parsePlayback([1, 0, 0, 0]), null);

@@ -388,8 +388,9 @@ a.bt{text-decoration:none}
 .rail2.on{transform:none;transition-duration:.2s}
 .rail2.on::before{background:var(--rail-on);border-radius:4px;transition-duration:.2s}
 .rail2.on i{background:var(--accent);border-radius:4px;box-shadow:0 0 0 1px var(--rail-glow),0 2px 10px var(--rail-glow);transition:transform .25s linear,background-color .2s var(--ease),box-shadow .2s var(--ease),border-radius .2s var(--ease)}
-/* empujando contra un extremo el pulgar sigue al dedo sin retraso, y al soltar vuelve con la curva de las hojas */
-.rail2 i.rb{transition:background-color .2s var(--ease),box-shadow .2s var(--ease)}
+/* empujando contra un extremo, o con el pulgar estimado (trackpad.js), sigue al dedo sin retraso; al soltar lo aplastado
+   vuelve con la curva de las hojas */
+.rail2 i.rb,.rail2 i.live{transition:background-color .2s var(--ease),box-shadow .2s var(--ease)}
 .rail2 i.back{transition:transform .3s var(--ease),background-color .2s var(--ease),box-shadow .2s var(--ease)}
 .hint2{position:absolute;left:24px;right:24px;bottom:26px;text-align:center;font-size:14px;line-height:1.5;color:var(--text-soft);pointer-events:none;transition:opacity .6s ease}
 .hint2.off{opacity:0}
