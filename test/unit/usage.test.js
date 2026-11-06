@@ -38,3 +38,10 @@ test('usage: en la web la misma url seguida es la misma entrada y se queda el tÃ
   T = 2; u.add({ src: 'web', title: 'Ejemplo A', url: 'https://example.com/a' });
   assert.deepEqual(u.list(), [{ src: 'web', title: 'Ejemplo A', url: 'https://example.com/a', at: 2 }]);
 });
+
+test('usage: una entrada rota en usage.json (null, sin at) se descarta y no rompe add', () => {
+  let saved = [];
+  const u = createUsage({ store: { load: () => [null, { src: 'web' }, { src: 'web', title: 'a', url: 'u', at: 5 }], save: v => { saved = v; } }, now: () => 10, enabled: () => true });
+  u.add({ src: 'spotify', title: 'Jazz' });
+  assert.deepEqual(saved.map(e => e.src), ['spotify', 'web']);
+});

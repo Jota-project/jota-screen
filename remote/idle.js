@@ -210,7 +210,8 @@ function createIdle(o) {
       next: n.queue?.[0] ? { name: n.queue[0].name, artist: n.queue[0].artist } : null,
       artistImage: n.artistInfo?.image?.m || null,
     };
-    if (next) lastMusic = { ...next, seen: now() };
+    // playedAt: último instante en que SONÓ (un sondeo en pausa solo refresca seen); el modo contexto ordena por él
+    if (next) lastMusic = { ...next, seen: now(), playedAt: next.playing ? now() : lastMusic ? lastMusic.playedAt : 0 };
     // al empezar a sonar (no en cada sondeo): antes no sonaba o cambió la canción o la lista
     if (next && next.playing && (!music || !music.playing || music.title !== next.title || music.context?.name !== next.context?.name)) {
       try { o.onPlay && o.onPlay(next); } catch {}
@@ -308,10 +309,12 @@ function createIdle(o) {
     const on = id => s.sources.some(x => x.id === id && x.on), recent = o.nfxRecent ? o.nfxRecent() : null;
     const cands = [];
     if (on('netflix') && recent && recent.items.length) cands.push({ at: recent.at, block: { src: 'netflix', items: recent.items.slice(0, 1) } });
-    if (on('spotify')) cands.push({ at: music && music.playing ? now() : lastMusic ? lastMusic.seen : 0, block: spotifyBlock() });
+    if (on('spotify')) cands.push({ at: music && music.playing ? now() : lastMusic ? lastMusic.playedAt : 0, block: spotifyBlock() });
     const best = cands.filter(c => c.block && now() - c.at < CONTEXT_MS).sort((a, b) => b.at - a.at)[0];
     if (shown && shown.length > 1) shown = null;             // venía de fijo con varias: en contexto, siempre una
-    const list = hold(best ? [{ ...best.block, ago: best.at }] : []);
+    const one = best ? [{ ...best.block, ago: best.at }] : [];
+    // Spotify que suena entra al momento (sin la espera de hold); lo demás, con histéresis
+    const list = best && best.block.src === 'spotify' && best.block.state === 'playing' ? (shown = one) : hold(one);
     return list.length ? { look: 'discreto', blocks: list } : null;
   }
   function wantSuggestions() {

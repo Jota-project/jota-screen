@@ -89,7 +89,7 @@ cdp = createCdp({ port: CDP_PORT, log, hooks: {
     if (moved) {
       if (!t.url.startsWith(SELF + '/')) stage.leave(); // fuera del escenario (también por «atrás» o un clic): ni su cierre programado
       idle.onNav(t.url); pagePoll.reset(); talkView.reset();
-      if (/^https?:\/\//.test(t.url) && !t.url.startsWith(SELF + '/')) { // solo la web de fuera, no nuestras pantallas
+      if (/^https?:\/\//.test(t.url) && !t.url.startsWith(SELF + '/') && !createNetflix.isNetflix(t.url)) { // Netflix lo apunta su propio gancho (src 'netflix'); aquí no, o saldría doble: solo la web de fuera, no nuestras pantallas
         let host = '', url = t.url; try { const u = new URL(t.url); host = u.hostname; u.hash = ''; url = u.href; } catch {} // sin #fragmento: ahí van los tokens OAuth
         logUse({ src: 'web', title: t.title || host, url });
       }

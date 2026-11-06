@@ -9,7 +9,7 @@
 function createUsage({ store, now = Date.now, enabled, keepDays = 90 }) {
   /** @type {{ src: string, title: string, url: string, at: number }[] | null} */
   let items = null; // newest first; se lee una vez
-  const load = () => items || (items = (() => { const r = store.load(); return Array.isArray(r) ? r : []; })());
+  const load = () => items || (items = (() => { const r = store.load(); return Array.isArray(r) ? r.filter(x => x && typeof x.at === 'number') : []; })());
 
   return {
     /** @param {{ src: 'netflix' | 'web' | 'spotify', title: string, url?: string }} e */

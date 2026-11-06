@@ -208,3 +208,27 @@ test('fresh: un segundo fresh() ya en el reposo no navega; si nav falla, resuelv
   fail = false;
   await idle.fresh(); await idle.fresh(); assert.equal(n, 2, 'tras ir al reposo, el segundo no navega');
 });
+
+test('contexto: un Spotify en pausa que se sondea al abrir el reposo no tapa a Netflix (cuenta cuándo sonó, no cuándo se vio)', t => {
+  let T = 1e12, recent = null;
+  const { idle } = make(t, { nfx: () => NFX, nfxRecent: () => recent, now: () => T });
+  idle.run({ op: 'set', cfg: { mode: 'day', suggest: { on: true, mode: 'contexto' } } });
+  idle.setMusic(SONG); idle.setMusic({ ...SONG, playing: false });   // sonó y se pausó en T0
+  T += 2 * 3600e3; recent = { at: T - 60e3, items: [NFX[0]] };       // Netflix dejado hace 1 min
+  idle.setMusic({ ...SONG, playing: false });                         // sondeo al abrir el reposo: pausado
+  const s = idle.suggest();
+  assert.deepEqual(s.blocks.map(b => b.src), ['netflix']);
+  T += 2 * 3600e3; recent = null;                                     // sin Netflix; Spotify sonó hace 4 h: fuera
+  idle.setMusic({ ...SONG, playing: false });
+  assert.equal(idle.suggest(), null, 'la ventana de 3 h se cuenta desde que sonó');
+});
+
+test('contexto: Spotify que empieza a sonar tapa a la tarjeta de Netflix al momento, sin esperar la histéresis', t => {
+  let T = 1e12;
+  const { idle } = make(t, { nfx: () => NFX, nfxRecent: () => ({ at: T - 10 * 60e3, items: [NFX[0]] }), now: () => T });
+  idle.run({ op: 'set', cfg: { mode: 'day', suggest: { on: true, mode: 'contexto' } } });
+  assert.equal(idle.suggest().blocks[0].src, 'netflix');
+  idle.setMusic(SONG); T += 60e3;
+  const b = idle.suggest().blocks[0];
+  assert.deepEqual([b.src, b.state], ['spotify', 'playing']);
+});

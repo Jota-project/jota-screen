@@ -360,15 +360,20 @@ function itemOf(b, size) {
     const img = { u: artSrc(b.art), w: b.artW || 640 };
     return b.state === 'playing'
       ? { k: 'Suena ahora', t: b.track, s: b.artist + (b.ctx ? ' · ' + b.ctx : ''), f: b.duration ? b.progress / b.duration : null, img, shape: 'square' }
-      : { k: 'Seguir escuchando' + (b.ago ? ' · ' + agoLabel(b.ago + off, Date.now()) : ''), t: b.ctx || b.track, s: 'Lo último: ' + b.track + ' · ' + b.artist, f: null, img, shape: 'square' };
+      : { k: 'Seguir escuchando', ago: b.ago ? agoLabel(b.ago + off, Date.now()) : '', t: b.ctx || b.track, s: 'Lo último: ' + b.track + ' · ' + b.artist, f: null, img, shape: 'square' };
   }
   const it = b.items[0]; // youtube
   return { k: 'Seguir viendo', t: it.title, s: it.channel + (it.dur ? ' · quedan ' + dur(it.dur - it.pos) : ''), f: it.dur ? it.pos / it.dur : null, img: { u: it.thumb, w: it.thumbW }, shape: 'wide' };
 }
 const keyOf = new WeakMap();
 function block(el, b, size, solo) { // solo: la única tarjeta del reposo en contexto; su antetítulo es el del bloque
-  const it = itemOf(b, size), [name, dot] = SRC[b.src], k = JSON.stringify([size, it, solo]);
-  if (keyOf.get(el) === k) return;
+  const it = itemOf(b, size), [name, dot] = SRC[b.src], k = JSON.stringify([size, { ...it, ago: 0 }, solo]); // el «hace X» no entra en la clave: no se reconstruye la tarjeta cada minuto
+  const kick = it.k + (it.ago ? ' · ' + it.ago : '');
+  const texts = m => {
+    m.querySelector('.sg-k span').textContent = solo ? kick : size === 'lead' ? name + ' · ' + kick : name;
+    m.querySelector('.sg-s').textContent = (!solo && size !== 'lead' && it.k !== 'Seguir viendo' ? kick + ' · ' : '') + it.s;
+  };
+  if (keyOf.get(el) === k) { const m = el.querySelector('.sg-m'); if (m) texts(m); return; } // misma tarjeta: solo se refresca la hora
   keyOf.set(el, k);
   const iw = Math.min(IW[size][it.shape], it.img.w);
   const cap = size === 'lead' && it.shape === 'wide' && iw >= 640 ? 'over' : '';   // texto encima de la imagen grande
@@ -376,9 +381,8 @@ function block(el, b, size, solo) { // solo: la única tarjeta del reposo en con
   const im = document.createElement('div'); im.className = 'sg-img'; im.dataset.w = it.img.w; im.style.setProperty('--iw', iw);
   const m = document.createElement('div'); m.className = 'sg-m';
   m.innerHTML = '<div class="sg-k"><i></i><span></span></div><div class="sg-t"></div><div class="sg-s"></div>';
-  m.querySelector('.sg-k span').textContent = solo ? it.k : size === 'lead' ? name + ' · ' + it.k : name;
+  texts(m);
   m.querySelector('.sg-t').textContent = it.t;
-  m.querySelector('.sg-s').textContent = (!solo && size !== 'lead' && it.k !== 'Seguir viendo' ? it.k + ' · ' : '') + it.s;
   if (it.f != null) {
     const bar = document.createElement('span'); bar.className = 'sg-bar'; const f = document.createElement('i');
     f.style.transform = `scaleX(${Math.min(1, Math.max(0, it.f)).toFixed(3)})`; bar.append(f); (cap ? m : im).append(bar);
@@ -388,8 +392,8 @@ function block(el, b, size, solo) { // solo: la única tarjeta del reposo en con
 }
 /** la fila de Netflix del aspecto discreto: antetítulo y 3–4 tarjetas de serie (665×375) a 300–320 px de la tele */
 function shelf(el, b, max, cw) {
-  const list = b.items.slice(0, max), lab = 'Netflix · ' + (b.ago ? 'Estabas viendo · ' + agoLabel(b.ago + off, Date.now()) : 'Seguir viendo'), k = JSON.stringify([max, cw, list, lab]);
-  if (keyOf.get(el) === k) return;
+  const list = b.items.slice(0, max), lab = 'Netflix · ' + (b.ago ? 'Estabas viendo · ' + agoLabel(b.ago + off, Date.now()) : 'Seguir viendo'), k = JSON.stringify([max, cw, list, !!b.ago]); // la hora no entra en la clave
+  if (keyOf.get(el) === k) { const sp = el.querySelector('.sg-k span'); if (sp) sp.textContent = lab; return; } // misma fila: solo se refresca la hora
   keyOf.set(el, k);
   const box = document.createElement('div'); box.className = 'sg-shelf'; box.style.setProperty('--dot', SRC.netflix[1]);
   box.innerHTML = '<div class="sg-k"><i></i><span></span></div><div class="sg-cards"></div>';
@@ -419,9 +423,9 @@ function suggest() {
   const mode = !n ? '' : lone !== null ? lone : first === 'netflix' && sg.look === 'discreto' ? 'dis' : n === 1 ? 'nfx' : 'sug';
   const ungone = () => document.querySelectorAll('.sg-gone').forEach(e => e.classList.remove('sg-gone'));
   const srcs = bl.map(b => b.src), old = sug.srcs || [];
-  // caduca el final de la lista (los que quedan son un prefijo de los de antes): se funde en su sitio y el hueco espera al
+  // (si cambia el modo —p. ej. de dos bloques a Netflix solo— no se funde: se reacomoda) caduca el final de la lista (los que quedan son un prefijo de los de antes): se funde en su sitio y el hueco espera al
   // próximo reacomodo. Si caduca otro (p. ej. el primero) o el widget no es de bloques, se reacomoda como siempre
-  if (layout && n < sug.n && (sug.mode === 'dis' || sug.mode === 'sug') && srcs.every((x, i) => x === old[i])) {
+  if (layout && (!n || mode === sug.mode) && n < sug.n && (sug.mode === 'dis' || sug.mode === 'sug') && srcs.every((x, i) => x === old[i])) {
     for (let i = n; i < sug.n; i++) W['s' + i].classList.add('sg-gone');
     const armed = !sug.next; sug.next = { mode, n, srcs }; // siempre el último cambio
     if (armed && !(Number(D.cfg.rearrangeMin) > 0)) setTimeout(() => { if (sug.next) { applyNext(); rearrange(0); } }, 1300); // sin reacomodo programado: tras el fundido

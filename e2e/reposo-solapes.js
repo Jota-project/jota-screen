@@ -231,8 +231,10 @@ function check(m) {
       await send(v.d(v.now)); await p.waitForFunction(() => !window.TVIdle.now().moving);
       return { p, ctx, send, v };
     };
-    let t = await open(V('sug2'));
-    await t.send({ ...base(t.v.now), suggest: { blocks: [{ src: 'netflix', items: [NFX1] }] } });
+    // en fijo con aspecto discreto (como el servidor): dos bloques y uno son el mismo modo, y solo así se funde
+    const dis2 = { ...V('sug2'), d: now => ({ ...base(now), suggest: { look: 'discreto', blocks: [{ src: 'netflix', items: [NFX1] }, SPOT(now)] } }) };
+    let t = await open(dis2);
+    await t.send({ ...base(t.v.now), suggest: { look: 'discreto', blocks: [{ src: 'netflix', items: [NFX1] }] } });
     await t.p.waitForTimeout(200);
     const g1 = await t.p.evaluate(() => document.getElementById('wS1').classList.contains('sg-gone'));
     await t.send(t.v.d(t.v.now));
@@ -248,6 +250,18 @@ function check(m) {
     const st2 = await t.p.evaluate(() => ({ gone: document.querySelectorAll('.sg-gone').length, s0: document.getElementById('wS0').classList.contains('gone'), s1: document.getElementById('wS1').classList.contains('gone') }));
     if (!mv || st2.gone || !st2.s0 || !st2.s1) fails.push(`✗ caduca el primero: reacomodo=${mv}, ${JSON.stringify(st2)}`);
     await t.ctx.close();
+  }
+  for (const nm of ['ctx1', 'ctx1s']) { // el «hace X» se refresca cada minuto sin reconstruir la tarjeta (mismo <img>, sin parpadeo)
+    const v = VARIANTS.find(x => x.n === nm), ctx = await b.newContext({ viewport: { width: 1920, height: 1080 }, timezoneId: 'Europe/Madrid' }), p = await ctx.newPage();
+    await p.clock.setFixedTime(v.now); await p.goto(`http://127.0.0.1:${srv.address().port}/`);
+    const send = d => p.evaluate(x => { x.now = Date.now(); onData(x); }, { ...d, cfg: { dimMin: 0, rearrangeMin: 0, layout: 'rotar', calm: true } }); // eslint-disable-line no-undef
+    const kick = () => p.evaluate(() => document.querySelector('.sg-k span').textContent);
+    await send(v.d(v.now)); await p.waitForTimeout(300);
+    const k0 = await kick(); await p.evaluate(() => { document.querySelector('.sg-img img').dataset.mark = '1'; });
+    await p.clock.setFixedTime(v.now + 60e3); await send(v.d(v.now)); await p.waitForTimeout(300); // la misma hora de origen, un minuto después
+    const k1 = await kick(), same = await p.evaluate(() => [...document.querySelectorAll('.sg-img img')].map(i => i.dataset.mark).join());
+    if (k0 === k1 || same !== '1') fails.push(`✗ ${nm}: la hora debe cambiar (${k0} -> ${k1}) con el mismo <img> (marcas ${same})`);
+    await ctx.close();
   }
   await b.close(); srv.close();
   if (fails.length) console.error(fails.join('\n'));
