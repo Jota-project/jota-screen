@@ -118,7 +118,10 @@ function setLayout(name) {
 function schedule() {
   clearInterval(rTimer);
   const min = Number(D.cfg.rearrangeMin) || 0;
-  if (min > 0) rTimer = setInterval(() => rearrange((scene + 1) % scenes().length), min * 60e3);
+  if (min > 0) rTimer = setInterval(() => {
+    if (sug.next) { sug = sug.next; scene = 0; document.querySelectorAll('.sg-gone').forEach(e => e.classList.remove('sg-gone')); } // aplica la caducidad pendiente
+    rearrange((scene + 1) % scenes().length);
+  }, min * 60e3);
 }
 
 // ── reloj con dígitos que caen al cambiar
@@ -336,6 +339,11 @@ function nfxWidget(list) {
 const SRC = { netflix: ['Netflix', '#e50914'], spotify: ['Spotify', '#1ed760'], youtube: ['YouTube', '#ff0033'] };
 const IW = { lead: { wide: 848, square: 456 }, side: { wide: 520, square: 300 }, row: { wide: 352, square: 216 }, tile: { wide: 352, square: 200 }, mini: { wide: 192, square: 160 } };
 const artSrc = u => (!u ? '' : u.startsWith('/') ? u : '/idle/art?u=' + encodeURIComponent(u)); // la carátula, por nuestra ruta
+/** «hace 40 min» / «hace 2 h»; ms y now son marcas de tiempo */
+function agoLabel(ms, now) {
+  const m = Math.floor((now - ms) / 60e3);
+  return m < 1 ? 'hace un momento' : m < 60 ? `hace ${m} min` : `hace ${Math.floor(m / 60)} h`;
+}
 /** lo que enseña un bloque: antetítulo, título, línea de abajo, progreso e imagen (con su ancho real) */
 function itemOf(b, size) {
   if (b.src === 'netflix') {
@@ -346,7 +354,7 @@ function itemOf(b, size) {
     const img = { u: artSrc(b.art), w: b.artW || 640 };
     return b.state === 'playing'
       ? { k: 'Suena ahora', t: b.track, s: b.artist + (b.ctx ? ' · ' + b.ctx : ''), f: b.duration ? b.progress / b.duration : null, img, shape: 'square' }
-      : { k: 'Seguir escuchando', t: b.ctx || b.track, s: 'Lo último: ' + b.track + ' · ' + b.artist, f: null, img, shape: 'square' };
+      : { k: 'Seguir escuchando' + (b.ago ? ' · ' + agoLabel(b.ago, Date.now()) : ''), t: b.ctx || b.track, s: 'Lo último: ' + b.track + ' · ' + b.artist, f: null, img, shape: 'square' };
   }
   const it = b.items[0]; // youtube
   return { k: 'Seguir viendo', t: it.title, s: it.channel + (it.dur ? ' · quedan ' + dur(it.dur - it.pos) : ''), f: it.dur ? it.pos / it.dur : null, img: { u: it.thumb, w: it.thumbW }, shape: 'wide' };
@@ -378,7 +386,8 @@ function shelf(el, b, max, cw) {
   if (keyOf.get(el) === k) return;
   keyOf.set(el, k);
   const box = document.createElement('div'); box.className = 'sg-shelf'; box.style.setProperty('--dot', SRC.netflix[1]);
-  box.innerHTML = '<div class="sg-k"><i></i><span>Netflix · Seguir viendo</span></div><div class="sg-cards"></div>';
+  box.innerHTML = '<div class="sg-k"><i></i><span></span></div><div class="sg-cards"></div>';
+  box.querySelector('.sg-k span').textContent = 'Netflix · ' + (b.ago ? 'Estabas viendo · ' + agoLabel(b.ago, Date.now()) : 'Seguir viendo');
   const row = box.querySelector('.sg-cards');
   list.forEach((it, i) => {
     const w = it.card ? 665 : 848, iw = Math.min(cw, w);
@@ -401,7 +410,11 @@ function suggest() {
   const n = bl.length, first = bl[0] && bl[0].src;
   // solo Spotify: el reposo de siempre, con su «ahora suena»; solo Netflix en grande: su widget entero
   const mode = !n || (n === 1 && first !== 'netflix') ? '' : first === 'netflix' && sg.look === 'discreto' ? 'dis' : n === 1 ? 'nfx' : 'sug';
-  if (mode !== sug.mode || n !== sug.n) { sug = { mode, n }; scene = 0; if (layout) rearrange(0); }
+  const ungone = () => document.querySelectorAll('.sg-gone').forEach(e => e.classList.remove('sg-gone'));
+  if (layout && n < sug.n) { // caduca un bloque: se funde en su sitio y el hueco espera al próximo reacomodo
+    if (!sug.next) { for (let i = n; i < sug.n; i++) W['s' + i].classList.add('sg-gone'); sug.next = { mode, n }; }
+  } else if (mode !== sug.mode || n !== sug.n) { ungone(); sug = { mode, n }; scene = 0; if (layout) rearrange(0); }
+  else if (sug.next) { ungone(); delete sug.next; } // volvió lo que caducaba
   if (!mode) { nfxKey = ''; return; }
   if (mode === 'nfx') nfxWidget(bl[0].items);
   else if (mode === 'dis') {

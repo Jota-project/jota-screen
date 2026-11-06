@@ -90,6 +90,9 @@ VARIANTS.push(
   { n: 'dis1', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), suggest: { look: 'discreto', blocks: [{ src: 'netflix', items: NFX }] } }) },
   { n: 'dis2', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), suggest: { look: 'discreto', blocks: [{ src: 'netflix', items: NFX }, SPOT(now)] } }) },
   { n: 'dis3', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), acts: [timer(now)], suggest: { look: 'discreto', blocks: [{ src: 'netflix', items: NFX }, SPOT(now, { state: 'playing' }), YT()] } }) },
+  // modo contexto: un solo bloque con `ago` (marca de tiempo del último uso); k = antetítulo esperado
+  { n: 'ctx1', k: 'Netflix · Estabas viendo · hace 40 min', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), suggest: { look: 'discreto', blocks: [{ src: 'netflix', items: [NFX1], ago: now - 40 * 60e3 }] } }) },
+  { n: 'ctx1s', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), suggest: { look: 'discreto', blocks: [SPOT(now, { ago: now - 2 * 3600e3 })] } }) },
   { n: 'sug3b', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), acts: [timer(now)], suggest: { blocks: [YT({ thumb: sg('hqdefault', 480, 270, '#6a5a2a'), thumbW: 480 }), { src: 'netflix', items: [NFX1] }, SPOT(now)] } }) },
 );
 const LAYOUTS = ['margen', 'zonas', 'apilada'];
@@ -197,6 +200,7 @@ function check(m) {
         await p.evaluate(s => window.TVIdle.place ? window.TVIdle.place(s) : place(L.rotar[s]), sc); // eslint-disable-line no-undef
         await p.waitForTimeout(100);
         const bad = check(await p.evaluate(measure));
+        if (v.k && sc === 0) { const t = await p.evaluate(() => [...document.querySelectorAll('.sg-k span')].map(e => e.textContent)); if (!t.includes(v.k)) bad.push(`antetítulo «${v.k}» no está; hay ${JSON.stringify(t)}`); }
         n++;
         if (bad.length) fails.push(`✗ ${sz.n} ${name} ${v.n}\n    ` + bad.join('\n    '));
         if (SHOTS) await p.screenshot({ path: path.join(SHOTS, `${sz.n}-${name}-${v.n}.png`), animations: 'disabled' });
