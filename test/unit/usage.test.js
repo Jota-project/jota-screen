@@ -30,3 +30,11 @@ test('usage: recorta título y url a 200 y guarda solo src, title, url, at', () 
   assert.equal(saved[0].url.length, 200);
   assert.deepEqual(Object.keys(saved[0]).sort(), ['at', 'src', 'title', 'url']);
 });
+
+test('usage: en la web la misma url seguida es la misma entrada y se queda el título nuevo', () => {
+  let T = 1;
+  const u = createUsage({ store: { load: () => [], save() {} }, now: () => T, enabled: () => true });
+  u.add({ src: 'web', title: 'example.com', url: 'https://example.com/a' });
+  T = 2; u.add({ src: 'web', title: 'Ejemplo A', url: 'https://example.com/a' });
+  assert.deepEqual(u.list(), [{ src: 'web', title: 'Ejemplo A', url: 'https://example.com/a', at: 2 }]);
+});

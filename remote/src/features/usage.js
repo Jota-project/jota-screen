@@ -18,7 +18,8 @@ function createUsage({ store, now = Date.now, enabled, keepDays = 90 }) {
       const list = load(), at = now();
       const title = String(e.title || '').slice(0, 200), url = String(e.url || '').slice(0, 200);
       const top = list[0];
-      if (top && top.src === e.src && top.title === title && top.url === url) top.at = at; // misma seguida: solo la hora
+      // misma seguida: solo la hora (en la web basta la url: el título puede llegar tarde y se corrige)
+      if (top && top.src === e.src && top.url === url && (e.src === 'web' || top.title === title)) { top.at = at; top.title = title; }
       else list.unshift({ src: e.src, title, url, at });
       items = list.filter(x => at - x.at <= keepDays * 864e5);
       store.save(items);

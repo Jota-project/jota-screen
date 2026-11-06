@@ -90,8 +90,8 @@ cdp = createCdp({ port: CDP_PORT, log, hooks: {
       if (!t.url.startsWith(SELF + '/')) stage.leave(); // fuera del escenario (también por «atrás» o un clic): ni su cierre programado
       idle.onNav(t.url); pagePoll.reset(); talkView.reset();
       if (/^https?:\/\//.test(t.url) && !t.url.startsWith(SELF + '/')) { // solo la web de fuera, no nuestras pantallas
-        let host = ''; try { host = new URL(t.url).hostname; } catch {}
-        logUse({ src: 'web', title: t.title || host, url: t.url });
+        let host = '', url = t.url; try { const u = new URL(t.url); host = u.hostname; u.hash = ''; url = u.href; } catch {} // sin #fragmento: ahí van los tokens OAuth
+        logUse({ src: 'web', title: t.title || host, url });
       }
     }
     broadcast();
@@ -129,8 +129,8 @@ const logUse = e => { try { usage.add(e); } catch (err) { log.info('uso:', err.m
 const pause = ms => new Promise(r => setTimeout(r, ms));
 const netflix = createNetflix({ cdp, cfg: CFG, store: createJsonStore(CFG.FILES.netflix, { fallback: {} }), log: log.info, onLeave: () => {
     nfxWatch.soon();
-    const l = netflix.last(); // vid = id del capítulo: find lo resuelve contra «seguir viendo»; si no está, el título guardado
-    if (l && l.vid) logUse({ src: 'netflix', title: nfxWatch.find({ id: l.vid })?.title || l.title || '', url: 'https://www.netflix.com/watch/' + l.vid });
+    const l = netflix.last(); // (solo si es reciente: sin /watch/ el vid es el anterior) vid = id del capítulo: find lo resuelve contra «seguir viendo»; si no está, el título guardado
+    if (l && l.vid && Date.now() - l.at < 5000) logUse({ src: 'netflix', title: nfxWatch.find({ id: l.vid })?.title || l.title || '', url: 'https://www.netflix.com/watch/' + l.vid });
   },
   // con la conversación en el panel: la tarjeta de la serie, un respiro para verla y su ▶; luego Netflix al frente
   beforePlay: async t => {
