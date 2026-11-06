@@ -92,7 +92,7 @@ VARIANTS.push(
   { n: 'dis3', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), acts: [timer(now)], suggest: { look: 'discreto', blocks: [{ src: 'netflix', items: NFX }, SPOT(now, { state: 'playing' }), YT()] } }) },
   // modo contexto: un solo bloque con `ago` (marca de tiempo del último uso); k = antetítulo esperado
   { n: 'ctx1', k: 'Netflix · Estabas viendo · hace 40 min', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), suggest: { look: 'discreto', blocks: [{ src: 'netflix', items: [NFX1], ago: now - 40 * 60e3 }] } }) },
-  { n: 'ctx1s', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), suggest: { look: 'discreto', blocks: [SPOT(now, { ago: now - 2 * 3600e3 })] } }) },
+  { n: 'ctx1s', k: 'Seguir escuchando · hace 40 min', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), suggest: { look: 'discreto', blocks: [SPOT(now, { ago: now - 40 * 60e3 })] } }) },
   { n: 'sug3b', now: at('2026-10-21T21:40:00+02:00'), d: now => ({ ...base(now), acts: [timer(now)], suggest: { blocks: [YT({ thumb: sg('hqdefault', 480, 270, '#6a5a2a'), thumbW: 480 }), { src: 'netflix', items: [NFX1] }, SPOT(now)] } }) },
 );
 const LAYOUTS = ['margen', 'zonas', 'apilada'];
@@ -207,6 +207,20 @@ function check(m) {
       }
       await ctx.close();
     }
+  }
+  { // caduca el único bloque con un reacomodo programado: se funde (sg-gone) y la hora no se mueve
+    const v = VARIANTS.find(x => x.n === 'ctx1'), ctx = await b.newContext({ viewport: { width: 1920, height: 1080 }, timezoneId: 'Europe/Madrid' }), p = await ctx.newPage();
+    await p.clock.setFixedTime(v.now);
+    await p.goto(`http://127.0.0.1:${srv.address().port}/`);
+    const cfg = { dimMin: 0, rearrangeMin: 20, layout: 'rotar', calm: true }, hora = () => p.evaluate(() => { const r = document.getElementById('wHora').getBoundingClientRect(); return [r.x, r.y]; }); // eslint-disable-line no-undef
+    await p.evaluate(d => { d.now = Date.now(); onData(d); }, { ...v.d(v.now), cfg }); // eslint-disable-line no-undef
+    await p.waitForFunction(() => !window.TVIdle.now().moving);
+    const h0 = await hora();
+    await p.evaluate(d => { d.now = Date.now(); onData(d); }, { ...base(v.now), cfg }); // eslint-disable-line no-undef
+    await p.waitForTimeout(1500);
+    const gone = await p.evaluate(() => document.getElementById('wS0').classList.contains('sg-gone')), h1 = await hora();
+    if (!gone || Math.abs(h0[0] - h1[0]) > 2 || Math.abs(h0[1] - h1[1]) > 2) fails.push(`✗ caducidad: sg-gone=${gone}, hora ${h0} -> ${h1}`); // 2 px: la deriva suave de la página
+    await ctx.close();
   }
   await b.close(); srv.close();
   if (fails.length) console.error(fails.join('\n'));

@@ -115,11 +115,17 @@ function setLayout(name) {
   const first = !layout; layout = name; scene = 0;
   if (first) place(scenes()[0]); else rearrange(0);
 }
+/** aplica la caducidad pendiente: el hueco se cierra y vuelve lo que estaba oculto */
+function applyNext() {
+  if (!sug.next) return;
+  sug = sug.next; scene = 0;
+  document.querySelectorAll('.sg-gone').forEach(e => e.classList.remove('sg-gone'));
+}
 function schedule() {
   clearInterval(rTimer);
   const min = Number(D.cfg.rearrangeMin) || 0;
   if (min > 0) rTimer = setInterval(() => {
-    if (sug.next) { sug = sug.next; scene = 0; document.querySelectorAll('.sg-gone').forEach(e => e.classList.remove('sg-gone')); } // aplica la caducidad pendiente
+    applyNext();
     rearrange((scene + 1) % scenes().length);
   }, min * 60e3);
 }
@@ -354,14 +360,14 @@ function itemOf(b, size) {
     const img = { u: artSrc(b.art), w: b.artW || 640 };
     return b.state === 'playing'
       ? { k: 'Suena ahora', t: b.track, s: b.artist + (b.ctx ? ' · ' + b.ctx : ''), f: b.duration ? b.progress / b.duration : null, img, shape: 'square' }
-      : { k: 'Seguir escuchando' + (b.ago ? ' · ' + agoLabel(b.ago, Date.now()) : ''), t: b.ctx || b.track, s: 'Lo último: ' + b.track + ' · ' + b.artist, f: null, img, shape: 'square' };
+      : { k: 'Seguir escuchando' + (b.ago ? ' · ' + agoLabel(b.ago + off, Date.now()) : ''), t: b.ctx || b.track, s: 'Lo último: ' + b.track + ' · ' + b.artist, f: null, img, shape: 'square' };
   }
   const it = b.items[0]; // youtube
   return { k: 'Seguir viendo', t: it.title, s: it.channel + (it.dur ? ' · quedan ' + dur(it.dur - it.pos) : ''), f: it.dur ? it.pos / it.dur : null, img: { u: it.thumb, w: it.thumbW }, shape: 'wide' };
 }
 const keyOf = new WeakMap();
-function block(el, b, size) {
-  const it = itemOf(b, size), [name, dot] = SRC[b.src], k = JSON.stringify([size, it]);
+function block(el, b, size, solo) { // solo: la única tarjeta del reposo en contexto; su antetítulo es el del bloque
+  const it = itemOf(b, size), [name, dot] = SRC[b.src], k = JSON.stringify([size, it, solo]);
   if (keyOf.get(el) === k) return;
   keyOf.set(el, k);
   const iw = Math.min(IW[size][it.shape], it.img.w);
@@ -370,9 +376,9 @@ function block(el, b, size) {
   const im = document.createElement('div'); im.className = 'sg-img'; im.dataset.w = it.img.w; im.style.setProperty('--iw', iw);
   const m = document.createElement('div'); m.className = 'sg-m';
   m.innerHTML = '<div class="sg-k"><i></i><span></span></div><div class="sg-t"></div><div class="sg-s"></div>';
-  m.querySelector('.sg-k span').textContent = size === 'lead' ? name + ' · ' + it.k : name;
+  m.querySelector('.sg-k span').textContent = solo ? it.k : size === 'lead' ? name + ' · ' + it.k : name;
   m.querySelector('.sg-t').textContent = it.t;
-  m.querySelector('.sg-s').textContent = (size !== 'lead' && it.k !== 'Seguir viendo' ? it.k + ' · ' : '') + it.s;
+  m.querySelector('.sg-s').textContent = (!solo && size !== 'lead' && it.k !== 'Seguir viendo' ? it.k + ' · ' : '') + it.s;
   if (it.f != null) {
     const bar = document.createElement('span'); bar.className = 'sg-bar'; const f = document.createElement('i');
     f.style.transform = `scaleX(${Math.min(1, Math.max(0, it.f)).toFixed(3)})`; bar.append(f); (cap ? m : im).append(bar);
@@ -387,7 +393,7 @@ function shelf(el, b, max, cw) {
   keyOf.set(el, k);
   const box = document.createElement('div'); box.className = 'sg-shelf'; box.style.setProperty('--dot', SRC.netflix[1]);
   box.innerHTML = '<div class="sg-k"><i></i><span></span></div><div class="sg-cards"></div>';
-  box.querySelector('.sg-k span').textContent = 'Netflix · ' + (b.ago ? 'Estabas viendo · ' + agoLabel(b.ago, Date.now()) : 'Seguir viendo');
+  box.querySelector('.sg-k span').textContent = 'Netflix · ' + (b.ago ? 'Estabas viendo · ' + agoLabel(b.ago + off, Date.now()) : 'Seguir viendo');
   const row = box.querySelector('.sg-cards');
   list.forEach((it, i) => {
     const w = it.card ? 665 : 848, iw = Math.min(cw, w);
@@ -409,16 +415,18 @@ function suggest() {
   const bl = dark || !sg ? [] : (sg.blocks || []).filter(b => b && SRC[b.src]).slice(0, 3);
   const n = bl.length, first = bl[0] && bl[0].src;
   // solo Spotify: el reposo de siempre, con su «ahora suena»; solo Netflix en grande: su widget entero
-  const mode = !n || (n === 1 && first !== 'netflix') ? '' : first === 'netflix' && sg.look === 'discreto' ? 'dis' : n === 1 ? 'nfx' : 'sug';
+  const lone = n === 1 && first !== 'netflix' ? (bl[0].ago && sg.look === 'discreto' ? 'dis' : '') : null; // un Spotify suelto con `ago` (contexto) tiene su tarjeta
+  const mode = !n ? '' : lone !== null ? lone : first === 'netflix' && sg.look === 'discreto' ? 'dis' : n === 1 ? 'nfx' : 'sug';
   const ungone = () => document.querySelectorAll('.sg-gone').forEach(e => e.classList.remove('sg-gone'));
   if (layout && n < sug.n) { // caduca un bloque: se funde en su sitio y el hueco espera al próximo reacomodo
-    if (!sug.next) { for (let i = n; i < sug.n; i++) W['s' + i].classList.add('sg-gone'); sug.next = { mode, n }; }
+    if (!sug.next) { for (let i = n; i < sug.n; i++) W['s' + i].classList.add('sg-gone'); sug.next = { mode, n };
+      if (!(Number(D.cfg.rearrangeMin) > 0)) setTimeout(() => { if (sug.next) { applyNext(); rearrange(0); } }, 1300); } // sin reacomodo programado: tras el fundido
   } else if (mode !== sug.mode || n !== sug.n) { ungone(); sug = { mode, n }; scene = 0; if (layout) rearrange(0); }
   else if (sug.next) { ungone(); delete sug.next; } // volvió lo que caducaba
   if (!mode) { nfxKey = ''; return; }
   if (mode === 'nfx') nfxWidget(bl[0].items);
   else if (mode === 'dis') {
-    shelf(W.s0, bl[0], [0, 4, 3, 3][n], n === 3 ? 300 : 320);
+    if (first === 'netflix') shelf(W.s0, bl[0], [0, 4, 3, 3][n], n === 3 ? 300 : 320); else block(W.s0, bl[0], 'tile', true);
     bl.slice(1).forEach((b, i) => block(W['s' + (i + 1)], b, n === 2 ? 'tile' : 'mini'));
   } else bl.forEach((b, i) => block(W['s' + i], b, i === 0 ? 'lead' : n === 2 ? 'side' : 'row'));
   requestAnimationFrame(fit);
