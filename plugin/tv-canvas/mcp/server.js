@@ -220,6 +220,8 @@ tool('tv_idle',
   'layout (rotar|margen|zonas|apilada: how clock, weather and music are arranged; rotar cycles them), rearrangeMin (minutes between rearrangements, 0 = never), calm (reduced motion), ' +
   'suggest ("Seguir viendo": {on, max 1-3 sources at once, look discreto|destacado|auto (a row of small series cards | one series big | big only when one series dominates the last 14 days), ' +
   'mode fijo, sources [{id: netflix|spotify|youtube, on}] in priority order; the spotify entry follows music}), netflix (on|off: legacy shortcut for suggest on + netflix on), ' +
+  'fresh (true|false: when the TV is switched off, J-Screen goes back to the idle screen so it starts fresh; nothing is forgotten), ' +
+  'usage (true|false: keep a local log of what was on screen, for Recents and future habit suggestions), ' +
   'glass (auto|A|B|C: glass level of the live panels where the conversation with Jota is drawn on the TV; auto picks it by how smooth the TV runs, A full, B light, C opaque).',
   { op: z.enum(['show', 'get', 'set']), cfg: z.record(z.any()).optional() },
   async ({ op, cfg }) => out(await cmd({ t: 'idle', op, cfg })));

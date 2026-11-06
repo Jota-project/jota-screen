@@ -160,3 +160,13 @@ test('wantSuggestions: aspecto «según el momento»: en grande si una serie es 
   dom = { title: 'Dark', share: 0.9, n: 10 };
   assert.equal(idle.suggest().look, 'discreto', 'manda otra que no va primera');
 });
+
+test('fresh: al apagar va al reposo; ya en el reposo o con fresh false, nada', async t => {
+  const { idle, state } = make(t, { url: 'https://www.netflix.com/watch/1' });
+  assert.equal(idle.run({ op: 'get' }).cfg.fresh, true);
+  await idle.fresh(); assert.ok(idle.isIdle(state.url));
+  state.url = 'https://example.com';
+  idle.run({ op: 'set', cfg: { fresh: false } });
+  await idle.fresh(); assert.equal(state.url, 'https://example.com');
+  assert.equal(idle.run({ op: 'set', cfg: { fresh: 'x', usage: 0 } }).cfg.usage, false);
+});

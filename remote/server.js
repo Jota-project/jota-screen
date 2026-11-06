@@ -206,7 +206,7 @@ async function pauseMedia() {
     if (n?.playing && n.device?.name === CFG.SP_DEVICE) await spotify.spotify({ a: 'pause' });
   } catch {}
 }
-const tele = androidTv ? createTele({ tv: androidTv, state, broadcast, watched: () => ws.clients().size > 0, pause: pauseMedia, log }) : null;
+const tele = androidTv ? createTele({ tv: androidTv, state, broadcast, watched: () => ws.clients().size > 0, pause: pauseMedia, onOff: () => idle.fresh(), log }) : null;
 const talk = createTalk({ gw, cfg: CFG, media: () => state.media, view: talkView, speaker, log });
 
 // ───────────────────────── órdenes: cada una con su permiso al lado, en su capacidad

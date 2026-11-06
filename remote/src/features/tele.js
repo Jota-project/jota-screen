@@ -23,10 +23,10 @@ const SCREEN = new Set(['nav', 'home', 'youtube:play', 'present', 'show', 'netfl
 
 /**
  * @param {{ tv: ReturnType<typeof import('../tv/android-tv').createAndroidTv>, state: any, broadcast: () => void,
- *           watched: () => boolean, pause: () => Promise<void>, log: { info: (m: string) => void } }} o
+ *           watched: () => boolean, pause: () => Promise<void>, onOff?: () => void, log: { info: (m: string) => void } }} o
  *   watched: ¿hay algún mando conectado?  pause: para el vídeo de la página y Spotify (los errores no cuentan)
  */
-function createTele({ tv, state, broadcast, watched, pause, log }) {
+function createTele({ tv, state, broadcast, watched, pause, onOff, log }) {
   state.tv = { power: null, src: null };
   let lastPower = null; // último encendido conocido (sin null): de él sale el salto a J-Screen
   let lastSrc = null;   // entrada en la última lectura encendida (null tras verla apagada): de ella sale el j → tv
@@ -54,6 +54,7 @@ function createTele({ tv, state, broadcast, watched, pause, log }) {
         own = false;
       }
       const change = lastPower === 'on' && p === 'off' ? 'off' : p === 'on' && lastSrc === 'j' && src === 'tv' ? 'tv' : null;
+      if (change === 'off') try { onOff?.(); } catch {}   // al apagar, el reposo vuelve a empezar de cero, la pausara quien la pausara
       if (change) {
         if (pausedFor === change && Date.now() < pausedUntil) pausedFor = null;
         else quietPause();   // sin await: la pausa puede tardar segundos y las lecturas van en cadena

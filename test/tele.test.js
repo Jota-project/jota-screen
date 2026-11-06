@@ -16,7 +16,7 @@ function fakeTv() {
   const calls = [];
   const no = () => { throw new Error('La tele no responde'); };
   const tv = {
-    calls, fail: false, st: { power: 'on', src: 'j', vol: 22, muted: false },
+    calls, offs: [], fail: false, st: { power: 'on', src: 'j', vol: 22, muted: false },
     async status() { if (tv.fail) no(); return { ...tv.st }; },
     async power(on, to) { calls.push('power:' + on + (to === 'tv' || to === 'tdt' ? ':' + to : '')); if (tv.fail) no(); if (tv.wakes !== false) tv.st = { ...tv.st, power: on ? 'on' : 'off', src: on ? tv.st.src : null }; },
     async toJ() { calls.push('toJ'); if (tv.fail) no(); },
@@ -38,7 +38,7 @@ function setup(t, { watched = false } = {}) {
   const tele = createTele({
     tv, state, watched: () => watched,
     broadcast: () => { seen.bc++; if (seen.throwOnce) { seen.throwOnce = false; throw new Error('difusión rota'); } },
-    pause: async () => { tv.calls.push('pause'); }, log: { info: m => seen.logs.push(m) },
+    pause: async () => { tv.calls.push('pause'); }, onOff: () => tv.offs.push('off'), log: { info: m => seen.logs.push(m) },
   });
   const step = async ms => { t.mock.timers.tick(ms); await flush(); };
   const cmd = (t2, m = {}) => tele.commands.find(c => c.t === t2).run(m);
@@ -367,4 +367,16 @@ test('channel: número no válido o sin TV_TDT, error y la tele no se toca', asy
   tv.hasTdt = false;
   assert.deepEqual(cmd('channel', { n: 3 }), { error: 'falta la entrada de la TDT (TV_TDT)' });
   assert.deepEqual(tv.calls, []);
+});
+
+test('onOff: una vez por encendida → apagada (sondeo y orden propia); con null en medio, una sola', async t => {
+  const { tv, tele, step, cmd } = setup(t);
+  tele.start(); await flush();
+  tv.st = { ...tv.st, power: null, src: null }; await step(15000);
+  tv.st = { ...tv.st, power: 'off', src: null }; await step(15000);
+  await step(15000);
+  assert.equal(tv.offs.length, 1);
+  tv.st = { ...tv.st, power: 'on', src: 'j' }; await step(15000);
+  await cmd('power', { on: false }); await step(15000);
+  assert.equal(tv.offs.length, 2);
 });

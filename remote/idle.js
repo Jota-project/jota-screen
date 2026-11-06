@@ -42,6 +42,8 @@ const DEFAULTS = {
     on: false, max: 2, look: 'discreto', mode: 'fijo',
     sources: [{ id: 'netflix', on: true }, { id: 'spotify', on: true }, { id: 'youtube', on: false }],
   },
+  fresh: true,                  // al apagar la tele, J-Screen vuelve al reposo (empieza de cero; no se olvida nada)
+  usage: true,                  // registro local de lo que estuvo en pantalla (Recientes y sugerencias por hábito)
   glass: 'auto',                // auto | A | B | C: nivel del cristal del agente (src/tv/talk-view.js)
 };
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -102,6 +104,7 @@ function createIdle(o) {
     if (Number.isFinite(+c.rearrangeMin)) out.rearrangeMin = Math.min(120, Math.max(0, Math.round(+c.rearrangeMin)));
     if (c.calm !== undefined) out.calm = !!c.calm;
     out.suggest = sanitizeSuggest(c.suggest, base.suggest);
+    for (const k of ['fresh', 'usage']) if (c[k] !== undefined) out[k] = !!c[k];
     if (GLASS.includes(c.glass)) out.glass = c.glass;
     // un solo interruptor para Spotify (music) y el espejo de Netflix para los mandos de antes
     for (const x of out.suggest.sources) if (x.id === 'spotify') x.on = out.music;
@@ -365,7 +368,8 @@ function createIdle(o) {
     try {
       if (await mediaPlaying()) { lastUse = Date.now() - (cfg.idleMin - 1) * 60e3; return; } // se vuelve a mirar en un minuto
       lastUse = Date.now();
-      log('sin uso: paso al reposo');
+      let host = '?'; try { host = new URL(state.url).host || '?'; } catch {}
+      log('sin uso: paso al reposo (desde ' + host + ')');
       await nav(URL_IDLE);
     } finally { busy = false; }
   }
@@ -430,7 +434,15 @@ function createIdle(o) {
   setInterval(() => { tick(); autoIdle(); }, 20_000);
   tick(true);
 
+  /** La tele se apagó: si cfg.fresh y no está ya en el reposo, vuelve a él. */
+  function fresh() {
+    if (!cfg.fresh || isIdle(state.url)) return;
+    log('tele apagada: al reposo');
+    return nav(URL_IDLE);
+  }
+
   return {
+    fresh,
     URL_IDLE, isIdle, touch, onNav, run, activity, art, setMusic, ambient, watching: () => clients.size > 0 && cfg.music,
     nfxChanged: () => push(),                       // hay datos nuevos de «Seguir viendo»
     suggest: () => wantSuggestions(),               // lo que enseña ahora «Seguir viendo» (pruebas, depuración)
