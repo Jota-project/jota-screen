@@ -151,6 +151,12 @@ test('forIdleLast: el título del último capítulo visto, solo con lectura post
   assert.deepEqual(w.forIdleLast(null), []);
 });
 
+test('forIdleLast: con vid e id a la vez manda el capítulo aunque la serie del id vaya antes en la lista', async () => {
+  const { w } = rig({ now: () => 2000, read: async () => ({ profile: 'GA', items: [ITEMS[1], ITEMS[0]], history: [], warn: [] }) });
+  await w.refresh();
+  assert.deepEqual(w.forIdleLast({ at: 1000, vid: 2001, id: 1002 }).map(i => i.title), ['La serie de prueba']);
+});
+
 test('órdenes: «seguir viendo» e historial no son para invitados', async () => {
   const nf = createNetflix({ cdp: { call: async () => ({}), pages: new Map(), targetId: null, show: async () => {}, newTab: async () => 'X' }, cfg: {}, store: memStore() });
   const { w } = rig();
