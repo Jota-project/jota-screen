@@ -140,6 +140,16 @@ test('reposo: si el lector lleva más de 48 h sin leer, no se enseñan progresos
   assert.deepEqual(w.forIdle(), []);
 });
 
+test('forIdleLast: el título del último capítulo visto, solo con lectura posterior; si no, nada', async () => {
+  const { w } = rig({ now: () => 2000 });
+  await w.refresh();                                     // data.at = 2000
+  assert.deepEqual(w.forIdleLast({ at: 1000, vid: 2001 }).map(i => i.title), ['La serie de prueba']);
+  assert.deepEqual(w.forIdleLast({ at: 3000, vid: 2001 }), [], 'lectura anterior a dejar de ver');
+  assert.deepEqual(w.forIdleLast({ at: 1000, vid: 99 }), [], 'capítulo que ya no está (se acabó): nada, no el primero');
+  assert.deepEqual(w.forIdleLast({ at: 1000, vid: 99, id: 1002 }).map(i => i.title), ['Una película'], 'por la serie si se sabe');
+  assert.deepEqual(w.forIdleLast(null), []);
+});
+
 test('órdenes: «seguir viendo» e historial no son para invitados', async () => {
   const nf = createNetflix({ cdp: { call: async () => ({}), pages: new Map(), targetId: null, show: async () => {}, newTab: async () => 'X' }, cfg: {}, store: memStore() });
   const { w } = rig();

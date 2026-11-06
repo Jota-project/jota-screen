@@ -257,13 +257,24 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
 
   // ───────── para el reposo: lo justo, con las imágenes por nuestra ruta (la tele no habla con Netflix desde ahí)
   const img = u => (u && NFX_IMG.test(u) ? '/idle/nfx?u=' + encodeURIComponent(u) : null);
+  const idleItem = it => ({
+    id: it.id, kind: it.kind, title: it.title, pos: it.pos, dur: it.dur,
+    ep: it.ep ? { s: it.ep.s, e: it.ep.e, title: it.ep.title, still: img(it.ep.still) } : null,
+    card: img(it.card), story: img(it.story),
+  });
   function forIdle() {
     if (now() - data.at > 48 * 3600e3) return [];        // si el lector lleva días sin leer, mejor nada que progresos viejos
-    return data.items.map(it => ({
-      id: it.id, kind: it.kind, title: it.title, pos: it.pos, dur: it.dur,
-      ep: it.ep ? { s: it.ep.s, e: it.ep.e, title: it.ep.title, still: img(it.ep.still) } : null,
-      card: img(it.card), story: img(it.story),
-    }));
+    return data.items.map(idleItem);
+  }
+  /**
+   * Modo contexto: solo el título que se estaba viendo al salir de Netflix (`last`), y solo si la lectura es posterior a
+   * ese momento (si no, el progreso podría ser de antes). Si ya no está en la lista (se acabó), nada: nunca «el primero».
+   * @param {{ at: number, vid?: number, id?: number | string } | null} last
+   */
+  function forIdleLast(last) {
+    if (!last || data.at < last.at) return [];
+    const it = data.items.find(i => (last.vid && i.ep && i.ep.id === last.vid) || (last.id && String(i.id) === String(last.id)));
+    return it ? [idleItem(it)] : [];
   }
 
   /**
@@ -420,7 +431,7 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
   /** órdenes para `netflix` (src/features/netflix.js: extend) */
   const ops = { watching: () => watching(), history: () => history(), last: () => last(), play_last: () => playLast(), refresh: () => refresh('a petición') };
 
-  return { refresh, soon, start, forIdle, dominant, watching, history, last, playLast, serveImg, routes, ops, find, named, media, data: () => data };
+  return { refresh, soon, start, forIdle, forIdleLast, dominant, watching, history, last, playLast, serveImg, routes, ops, find, named, media, data: () => data };
 }
 
 module.exports = { readAll, createWatch, intentOf, pgProfile, pgReady, pgContinue, pgArt, pgHistory, isoDate, NFX_IMG };

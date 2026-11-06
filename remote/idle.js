@@ -19,7 +19,8 @@ const GLASS = ['auto', 'A', 'B', 'C'];                   // cristal del agente: 
 // cómo se ve (discreto: fila de series pequeñas; destacado: una en grande; auto: en grande si una serie manda) y el orden
 const SUGGEST_SOURCES = ['netflix', 'spotify', 'youtube'];
 const SUGGEST_LOOKS = ['discreto', 'destacado', 'auto'];
-const SUGGEST_MODES = ['fijo', 'contexto'];             // contexto: reservado hasta decidir los momentos (hoy, como fijo)
+const SUGGEST_MODES = ['fijo', 'contexto'];
+const CONTEXT_MS = 3 * 3600e3;                           // modo contexto: solo lo usado en las últimas 3 h
 const SPOTIFY_RESUME_MS = 3 * 3600e3;                    // «seguir escuchando»: hasta 3 h después de que deje de sonar
 const SUGGEST_HOLD_MS = 5 * 60e3;                        // un cambio de fuentes espera 5 min seguidos: pausar no recoloca todo
 const AUTO_DAYS = 14, AUTO_SHARE = 0.7;                  // «según el momento»: en grande si una serie es el 70 % de 14 días
@@ -56,7 +57,7 @@ const validTz = tz => { try { new Intl.DateTimeFormat('en-GB', { timeZone: tz })
  *   place?: { city?: string, lat?: number | null, lon?: number | null, tz?: string },
  *   cdp: { call: Function, session: string | null }, nav: (url: string) => Promise<any>, state: { url: string },
  *   stageKind: () => string | null, onWatch?: () => void, onAmbient?: () => void, log?: (...a: any[]) => void,
- *   fetch?: typeof fetch, nfx?: () => any[] | null, nfxDominant?: (days: number) => { title: string, share: number, n: number } | null,
+ *   fetch?: typeof fetch, nfx?: () => any[] | null, nfxRecent?: () => { at: number, items: any[] } | null, nfxDominant?: (days: number) => { title: string, share: number, n: number } | null,
  *   now?: () => number,
  * }} IdleDeps   nfx: «Seguir viendo» de Netflix para el reposo (src/features/netflix-watch.js), con las imágenes ya por /idle/nfx;
  *              nfxDominant: la serie que más se ha visto en los últimos días (aspecto «según el momento»)
@@ -298,9 +299,20 @@ function createIdle(o) {
     shown = shown.map(b => by[b.src] || b);                 // las de antes, con sus datos nuevos si los hay
     return shown;
   }
+  /** Modo contexto: UNA tarjeta, la fuente usada más recientemente (si fue hace menos de CONTEXT_MS), con `ago` = ese instante. */
+  function contextSuggestions(s) {
+    const on = id => s.sources.some(x => x.id === id && x.on), recent = o.nfxRecent ? o.nfxRecent() : null;
+    const cands = [];
+    if (on('netflix') && recent && recent.items.length) cands.push({ at: recent.at, block: { src: 'netflix', items: recent.items.slice(0, 1) } });
+    if (on('spotify')) cands.push({ at: music && music.playing ? now() : lastMusic ? lastMusic.seen : 0, block: spotifyBlock() });
+    const best = cands.filter(c => c.block && now() - c.at < CONTEXT_MS).sort((a, b) => b.at - a.at)[0];
+    const list = hold(best ? [{ ...best.block, ago: best.at }] : []);
+    return list.length ? { look: 'discreto', blocks: list } : null;
+  }
   function wantSuggestions() {
     const s = cfg.suggest;
     if (!s.on || profile === 'night' || profile === 'cinema') { shown = null; return null; }
+    if (s.mode === 'contexto') return contextSuggestions(s);
     const list = hold(s.sources.filter(x => x.on).map(x => BLOCKS[x.id]()).filter(Boolean).slice(0, s.max));
     if (!list.length) return null;
     let look = s.look;

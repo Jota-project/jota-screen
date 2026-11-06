@@ -113,6 +113,24 @@ test('suggest: un idle.json de antes con netflix: on se lee como el apartado enc
   assert.deepEqual([c.suggest.on, ids(c), c.netflix], [true, 'netflix+ spotify+ youtube-', 'on']);
 });
 
+test('contexto: una tarjeta, la fuente más reciente de las últimas 3 h; si no, nada; noche nada; sonando, Spotify', t => {
+  let T = 1e12, recent = { at: T - 40 * 60e3, items: [NFX[0]] };
+  const { idle } = make(t, { nfx: () => NFX, nfxRecent: () => recent, now: () => T });
+  idle.run({ op: 'set', cfg: { mode: 'day', suggest: { on: true, mode: 'contexto', max: 3 } } });
+  let s = idle.suggest();
+  assert.deepEqual([s.look, s.blocks.length, s.blocks[0].src, s.blocks[0].ago], ['discreto', 1, 'netflix', T - 40 * 60e3]);
+  idle.setMusic(SONG); idle.setMusic(null);              // Spotify sonó después: gana Spotify (resume)
+  idle.suggest(); T += 5 * 60e3 + 1;                     // Spotify quiere entrar: espera la histéresis de hold()
+  s = idle.suggest(); assert.deepEqual([s.blocks.length, s.blocks[0].src, s.blocks[0].state], [1, 'spotify', 'resume']);
+  T += 3 * 3600e3 + 1;
+  assert.equal(idle.suggest(), null, 'pasadas las 3 h: lo esencial');
+  idle.setMusic(SONG); assert.equal(idle.suggest().blocks[0].state, 'playing', 'sonando: siempre');
+  recent = { at: T, items: [] }; idle.setMusic(null);
+  idle.suggest(); T += 5 * 60e3 + 1;
+  assert.equal(idle.suggest().blocks[0].src, 'spotify', 'Netflix sin título que case: no sale');
+  idle.run({ op: 'set', cfg: { mode: 'night' } }); assert.equal(idle.suggest(), null);
+});
+
 test('wantSuggestions: fuentes en orden con datos, hasta max; de noche nada; Spotify «seguir escuchando» hasta 3 h', t => {
   let T = 1e12;
   const { idle } = make(t, { nfx: () => NFX, now: () => T });
