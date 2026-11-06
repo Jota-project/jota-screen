@@ -34,6 +34,7 @@ const createKeyboard = require('./src/features/keyboard');
 const createControl = require('./src/features/control');
 const createSpotify = require('./src/features/spotify');
 const createIdle = require('./src/features/idle');
+const createUsage = require('./src/features/usage');
 const createNetflix = require('./src/features/netflix');
 const { createWatch, intentOf } = require('./src/features/netflix-watch');
 const createYoutube = require('./src/features/youtube');
@@ -88,6 +89,10 @@ cdp = createCdp({ port: CDP_PORT, log, hooks: {
     if (moved) {
       if (!t.url.startsWith(SELF + '/')) stage.leave(); // fuera del escenario (también por «atrás» o un clic): ni su cierre programado
       idle.onNav(t.url); pagePoll.reset(); talkView.reset();
+      if (/^https?:\/\//.test(t.url) && !t.url.startsWith(SELF + '/')) { // solo la web de fuera, no nuestras pantallas
+        let host = ''; try { host = new URL(t.url).hostname; } catch {}
+        logUse({ src: 'web', title: t.title || host, url: t.url });
+      }
     }
     broadcast();
     spotify.page.changed(t.url); // al cambiar de página dentro de Spotify (o llegar a él) se repasa el retoque
@@ -118,8 +123,15 @@ const limiter = createRateLimiter({ max: 5, ms: 60_000 }); // 5 fallos -> 60 s b
 // ───────────────────────── capacidades
 const keyboard = createKeyboard({ cdp, log, clients: ws.clients, devOf });
 const stage = createStage({ cdp, state, cfg: CFG, nav: u => control.nav(u) });
+// registro de uso local; los ganchos nunca deben romper a quien los llama
+const usage = createUsage({ store: createJsonStore(CFG.FILES.usage, { fallback: [] }), enabled: () => !!(/** @type {any} */ (idle.run({ op: 'get' }))).cfg.usage });
+const logUse = e => { try { usage.add(e); } catch (err) { log.info('uso:', err.message); } };
 const pause = ms => new Promise(r => setTimeout(r, ms));
-const netflix = createNetflix({ cdp, cfg: CFG, store: createJsonStore(CFG.FILES.netflix, { fallback: {} }), log: log.info, onLeave: () => nfxWatch.soon(),
+const netflix = createNetflix({ cdp, cfg: CFG, store: createJsonStore(CFG.FILES.netflix, { fallback: {} }), log: log.info, onLeave: () => {
+    nfxWatch.soon();
+    const l = netflix.last(); // vid = id del capítulo: find lo resuelve contra «seguir viendo»; si no está, el título guardado
+    if (l && l.vid) logUse({ src: 'netflix', title: nfxWatch.find({ id: l.vid })?.title || l.title || '', url: 'https://www.netflix.com/watch/' + l.vid });
+  },
   // con la conversación en el panel: la tarjeta de la serie, un respiro para verla y su ▶; luego Netflix al frente
   beforePlay: async t => {
     const card = nfxWatch.media('play', t);
@@ -172,6 +184,7 @@ const control = createControl({ cdp, state, broadcast, key: keyboard.key, audio,
 const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: () => idle, tvAudio: androidTv && { set: v => control.volSet(v) } });
 const idle = createIdle({
   PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
+  onPlay: m => logUse({ src: 'spotify', title: m.context?.name || m.album || m.title }),
   stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info, nfx: () => nfxWatch.forIdle(), nfxRecent: () => { const l = netflix.last(); return l ? { at: l.at, items: nfxWatch.forIdleLast(l) } : null; }, nfxDominant: d => nfxWatch.dominant(d),
 });
 // J Gateway (voz): sin TV_GATEWAY_URL el cliente no se crea y todo se comporta como un Gateway caído

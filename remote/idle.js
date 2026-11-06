@@ -56,7 +56,7 @@ const validTz = tz => { try { new Intl.DateTimeFormat('en-GB', { timeZone: tz })
  *   PUB: string, SELF: string, file: string,
  *   place?: { city?: string, lat?: number | null, lon?: number | null, tz?: string },
  *   cdp: { call: Function, session: string | null }, nav: (url: string) => Promise<any>, state: { url: string },
- *   stageKind: () => string | null, onWatch?: () => void, onAmbient?: () => void, log?: (...a: any[]) => void,
+ *   stageKind: () => string | null, onWatch?: () => void, onPlay?: (m: any) => void, onAmbient?: () => void, log?: (...a: any[]) => void,
  *   fetch?: typeof fetch, nfx?: () => any[] | null, nfxRecent?: () => { at: number, items: any[] } | null, nfxDominant?: (days: number) => { title: string, share: number, n: number } | null,
  *   now?: () => number,
  * }} IdleDeps   nfx: «Seguir viendo» de Netflix para el reposo (src/features/netflix-watch.js), con las imágenes ya por /idle/nfx;
@@ -211,6 +211,10 @@ function createIdle(o) {
       artistImage: n.artistInfo?.image?.m || null,
     };
     if (next) lastMusic = { ...next, seen: now() };
+    // al empezar a sonar (no en cada sondeo): antes no sonaba o cambió la canción o la lista
+    if (next && next.playing && (!music || !music.playing || music.title !== next.title || music.context?.name !== next.context?.name)) {
+      try { o.onPlay && o.onPlay(next); } catch {}
+    }
     music = next; push();
   }
 

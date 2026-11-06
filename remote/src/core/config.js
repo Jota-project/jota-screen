@@ -75,6 +75,7 @@ function loadConfig(env = process.env, { hostname = os.hostname() } = {}) {
       spotify: path.join(STATE_DIR, 'spotify.json'),
       idle: path.join(STATE_DIR, 'idle.json'),
       netflix: path.join(STATE_DIR, 'netflix.json'),
+      usage: path.join(STATE_DIR, 'usage.json'),             // registro local de lo que estuvo en pantalla (90 días)
       watching: path.join(STATE_DIR, 'watching.json'),       // «Seguir viendo» e historial de Netflix (lo lee netflix-watch)
     }),
     // dónde estaba el estado antes de TV_STATE_DIR (lo mueve src/core/state-dir.js al arrancar)
