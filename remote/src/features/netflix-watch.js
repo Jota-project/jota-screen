@@ -273,7 +273,7 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
    */
   function forIdleLast(last) {
     if (!last || data.at < last.at) return [];
-    const it = data.items.find(i => (last.vid && i.ep && i.ep.id === last.vid) || (last.id && String(i.id) === String(last.id)));
+    const it = (last.vid && data.items.find(i => i.ep && i.ep.id === last.vid)) || (last.id && data.items.find(i => String(i.id) === String(last.id)));
     return it ? [idleItem(it)] : [];
   }
 

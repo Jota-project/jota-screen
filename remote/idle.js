@@ -306,6 +306,7 @@ function createIdle(o) {
     if (on('netflix') && recent && recent.items.length) cands.push({ at: recent.at, block: { src: 'netflix', items: recent.items.slice(0, 1) } });
     if (on('spotify')) cands.push({ at: music && music.playing ? now() : lastMusic ? lastMusic.seen : 0, block: spotifyBlock() });
     const best = cands.filter(c => c.block && now() - c.at < CONTEXT_MS).sort((a, b) => b.at - a.at)[0];
+    if (shown && shown.length > 1) shown = null;             // venía de fijo con varias: en contexto, siempre una
     const list = hold(best ? [{ ...best.block, ago: best.at }] : []);
     return list.length ? { look: 'discreto', blocks: list } : null;
   }

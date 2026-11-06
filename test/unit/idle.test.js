@@ -131,6 +131,17 @@ test('contexto: una tarjeta, la fuente más reciente de las últimas 3 h; si no,
   idle.run({ op: 'set', cfg: { mode: 'night' } }); assert.equal(idle.suggest(), null);
 });
 
+test('contexto: de fijo con varias tarjetas a contexto, una sola; Netflix más reciente gana a un Spotify anterior', t => {
+  let T = 1e12, recent = null;
+  const { idle } = make(t, { nfx: () => NFX, nfxRecent: () => recent, now: () => T });
+  idle.run({ op: 'set', cfg: { mode: 'day', suggest: { on: true, max: 3 } } });
+  idle.setMusic(SONG); idle.setMusic(null); idle.suggest(); T += 5 * 60e3 + 1;   // Spotify vio sonar en T0
+  assert.equal(idle.suggest().blocks.length, 2, 'fijo: dos');
+  T += 20 * 60e3; recent = { at: T - 10 * 60e3, items: [NFX[0]] };               // Netflix, después que Spotify
+  idle.run({ op: 'set', cfg: { suggest: { on: true, mode: 'contexto', max: 3 } } });
+  assert.deepEqual(idle.suggest().blocks.map(b => b.src), ['netflix'], 'contexto: una, la más reciente');
+});
+
 test('wantSuggestions: fuentes en orden con datos, hasta max; de noche nada; Spotify «seguir escuchando» hasta 3 h', t => {
   let T = 1e12;
   const { idle } = make(t, { nfx: () => NFX, now: () => T });

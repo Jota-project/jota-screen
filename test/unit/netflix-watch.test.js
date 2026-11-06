@@ -147,6 +147,7 @@ test('forIdleLast: el título del último capítulo visto, solo con lectura post
   assert.deepEqual(w.forIdleLast({ at: 3000, vid: 2001 }), [], 'lectura anterior a dejar de ver');
   assert.deepEqual(w.forIdleLast({ at: 1000, vid: 99 }), [], 'capítulo que ya no está (se acabó): nada, no el primero');
   assert.deepEqual(w.forIdleLast({ at: 1000, vid: 99, id: 1002 }).map(i => i.title), ['Una película'], 'por la serie si se sabe');
+  assert.deepEqual(w.forIdleLast({ at: 1000, vid: 2001, id: 1002 }).map(i => i.title), ['La serie de prueba'], 'el capítulo manda sobre el id (que puede ser de un play() anterior)');
   assert.deepEqual(w.forIdleLast(null), []);
 });
 
