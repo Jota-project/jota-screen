@@ -30,7 +30,7 @@ function fakeTv() {
   return tv;
 }
 
-function setup(t, { watched = false } = {}) {
+function setup(t, { watched = false, onOff = null } = {}) {
   t.mock.timers.enable({ apis: ['setTimeout', 'Date'] });
   const tv = fakeTv();
   const state = { vol: null, muted: false, tv: null };
@@ -38,7 +38,7 @@ function setup(t, { watched = false } = {}) {
   const tele = createTele({
     tv, state, watched: () => watched,
     broadcast: () => { seen.bc++; if (seen.throwOnce) { seen.throwOnce = false; throw new Error('difusión rota'); } },
-    pause: async () => { tv.calls.push('pause'); }, onOff: () => tv.offs.push('off'), log: { info: m => seen.logs.push(m) },
+    pause: async () => { tv.calls.push('pause'); }, onOff: onOff || (() => tv.offs.push('off')), log: { info: m => seen.logs.push(m) },
   });
   const step = async ms => { t.mock.timers.tick(ms); await flush(); };
   const cmd = (t2, m = {}) => tele.commands.find(c => c.t === t2).run(m);
@@ -379,4 +379,15 @@ test('onOff: una vez por encendida → apagada (sondeo y orden propia); con null
   tv.st = { ...tv.st, power: 'on', src: 'j' }; await step(15000);
   await cmd('power', { on: false }); await step(15000);
   assert.equal(tv.offs.length, 2);
+});
+
+test('onOff que devuelve una promesa rechazada: sin rechazo sin manejar y el sondeo sigue', async t => {
+  const { tv, tele, step } = setup(t, { onOff: () => Promise.reject(new Error('cdp caído')) });
+  const un = []; const h = e => un.push(e); process.on('unhandledRejection', h); t.after(() => process.off('unhandledRejection', h));
+  tele.start(); await flush();
+  tv.st = { ...tv.st, power: 'off', src: null }; await step(15000);
+  await new Promise(r => setImmediate(r));
+  assert.deepEqual(un, []);
+  tv.st = { ...tv.st, power: 'on', src: 'j' }; await step(15000);
+  assert.equal(tv.st.power, 'on');
 });

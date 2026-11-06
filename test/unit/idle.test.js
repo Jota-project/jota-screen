@@ -170,3 +170,12 @@ test('fresh: al apagar va al reposo; ya en el reposo o con fresh false, nada', a
   await idle.fresh(); assert.equal(state.url, 'https://example.com');
   assert.equal(idle.run({ op: 'set', cfg: { fresh: 'x', usage: 0 } }).cfg.usage, false);
 });
+
+test('fresh: un segundo fresh() ya en el reposo no navega; si nav falla, resuelve sin lanzar', async t => {
+  let n = 0, fail = true, st;
+  const { idle, state } = make(t, { url: 'https://example.com', nav: async u => { n++; if (fail) throw new Error('cdp caído'); st.url = u; } });
+  st = state;
+  await idle.fresh(); assert.equal(n, 1, 'nav falla y fresh resuelve');
+  fail = false;
+  await idle.fresh(); await idle.fresh(); assert.equal(n, 2, 'tras ir al reposo, el segundo no navega');
+});

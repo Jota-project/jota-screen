@@ -438,7 +438,7 @@ function createIdle(o) {
   function fresh() {
     if (!cfg.fresh || isIdle(state.url)) return;
     log('tele apagada: al reposo');
-    return nav(URL_IDLE);
+    return Promise.resolve(nav(URL_IDLE)).catch(e => log('tele apagada: no se pudo ir al reposo: ' + e.message));
   }
 
   return {

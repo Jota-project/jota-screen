@@ -54,7 +54,7 @@ function createTele({ tv, state, broadcast, watched, pause, onOff, log }) {
         own = false;
       }
       const change = lastPower === 'on' && p === 'off' ? 'off' : p === 'on' && lastSrc === 'j' && src === 'tv' ? 'tv' : null;
-      if (change === 'off') try { onOff?.(); } catch {}   // al apagar, el reposo vuelve a empezar de cero, la pausara quien la pausara
+      if (change === 'off') try { Promise.resolve(onOff?.()).catch(() => {}); } catch {}   // al apagar, el reposo vuelve a empezar de cero, la pausara quien la pausara
       if (change) {
         if (pausedFor === change && Date.now() < pausedUntil) pausedFor = null;
         else quietPause();   // sin await: la pausa puede tardar segundos y las lecturas van en cadena
