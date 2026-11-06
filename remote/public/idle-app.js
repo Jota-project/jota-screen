@@ -93,6 +93,7 @@ function rearrange(next) {
   setTimeout(() => {
     const els = Object.values(W), ins = els.map(e => e.firstElementChild), first = ins.map(e => e.getBoundingClientRect());
     place(scenes()[next]); scene = next;
+    document.querySelectorAll('.sg-gone').forEach(e => e.classList.remove('sg-gone'));
     if (!calm) ins.forEach((e, i) => {
       const a = first[i], b = e.getBoundingClientRect();
       e.style.transition = 'none'; e.style.transform = `translate(${a.left - b.left}px,${a.top - b.top}px)`;
@@ -118,8 +119,7 @@ function setLayout(name) {
 /** aplica la caducidad pendiente: el hueco se cierra y vuelve lo que estaba oculto */
 function applyNext() {
   if (!sug.next) return;
-  sug = sug.next; scene = 0;
-  document.querySelectorAll('.sg-gone').forEach(e => e.classList.remove('sg-gone'));
+  sug = sug.next; scene = 0; // el `sg-gone` lo quita rearrange tras colocar, para que no reaparezca mientras atenúa
 }
 function schedule() {
   clearInterval(rTimer);
@@ -388,12 +388,12 @@ function block(el, b, size, solo) { // solo: la única tarjeta del reposo en con
 }
 /** la fila de Netflix del aspecto discreto: antetítulo y 3–4 tarjetas de serie (665×375) a 300–320 px de la tele */
 function shelf(el, b, max, cw) {
-  const list = b.items.slice(0, max), k = JSON.stringify([max, cw, list]);
+  const list = b.items.slice(0, max), lab = 'Netflix · ' + (b.ago ? 'Estabas viendo · ' + agoLabel(b.ago + off, Date.now()) : 'Seguir viendo'), k = JSON.stringify([max, cw, list, lab]);
   if (keyOf.get(el) === k) return;
   keyOf.set(el, k);
   const box = document.createElement('div'); box.className = 'sg-shelf'; box.style.setProperty('--dot', SRC.netflix[1]);
   box.innerHTML = '<div class="sg-k"><i></i><span></span></div><div class="sg-cards"></div>';
-  box.querySelector('.sg-k span').textContent = 'Netflix · ' + (b.ago ? 'Estabas viendo · ' + agoLabel(b.ago + off, Date.now()) : 'Seguir viendo');
+  box.querySelector('.sg-k span').textContent = lab;
   const row = box.querySelector('.sg-cards');
   list.forEach((it, i) => {
     const w = it.card ? 665 : 848, iw = Math.min(cw, w);
@@ -418,10 +418,14 @@ function suggest() {
   const lone = n === 1 && first !== 'netflix' ? (bl[0].ago && sg.look === 'discreto' ? 'dis' : '') : null; // un Spotify suelto con `ago` (contexto) tiene su tarjeta
   const mode = !n ? '' : lone !== null ? lone : first === 'netflix' && sg.look === 'discreto' ? 'dis' : n === 1 ? 'nfx' : 'sug';
   const ungone = () => document.querySelectorAll('.sg-gone').forEach(e => e.classList.remove('sg-gone'));
-  if (layout && n < sug.n) { // caduca un bloque: se funde en su sitio y el hueco espera al próximo reacomodo
-    if (!sug.next) { for (let i = n; i < sug.n; i++) W['s' + i].classList.add('sg-gone'); sug.next = { mode, n };
-      if (!(Number(D.cfg.rearrangeMin) > 0)) setTimeout(() => { if (sug.next) { applyNext(); rearrange(0); } }, 1300); } // sin reacomodo programado: tras el fundido
-  } else if (mode !== sug.mode || n !== sug.n) { ungone(); sug = { mode, n }; scene = 0; if (layout) rearrange(0); }
+  const srcs = bl.map(b => b.src), old = sug.srcs || [];
+  // caduca el final de la lista (los que quedan son un prefijo de los de antes): se funde en su sitio y el hueco espera al
+  // próximo reacomodo. Si caduca otro (p. ej. el primero) o el widget no es de bloques, se reacomoda como siempre
+  if (layout && n < sug.n && (sug.mode === 'dis' || sug.mode === 'sug') && srcs.every((x, i) => x === old[i])) {
+    for (let i = n; i < sug.n; i++) W['s' + i].classList.add('sg-gone');
+    const armed = !sug.next; sug.next = { mode, n, srcs }; // siempre el último cambio
+    if (armed && !(Number(D.cfg.rearrangeMin) > 0)) setTimeout(() => { if (sug.next) { applyNext(); rearrange(0); } }, 1300); // sin reacomodo programado: tras el fundido
+  } else if (mode !== sug.mode || n !== sug.n) { ungone(); sug = { mode, n, srcs }; scene = 0; if (layout) rearrange(0); }
   else if (sug.next) { ungone(); delete sug.next; } // volvió lo que caducaba
   if (!mode) { nfxKey = ''; return; }
   if (mode === 'nfx') nfxWidget(bl[0].items);

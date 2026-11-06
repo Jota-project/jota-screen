@@ -222,6 +222,33 @@ function check(m) {
     if (!gone || Math.abs(h0[0] - h1[0]) > 2 || Math.abs(h0[1] - h1[1]) > 2) fails.push(`✗ caducidad: sg-gone=${gone}, hora ${h0} -> ${h1}`); // 2 px: la deriva suave de la página
     await ctx.close();
   }
+  { // 2→1→2: el bloque vuelve mientras se funde (sin fundido que quede ni reacomodo); y si caduca el primero, reacomodo y sin tarjeta vieja
+    const cfg = { dimMin: 0, rearrangeMin: 20, layout: 'rotar', calm: true }, V = n => VARIANTS.find(x => x.n === n);
+    const open = async v => {
+      const ctx = await b.newContext({ viewport: { width: 1920, height: 1080 }, timezoneId: 'Europe/Madrid' }), p = await ctx.newPage();
+      await p.clock.setFixedTime(v.now); await p.goto(`http://127.0.0.1:${srv.address().port}/`);
+      const send = d => p.evaluate(x => { x.now = Date.now(); onData(x); }, { ...d, cfg }); // eslint-disable-line no-undef
+      await send(v.d(v.now)); await p.waitForFunction(() => !window.TVIdle.now().moving);
+      return { p, ctx, send, v };
+    };
+    let t = await open(V('sug2'));
+    await t.send({ ...base(t.v.now), suggest: { blocks: [{ src: 'netflix', items: [NFX1] }] } });
+    await t.p.waitForTimeout(200);
+    const g1 = await t.p.evaluate(() => document.getElementById('wS1').classList.contains('sg-gone'));
+    await t.send(t.v.d(t.v.now));
+    await t.p.waitForTimeout(200);
+    const st = await t.p.evaluate(() => ({ gone: document.querySelectorAll('.sg-gone').length, moving: window.TVIdle.now().moving, n: window.TVIdle.now().n }));
+    if (!g1 || st.gone || st.moving || st.n !== 2) fails.push(`✗ 2→1→2: fundido=${g1}, sg-gone al volver=${st.gone}, moving=${st.moving}, n=${st.n}`);
+    await t.ctx.close();
+    t = await open(V('sug2b'));
+    await t.send({ ...base(t.v.now), acts: [], suggest: { blocks: [{ src: 'netflix', items: [NFX1] }] } });
+    await t.p.waitForTimeout(100);
+    const mv = await t.p.evaluate(() => window.TVIdle.now().moving);
+    await t.p.waitForFunction(() => !window.TVIdle.now().moving, null, { timeout: 8000 });
+    const st2 = await t.p.evaluate(() => ({ gone: document.querySelectorAll('.sg-gone').length, s0: document.getElementById('wS0').classList.contains('gone'), s1: document.getElementById('wS1').classList.contains('gone') }));
+    if (!mv || st2.gone || !st2.s0 || !st2.s1) fails.push(`✗ caduca el primero: reacomodo=${mv}, ${JSON.stringify(st2)}`);
+    await t.ctx.close();
+  }
   await b.close(); srv.close();
   if (fails.length) console.error(fails.join('\n'));
   console.log(`${n} combinaciones (tamaño × distribución × escena × datos), ${fails.length} con fallos` + (SHOTS ? `; capturas en ${SHOTS}` : ''));

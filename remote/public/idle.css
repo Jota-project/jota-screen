@@ -233,5 +233,4 @@ body.night,body.cinema{--text:#808080;--clock:#7a7a7a;--clock2:#767676;--soft:#7
 .sg-c[data-size=mini]{gap:calc(24 * var(--s))}
 .sg-c[data-size=mini] .sg-img{border-radius:calc(16 * var(--s))}
 /* bloque caducado: se funde en su sitio (solo opacidad) y el hueco espera al próximo reacomodo; con calma, igual */
-#wS0,#wS1,#wS2{transition:opacity 1.2s ease}
-.sg-gone{opacity:0}
+#grid .w.sg-gone{opacity:0;transition:opacity 1.2s ease}
