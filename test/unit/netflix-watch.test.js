@@ -86,7 +86,7 @@ test('lectura: no con Netflix delante ni con su pestaña en otro perfil; dos a l
 test('reposo: solo imágenes de Netflix y siempre por nuestra ruta', async () => {
   const { w } = rig();
   await w.refresh();
-  const [a, b] = w.forIdle();
+  const [a] = w.forIdleLast({ at: 0, vid: 2001 }), [b] = w.forIdleLast({ at: 0, id: '1002' });
   assert.equal(a.story, '/idle/nfx?u=' + encodeURIComponent(IMG('a1')));
   assert.equal(a.ep.still, '/idle/nfx?u=' + encodeURIComponent(IMG('s1')));
   assert.equal(b.story, null, 'una dirección que no es de Netflix no pasa');
@@ -129,15 +129,6 @@ test('«la última que puse»: lo que se puso en esta tele manda sobre el orden 
   await c.w.refresh();
   await c.w.playLast();
   assert.deepEqual(c.seen.pop(), { id: '1001', title: 'La serie de prueba' });
-});
-
-test('reposo: si el lector lleva más de 48 h sin leer, no se enseñan progresos viejos', async () => {
-  let t = 1e12;
-  const { w } = rig({ now: () => t });
-  await w.refresh();
-  assert.equal(w.forIdle().length, 2);
-  t += 49 * 3600e3;
-  assert.deepEqual(w.forIdle(), []);
 });
 
 test('forIdleLast: el título del último capítulo visto, solo con lectura posterior; si no, nada', async () => {

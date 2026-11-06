@@ -15,15 +15,15 @@ const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const MODES = ['auto', 'day', 'evening', 'night', 'cinema'];
 const LAYOUTS = ['rotar', 'margen', 'zonas', 'apilada']; // distribuciones del reposo v2
 const GLASS = ['auto', 'A', 'B', 'C'];                   // cristal del agente: auto (según lo que aguante la tele), completo, ligero, opaco
-// «Seguir viendo»: las fuentes que se conocen (YouTube también, aunque aún no tenga datos: así guarda su sitio en el orden),
-// cómo se ve (discreto: fila de series pequeñas; destacado: una en grande; auto: en grande si una serie manda) y el orden
+// «Seguir viendo»: las fuentes que se conocen (YouTube también, aunque aún no tenga datos). Sale una tarjeta, la de lo
+// último que se usó, y solo si fue hace menos de CONTEXT_MS; si no, el reposo de siempre
 const SUGGEST_SOURCES = ['netflix', 'spotify', 'youtube'];
-const SUGGEST_LOOKS = ['discreto', 'destacado', 'auto'];
-const SUGGEST_MODES = ['fijo', 'contexto'];
-const CONTEXT_MS = 3 * 3600e3;                           // modo contexto: solo lo usado en las últimas 3 h
+const CONTEXT_MS = 3 * 3600e3;                           // solo lo usado en las últimas 3 h
+// privacidad (visitas): oculta lo personal de la tele hasta la mañana siguiente; `show`, lo que se deja ver igualmente
+const PRIVACY_SHOW = ['netflix', 'spotify'];             // spotify: su tarjeta y lo que suena ahora
+const PRIVACY_END_MIN = 6 * 60;                          // se quita sola a las 6:00 (hora de la tele)
 const SPOTIFY_RESUME_MS = 3 * 3600e3;                    // «seguir escuchando»: hasta 3 h después de que deje de sonar
 const SUGGEST_HOLD_MS = 5 * 60e3;                        // un cambio de fuentes espera 5 min seguidos: pausar no recoloca todo
-const AUTO_DAYS = 14, AUTO_SHARE = 0.7;                  // «según el momento»: en grande si una serie es el 70 % de 14 días
 // colores de la carátula para el orbe y los brillos del agente: saturación y luz acotadas para que se lean sobre el cristal oscuro
 const AGENT_COLOR_SAT = [0.35, 0.85];
 const AGENT_COLOR_LIGHT = [0.55, 0.75];
@@ -40,11 +40,12 @@ const DEFAULTS = {
   calm: false,                  // movimiento reducido: luces y ecualizador quietos
   netflix: 'off',               // espejo de suggest para mandos viejos: on si el apartado y Netflix están encendidos
   suggest: {                    // «Seguir viendo» en el reposo (wantSuggestions). La fila de Spotify es `music`
-    on: false, max: 2, look: 'discreto', mode: 'fijo',
+    on: false,
     sources: [{ id: 'netflix', on: true }, { id: 'spotify', on: true }, { id: 'youtube', on: false }],
   },
   fresh: true,                  // al apagar la tele, J-Screen vuelve al reposo (empieza de cero; no se olvida nada)
   usage: true,                  // registro local de lo que estuvo en pantalla (Recientes y sugerencias por hábito)
+  privacy: { on: false, until: /** @type {number | null} */ (null), show: /** @type {string[]} */ ([]) }, // visitas: until = cuándo se quita sola
   glass: 'auto',                // auto | A | B | C: nivel del cristal del agente (src/tv/talk-view.js)
 };
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
@@ -57,10 +58,9 @@ const validTz = tz => { try { new Intl.DateTimeFormat('en-GB', { timeZone: tz })
  *   place?: { city?: string, lat?: number | null, lon?: number | null, tz?: string },
  *   cdp: { call: Function, session: string | null }, nav: (url: string) => Promise<any>, state: { url: string },
  *   stageKind: () => string | null, onWatch?: () => void, onPlay?: (m: any) => void, onAmbient?: () => void, log?: (...a: any[]) => void,
- *   fetch?: typeof fetch, nfx?: () => any[] | null, nfxRecent?: () => { at: number, items: any[] } | null, nfxDominant?: (days: number) => { title: string, share: number, n: number } | null,
+ *   fetch?: typeof fetch, nfxRecent?: () => { at: number, items: any[] } | null,
  *   now?: () => number,
- * }} IdleDeps   nfx: «Seguir viendo» de Netflix para el reposo (src/features/netflix-watch.js), con las imágenes ya por /idle/nfx;
- *              nfxDominant: la serie que más se ha visto en los últimos días (aspecto «según el momento»)
+ * }} IdleDeps   nfxRecent: lo último que se dejó de ver en Netflix, con su título (src/features/netflix-watch.js forIdleLast)
  */
 /** @param {IdleDeps} o */
 function createIdle(o) {
@@ -106,6 +106,9 @@ function createIdle(o) {
     if (c.calm !== undefined) out.calm = !!c.calm;
     out.suggest = sanitizeSuggest(c.suggest, base.suggest);
     for (const k of ['fresh', 'usage']) if (c[k] !== undefined) out[k] = !!c[k];
+    const pv = c.privacy && typeof c.privacy === 'object' ? c.privacy : {};
+    out.privacy = { on: !!pv.on, until: pv.on && Number.isFinite(+pv.until) && +pv.until > 0 ? +pv.until : null,
+      show: Array.isArray(pv.show) ? PRIVACY_SHOW.filter(id => pv.show.includes(id)) : [] };
     if (GLASS.includes(c.glass)) out.glass = c.glass;
     // un solo interruptor para Spotify (music) y el espejo de Netflix para los mandos de antes
     for (const x of out.suggest.sources) if (x.id === 'spotify') x.on = out.music;
@@ -117,9 +120,6 @@ function createIdle(o) {
     const out = { ...base, sources: base.sources.map(x => ({ ...x })) };
     if (!s || typeof s !== 'object') return out;
     if (s.on !== undefined) out.on = !!s.on;
-    if ([1, 2, 3].includes(+s.max)) out.max = +s.max;
-    if (SUGGEST_LOOKS.includes(s.look)) out.look = s.look;
-    if (SUGGEST_MODES.includes(s.mode)) out.mode = s.mode;
     if (Array.isArray(s.sources)) {
       const seen = new Set(), list = [];
       for (const x of s.sources) {
@@ -275,13 +275,22 @@ function createIdle(o) {
   // los tokens de shared/tokens-tv.css van delante como texto: la isla no puede cargar CSS nuestro dentro de una web ajena
   const islandSrc = () => { try { return islandSource(PUB); } catch (e) { log('isla: ' + e.message); return ''; } };
   let overlayOn = false;
-  // ───────── «Seguir viendo»: el único sitio que decide qué sale, en qué orden y cómo. Hoy, los ajustes (fuentes en orden,
-  // cuántas a la vez, aspecto); más adelante, el contexto (mode: 'contexto', sin decidir: hora, costumbre, quién está…)
-  /** Netflix: lo que está a medias (con imágenes). */
-  function nfxBlock() {
-    const items = o.nfx ? o.nfx() : null;
-    return items && items.length ? { src: 'netflix', items: items.slice(0, 6) } : null;
+  // ───────── privacidad (visitas): mientras dure, lo personal no sale en la tele salvo lo que esté en privacy.show
+  /** El instante de la próxima PRIVACY_END_MIN en la hora de la tele. */
+  function nextMorning() {
+    const { min } = local(new Date(now()));
+    const left = (PRIVACY_END_MIN - min + 1440) % 1440 || 1440; // shortcut: al minuto, sin cambio de hora; basta para «mañana a las 6»
+    return Math.floor(now() / 60e3) * 60e3 + left * 60e3;
   }
+  /** ¿Activa? Si ya pasó su hora, se quita sola (y se guarda). */
+  function privateNow() {
+    const p = cfg.privacy;
+    if (p.on && p.until && now() >= p.until) { cfg = { ...cfg, privacy: { ...p, on: false, until: null } }; save(); log('privacidad: se quita sola'); }
+    return cfg.privacy.on;
+  }
+  const hidden = id => privateNow() && !cfg.privacy.show.includes(id);
+
+  // ───────── «Seguir viendo»: el único sitio que decide qué sale
   /** Spotify: «suena ahora» o, hasta 3 h después, «seguir escuchando» con lo último que sonó (sin llamadas nuevas). */
   function spotifyBlock() {
     const m = music && music.playing ? music : lastMusic && now() - lastMusic.seen < SPOTIFY_RESUME_MS ? lastMusic : null;
@@ -290,7 +299,6 @@ function createIdle(o) {
       ctx: m.context && m.context.type !== 'album' ? m.context.name || '' : m.album || '', art: m.art || '', artW: 640,
       progress: m.progress, duration: m.duration, at: m.at };
   }
-  const BLOCKS = { netflix: nfxBlock, spotify: spotifyBlock, youtube: () => null }; // YouTube: cuando guarde por dónde vas
   let shown = /** @type {any[] | null} */ (null), wantKey = '', wantSince = 0, holdTimer = null;
   /** Histéresis: un cambio de fuentes (no de sus datos) espera SUGGEST_HOLD_MS seguidos; aparecer y desaparecer, al momento. */
   function hold(list) {
@@ -304,14 +312,13 @@ function createIdle(o) {
     shown = shown.map(b => by[b.src] || b);                 // las de antes, con sus datos nuevos si los hay
     return shown;
   }
-  /** Modo contexto: UNA tarjeta, la fuente usada más recientemente (si fue hace menos de CONTEXT_MS), con `ago` = ese instante. */
+  /** UNA tarjeta, la fuente usada más recientemente (si fue hace menos de CONTEXT_MS), con `ago` = ese instante. */
   function contextSuggestions(s) {
-    const on = id => s.sources.some(x => x.id === id && x.on), recent = o.nfxRecent ? o.nfxRecent() : null;
+    const on = id => !hidden(id) && s.sources.some(x => x.id === id && x.on), recent = o.nfxRecent ? o.nfxRecent() : null;
     const cands = [];
     if (on('netflix') && recent && recent.items.length) cands.push({ at: recent.at, block: { src: 'netflix', items: recent.items.slice(0, 1) } });
     if (on('spotify')) cands.push({ at: music && music.playing ? now() : lastMusic ? lastMusic.playedAt : 0, block: spotifyBlock() });
     const best = cands.filter(c => c.block && now() - c.at < CONTEXT_MS).sort((a, b) => b.at - a.at)[0];
-    if (shown && shown.length > 1) shown = null;             // venía de fijo con varias: en contexto, siempre una
     const one = best ? [{ ...best.block, ago: best.at }] : [];
     // Spotify que suena entra al momento (sin la espera de hold); lo demás, con histéresis
     const list = best && best.block.src === 'spotify' && best.block.state === 'playing' ? (shown = one) : hold(one);
@@ -320,18 +327,10 @@ function createIdle(o) {
   function wantSuggestions() {
     const s = cfg.suggest;
     if (!s.on || profile === 'night' || profile === 'cinema') { shown = null; return null; }
-    if (s.mode === 'contexto') return contextSuggestions(s);
-    const list = hold(s.sources.filter(x => x.on).map(x => BLOCKS[x.id]()).filter(Boolean).slice(0, s.max));
-    if (!list.length) return null;
-    let look = s.look;
-    if (look === 'auto') {                                   // en grande si una serie manda y es la primera a medias
-      const d = list[0].src === 'netflix' && o.nfxDominant ? o.nfxDominant(AUTO_DAYS) : null;
-      look = d && d.share >= AUTO_SHARE && d.title === list[0].items[0].title ? 'destacado' : 'discreto';
-    }
-    return { look, blocks: list };
+    return contextSuggestions(s);
   }
   function payload() {
-    return JSON.stringify({ t: 'idle', now: Date.now(), profile, cfg: { city: cfg.city, tz: cfg.tz, dimMin: cfg.dimMin, mode: cfg.mode, music: cfg.music, layout: cfg.layout, rearrangeMin: cfg.rearrangeMin, calm: cfg.calm }, weather, music, acts: actList(), suggest: wantSuggestions() });
+    return JSON.stringify({ t: 'idle', now: Date.now(), profile, cfg: { city: cfg.city, tz: cfg.tz, dimMin: cfg.dimMin, mode: cfg.mode, music: cfg.music, layout: cfg.layout, rearrangeMin: cfg.rearrangeMin, calm: cfg.calm }, weather, music: hidden('spotify') ? null : music, acts: actList(), suggest: wantSuggestions() });
   }
   let pTimer = null;
   function push() {
@@ -395,8 +394,8 @@ function createIdle(o) {
   }
 
   function tick(force) {
-    const p = computeProfile();
-    if (p !== profile || force) { profile = p; push(); }
+    const p = computeProfile(), was = cfg.privacy.on;
+    if (p !== profile || force || was !== privateNow()) { profile = p; push(); }
   }
 
   // ───────── HTTP/WS (solo desde la propia tele)
@@ -429,8 +428,10 @@ function createIdle(o) {
     const op = String(m.op || 'get');
     if (op === 'get') return { cfg, profile, weather, url: URL_IDLE, idle: isIdle(state.url), idleInMin: cfg.idleMin ? Math.max(0, Math.round((cfg.idleMin * 60e3 - (Date.now() - lastUse)) / 60e3)) : null };
     if (op === 'set') {
-      const prevLoc = cfg.lat + ',' + cfg.lon;
+      const prevLoc = cfg.lat + ',' + cfg.lon, wasPrivate = cfg.privacy.on;
       cfg = sanitize(legacy({ ...cfg, ...(m.cfg || {}) }, cfg));
+      // al activarla, hasta la mañana siguiente (salvo un `until` futuro, p. ej. por MCP)
+      if (cfg.privacy.on && (!wasPrivate || !cfg.privacy.until) && !(cfg.privacy.until > now())) cfg.privacy.until = nextMorning();
       shown = null;                                          // lo que se cambia a mano se ve al momento (sin la espera)
       save();
       if (cfg.lat + ',' + cfg.lon !== prevLoc) fetchWeather();
@@ -466,6 +467,7 @@ function createIdle(o) {
     URL_IDLE, isIdle, touch, onNav, run, activity, art, setMusic, ambient, watching: () => clients.size > 0 && cfg.music,
     nfxChanged: () => push(),                       // hay datos nuevos de «Seguir viendo»
     suggest: () => wantSuggestions(),               // lo que enseña ahora «Seguir viendo» (pruebas, depuración)
+    payload,                                        // lo que recibe la página del reposo (pruebas)
     /** Lo que la capa del agente necesita del reposo (server.js le añade el contexto de la página). */
     agentContext: () => agentContextOf({ cfg, profile, idle: isIdle(state.url), music }),
     upgrade: (req, socket, head) => wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws)),

@@ -185,7 +185,7 @@ const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: (
 const idle = createIdle({
   PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
   onPlay: m => logUse({ src: 'spotify', title: m.context?.name || m.album || m.title }),
-  stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info, nfx: () => nfxWatch.forIdle(), nfxRecent: () => { const l = netflix.last(); return l ? { at: l.at, items: nfxWatch.forIdleLast(l) } : null; }, nfxDominant: d => nfxWatch.dominant(d),
+  stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info, nfxRecent: () => { const l = netflix.last(); return l ? { at: l.at, items: nfxWatch.forIdleLast(l) } : null; },
 });
 // J Gateway (voz): sin TV_GATEWAY_URL el cliente no se crea y todo se comporta como un Gateway caído
 const gw = CFG.GATEWAY_URL

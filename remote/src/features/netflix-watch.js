@@ -262,12 +262,8 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
     ep: it.ep ? { s: it.ep.s, e: it.ep.e, title: it.ep.title, still: img(it.ep.still) } : null,
     card: img(it.card), story: img(it.story),
   });
-  function forIdle() {
-    if (now() - data.at > 48 * 3600e3) return [];        // si el lector lleva días sin leer, mejor nada que progresos viejos
-    return data.items.map(idleItem);
-  }
   /**
-   * Modo contexto: solo el título que se estaba viendo al salir de Netflix (`last`), y solo si la lectura es posterior a
+   * «Seguir viendo» del reposo: solo el título que se estaba viendo al salir de Netflix (`last`), y solo si la lectura es posterior a
    * ese momento (si no, el progreso podría ser de antes). Si ya no está en la lista (se acabó), nada: nunca «el primero».
    * @param {{ at: number, vid?: number, id?: number | string } | null} last
    */
@@ -275,20 +271,6 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
     if (!last || data.at < last.at) return [];
     const it = (last.vid && data.items.find(i => i.ep && i.ep.id === last.vid)) || (last.id && data.items.find(i => String(i.id) === String(last.id)));
     return it ? [idleItem(it)] : [];
-  }
-
-  /**
-   * La serie que más se ha visto en los últimos `days` días del historial (que solo guarda el día), con su parte de los
-   * episodios: el reposo la pone en grande si manda (aspecto «según el momento»). null sin historial reciente.
-   * @param {number} [days]
-   */
-  function dominant(days = 14) {
-    const since = new Date(now() - days * 864e5).toISOString().slice(0, 10), count = new Map();
-    let n = 0;
-    for (const h of data.history) if (h.day && h.day >= since) { n++; count.set(h.title, (count.get(h.title) || 0) + 1); }
-    if (!n) return null;
-    const [title, c] = [...count].sort((a, b) => b[1] - a[1])[0];
-    return { title, share: c / n, n };
   }
 
   // ───────── tarjetas para la conversación con Jota en la tele (talk-view.js: media)
@@ -431,7 +413,7 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
   /** órdenes para `netflix` (src/features/netflix.js: extend) */
   const ops = { watching: () => watching(), history: () => history(), last: () => last(), play_last: () => playLast(), refresh: () => refresh('a petición') };
 
-  return { refresh, soon, start, forIdle, forIdleLast, dominant, watching, history, last, playLast, serveImg, routes, ops, find, named, media, data: () => data };
+  return { refresh, soon, start, forIdleLast, watching, history, last, playLast, serveImg, routes, ops, find, named, media, data: () => data };
 }
 
 module.exports = { readAll, createWatch, intentOf, pgProfile, pgReady, pgContinue, pgArt, pgHistory, isoDate, NFX_IMG };

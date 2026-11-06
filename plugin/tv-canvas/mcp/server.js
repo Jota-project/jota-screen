@@ -218,8 +218,10 @@ tool('tv_idle',
   'bed/wake ("HH:MM", fixed sleep schedule), perDay + week {mon:{bed,wake},…} for a per-weekday schedule, idleMin (minutes without use before it opens itself, 0 = never), ' +
   'dimMin (at night, minutes until only a faint clock remains), music (show Spotify), city/lat/lon/tz (weather location; lat/lon null = no weather), ' +
   'layout (rotar|margen|zonas|apilada: how clock, weather and music are arranged; rotar cycles them), rearrangeMin (minutes between rearrangements, 0 = never), calm (reduced motion), ' +
-  'suggest ("Seguir viendo": {on, max 1-3 sources at once, look discreto|destacado|auto (a row of small series cards | one series big | big only when one series dominates the last 14 days), ' +
-  'mode fijo, sources [{id: netflix|spotify|youtube, on}] in priority order; the spotify entry follows music}), netflix (on|off: legacy shortcut for suggest on + netflix on), ' +
+  'suggest ("Seguir viendo": {on, sources [{id: netflix|spotify|youtube, on}]}: one small card with whatever was used last, only if it was in the last 3 h, ' +
+  'e.g. "Netflix · Estabas viendo · hace 40 min"; nothing at night or in cinema mode; the spotify entry follows music), netflix (on|off: legacy shortcut for suggest on + netflix on), ' +
+  'privacy (guests mode: {on, show [netflix|spotify], until?}: hides personal things from the TV (the suggestion card and now playing) except the ids in show; ' +
+  'turning it on lasts until 06:00 TV time next morning unless a future until (epoch ms) is given; use it for "hoy vienen invitados"), ' +
   'fresh (true|false: when the TV is switched off, J-Screen goes back to the idle screen so it starts fresh; nothing is forgotten), ' +
   'usage (true|false: keep a local log of what was on screen, for Recents and future habit suggestions), ' +
   'glass (auto|A|B|C: glass level of the live panels where the conversation with Jota is drawn on the TV; auto picks it by how smooth the TV runs, A full, B light, C opaque).',
