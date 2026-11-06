@@ -244,7 +244,8 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
         onChange();
         return { ok: 1, items: r.items.length, history: r.history.length, ms: now() - t0, warn: r.warn };
       } finally { await tab.close(); }
-    })().catch(e => { log('netflix: no he podido leer «Seguir viendo»: ' + e.message); return { error: e.message }; })
+    })().then(r => { if (r && r.skipped) log(`netflix: lectura saltada${why ? ' (' + why + ')' : ''}: ${r.skipped}`); return r; })
+      .catch(e => { log('netflix: no he podido leer «Seguir viendo»: ' + e.message); return { error: e.message }; })
       .finally(() => { busy = null; });
     return busy;
   }
@@ -265,9 +266,11 @@ function createWatch({ cdp, netflix, store, log = () => {}, onChange = () => {},
   /**
    * «Seguir viendo» del reposo: solo el título que se estaba viendo al salir de Netflix (`last`), y solo si la lectura es posterior a
    * ese momento (si no, el progreso podría ser de antes). Si ya no está en la lista (se acabó), nada: nunca «el primero».
-   * @param {{ at: number, vid?: number, id?: number | string } | null} last
+   * Si al salir se apuntó lo que decía el reproductor (`last.item`), sale eso sin esperar a la lectura.
+   * @param {{ at: number, vid?: number, id?: number | string, item?: any } | null} last
    */
   function forIdleLast(last) {
+    if (last && last.item && last.item.title) return [idleItem(last.item)];   // lo dijo el reproductor al salir: al momento
     if (!last || data.at < last.at) return [];
     const it = (last.vid && data.items.find(i => i.ep && i.ep.id === last.vid)) || (last.id && data.items.find(i => String(i.id) === String(last.id)));
     return it ? [idleItem(it)] : [];

@@ -235,3 +235,11 @@ test('preguntas sobre lo que se ve en Netflix (para su tarjeta al momento); pedi
   ];
   for (const [q, named, want] of cases) assert.deepEqual(W.intentOf(q, named), want, q);
 });
+
+test('forIdleLast: si al salir se apuntó lo del reproductor, sale al momento aunque la lista sea de antes', async () => {
+  const { w } = rig({ now: () => 2000 });
+  await w.refresh();                                     // data.at = 2000
+  const item = { id: 81696955, kind: 'show', title: 'Fantasmas', ep: { id: 9, s: 1, e: 12, title: 'La hermana de Jay', still: null }, pos: 996, dur: 1316, card: null, story: null };
+  const [it] = w.forIdleLast({ at: 5000, vid: 9, item });
+  assert.deepEqual([it.title, it.ep.e, it.pos], ['Fantasmas', 12, 996]);
+});

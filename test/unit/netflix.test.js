@@ -54,6 +54,7 @@ function fakeTv({ login = false, stuckSpa = false } = {}) {
         const q = new URL(nf.url).searchParams.get('q') || '';
         value = nf.spaOnly ? [] : Object.entries(CATALOG).filter(([k]) => q && k.includes(q.toLowerCase())).flatMap(([, v]) => v);
       } else if (e.includes('v.currentTime>0')) value = nf.video;
+      else if (e.includes('videoMetadata')) value = nf.now || null;   // lo que dice el reproductor (NOW)
       return { result: { value } };
     },
   };
@@ -261,4 +262,20 @@ test('control: ±10 s en Netflix va por su reproductor, sin tocar el <video> (si
   assert.equal(video.touched, false);
   delete page.netflix;
   assert.deepEqual(await c.seek(10), { ok: 1, t: 70 }, 'en otras webs, el <video>');
+});
+
+test('Netflix: al salir de /watch/ apunta lo que dice el reproductor (título, capítulo, por dónde); si no lo da, solo el vid', async () => {
+  const { cdp, nf } = fakeTv();
+  const store = memStore({ profiles: PROFILES });
+  const n = createNetflix({ cdp, cfg: { NETFLIX_PROFILE: 'Alfonso' }, store, ...fast });
+  await n.open();
+  cdp.pages.get('NF').url = 'https://www.netflix.com/watch/81939624';
+  nf.now = { id: 81696955, kind: 'show', title: 'Fantasmas', ep: { id: 81939624, s: 1, e: 12, title: 'La hermana de Jay', still: null }, pos: 996, dur: 1316, card: null, story: null };
+  await n.leave();
+  const l = n.last();
+  assert.deepEqual([l.vid, l.id, l.title, l.item.ep.e, l.item.pos], [81939624, '81696955', 'Fantasmas', 12, 996]);
+  await n.open(); nf.now = null;
+  cdp.pages.get('NF').url = 'https://www.netflix.com/watch/81939625';
+  await n.leave();
+  assert.deepEqual([n.last().vid, n.last().item], [81939625, undefined], 'sin reproductor: lo de antes');
 });

@@ -28,6 +28,9 @@ const PLAYING = `(()=>{const v=document.querySelector('video');if(!v)return 0;if
 // vuelva a sonar hasta que se enseñe otra vez
 const HIDE = `(()=>{window.__tvHidden=true;if(!window.__tvGuard){window.__tvGuard=1;document.addEventListener('play',e=>{const m=e.target;if(window.__tvHidden&&m&&m.pause)m.pause()},true)}try{const vp=netflix.appContext.state.playerApp.getAPI().videoPlayer;for(const id of vp.getAllPlayerSessionIds())vp.getVideoPlayerBySessionId(id).pause()}catch{}for(const m of document.querySelectorAll('video,audio'))m.pause();return 1})()`;
 const UNHIDE = 'window.__tvHidden=false';
+// lo que se está viendo, del propio reproductor (título, capítulo, por dónde e imágenes): la tarjeta del reposo sale al
+// momento, sin esperar a que «Seguir viendo» se vuelva a leer. null si no hay reproductor o cambia su forma
+const NOW = `(()=>{try{const app=netflix.appContext.state.playerApp,v=app.getState().videoPlayer.videoMetadata,k=Object.keys(v)[0],m=v[k]._metadataObject.video;let ep=null,sn=null;for(const s of m.seasons||[])for(const e of s.episodes||[])if(e.id===m.currentEpisode){ep=e;sn=s}const vp=app.getAPI().videoPlayer,pl=vp.getVideoPlayerBySessionId(vp.getAllPlayerSessionIds()[0]);const u=a=>a&&a[0]&&a[0].url||null;return{id:m.id,kind:m.type==='show'?'show':'movie',title:m.title||'',ep:ep?{id:ep.id,s:sn.seq||null,e:ep.seq||null,title:ep.title||'',still:u(ep.stills)}:null,pos:Math.round(pl.getCurrentTime()/1000),dur:Math.round(pl.getDuration()/1000)||ep&&ep.runtime||m.runtime||0,card:u(m.artwork),story:u(m.storyart)}}catch{return null}})()`;
 /** órdenes que enseñan lo que ve el perfil: no para invitados */
 const PRIVATE = new Set(['watching', 'history', 'last', 'play_last', 'refresh']);
 // tras este rato detrás, la pestaña se recarga antes de enseñarla: si no, sale lo que se veía (la serie del finde) y la
@@ -36,7 +39,7 @@ const STALE_MS = 30 * 60e3;
 
 /**
  * @typedef {{ profile?: string, profiles?: Record<string, string>, titles?: Record<string, { id: string, title: string }>,
- *   last?: { at: number, id?: string, title?: string, vid?: number } }} Data
+ *   last?: { at: number, id?: string, title?: string, vid?: number, item?: any } }} Data   item: lo que dijo el reproductor al salir (NOW)
  * @param {{
  *   cdp: { call: Function, request?: Function, show: (id: string) => Promise<void>, newTab: () => Promise<string>, pages: Map<string, { url: string }>, targetId: string | null },
  *   cfg: { NETFLIX_PROFILE?: string },
@@ -252,9 +255,16 @@ module.exports = function createNetflix({ cdp, cfg, store, log = () => {}, wait 
     if (!isActive()) return;
     try { await ev(HIDE); } catch {}
     leftAt = now();
-    // lo último que se estaba viendo (el id del capítulo de /watch/): para «ponme la última que puse»
+    // lo último que se estaba viendo (el id del capítulo de /watch/): para «ponme la última que puse» y el reposo
     const vid = Number(((cdp.pages.get(/** @type {string} */ (tab)) || { url: '' }).url.match(/\/watch\/(\d+)/) || [])[1]) || null;
-    if (vid) { const l = data.last; data.last = { ...(l && l.id && now() - l.at < 6 * 3600e3 ? l : {}), at: now(), vid }; save(); }
+    if (vid) {
+      let item = null; try { item = await ev(NOW); } catch {}
+      const l = data.last;
+      data.last = item && item.title
+        ? { at: now(), vid, id: String(item.id), title: item.title, item }
+        : { ...(l && l.id && now() - l.at < 6 * 3600e3 ? { id: l.id, title: l.title } : {}), at: now(), vid }; // sin item: sería de otro capítulo
+      save();
+    }
     const other = [...cdp.pages.keys()].find(k => k !== tab);
     if (other) await cdp.show(other); else await cdp.newTab();
     try { onLeave(); } catch {}
