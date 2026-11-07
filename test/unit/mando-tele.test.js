@@ -23,3 +23,21 @@ test('mando tele: swipeDir: menos de 18 px es OK; si no, gana el eje mayor', asy
     assert.equal(swipeDir(5, 30), 'down');
   } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
 });
+
+test('mando tele: arrowAt: un toque sobre una flecha dibujada (con 20 px de margen) es esa flecha; fuera, null', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'mando-tele-'));
+  fs.cpSync(path.join(PUB, 'mando'), path.join(tmp, 'mando'), { recursive: true });
+  fs.writeFileSync(path.join(tmp, 'package.json'), '{"type":"module"}');
+  try {
+    const { arrowAt } = await import(pathToFileURL(path.join(tmp, 'mando', 'features', 'tele.js')).href);
+    const box = (l, t) => ({ left: l, top: t, right: l + 30, bottom: t + 30 });
+    const B = { up: box(135, 22), down: box(135, 348), left: box(18, 185), right: box(252, 185) };   // pad de 300 x 400
+    assert.equal(arrowAt(150, 37, B), 'up', 'en el centro de la flecha');
+    assert.equal(arrowAt(150, 5, B), 'up', 'dentro del margen');
+    assert.equal(arrowAt(10, 200, B), 'left');
+    assert.equal(arrowAt(290, 200, B), 'right');
+    assert.equal(arrowAt(150, 360, B), 'down');
+    assert.equal(arrowAt(150, 200, B), null, 'el centro es OK');
+    assert.equal(arrowAt(150, 80, B), null, 'pasado el margen');
+  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+});

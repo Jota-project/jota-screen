@@ -15,6 +15,17 @@ export function swipeDir(dx, dy) {
   return Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
 }
 const HIT = { up: '.cu', down: '.cd', left: '.cl', right: '.cr', ok: '.cross .ok' };
+/* la flecha dibujada mide 30 px; se acepta el toque hasta ARROW_SLOP px fuera (70 px de diana, por encima de los 44 de mínimo) */
+const ARROW_SLOP = 20;
+
+/** Un toque en (x, y) cae sobre una flecha dibujada: su dirección; si no, null (el toque es OK).
+ *  @param {Record<string, {left: number, top: number, right: number, bottom: number}>} boxes */
+export function arrowAt(x, y, boxes) {
+  for (const [k, b] of Object.entries(boxes)) {
+    if (x >= b.left - ARROW_SLOP && x <= b.right + ARROW_SLOP && y >= b.top - ARROW_SLOP && y <= b.bottom + ARROW_SLOP) return k;
+  }
+  return null;
+}
 
 let mode = 'j';            // lo que enseña el mando: 'j' | 'tv' | 'off'
 let last = null;           // último state.tv
@@ -31,9 +42,16 @@ export const inTv = () => mode === 'tv';
 /** Orden a la tele con respuesta, sin esperarla (las flechas van seguidas): si falla, la píldora lo dice. */
 export function tvRpc(o) { rpc(o).then(r => { if (r && r.error) pill('La tele no responde'); }); }
 
-/** Al soltar el trackpad en modo Tele: la flecha (u OK) a la tele y el chevrón se ilumina. */
-export function padGesture(dx, dy) {
-  const k = swipeDir(dx, dy), e = $(HIT[k]);
+/** Al soltar el trackpad en modo Tele: la flecha (u OK) a la tele y el chevrón se ilumina. Un toque sobre una flecha
+ *  dibujada es esa flecha: se ve un botón y se pulsa como tal, sin obligar a deslizar. (x, y): donde se soltó. */
+export function padGesture(dx, dy, x, y) {
+  let k = swipeDir(dx, dy);
+  if (k === 'ok') {
+    const boxes = /** @type {Record<string, DOMRect>} */ ({});
+    for (const d of ['up', 'down', 'left', 'right']) boxes[d] = $(HIT[d]).getBoundingClientRect();
+    k = arrowAt(x, y, boxes) || 'ok';
+  }
+  const e = $(HIT[k]);
   tvRpc({ t: 'tvkey', k }); buzz(9);
   e.classList.add('hit'); setTimeout(() => e.classList.remove('hit'), 260);
 }
@@ -62,7 +80,7 @@ function view(v) {
     const h = $('#hint'); h.classList.add('swap'); clearTimeout(swapT);
     swapT = setTimeout(() => { r.classList.toggle('tv', mode === 'tv'); h.classList.remove('swap'); }, 220);
   }
-  $('#pad').setAttribute('aria-label', v === 'tv' ? 'Cruceta de la tele: desliza hacia un lado para moverte, toca para elegir' : padLabel);
+  $('#pad').setAttribute('aria-label', v === 'tv' ? 'Cruceta de la tele: desliza hacia un lado o toca una flecha para moverte, toca en el centro para elegir' : padLabel);
   // lo que no se ve tampoco se alcanza con el teclado
   $('#offV').inert = v !== 'off'; $('main.app2').inert = v === 'off';
   for (const b of document.querySelectorAll('.j-only')) /** @type {HTMLElement} */ (b).inert = v === 'tv';
