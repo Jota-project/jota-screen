@@ -232,3 +232,25 @@ test('focus (A2): OK con el foco en Netflix abre la tarjeta que se ve; en «ahor
   assert.equal((await idle.run({ op: 'focus', k: 'ok' })).go, 'spotify');
   assert.equal(calls[1][0], 'spotify');
 });
+
+test('focus (A2), permisos: OK sobre Netflix no para invitados ni sin web; sobre Spotify, no con la música apagada', t => {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout'] });
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'idle-test-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const feature = require(path.join(ROOT, 'src', 'features', 'idle'))({
+    PUB: path.join(ROOT, 'public'), SELF: 'http://127.0.0.1:8787', file: path.join(dir, 'idle.json'),
+    cdp: { call: async () => ({}), session: null }, nav: async () => {}, state: { url: '' }, stageKind: () => null,
+    fetch: /** @type {any} */ (async () => { throw new Error('sin red'); }),
+  });
+  const perm = feature.commands.find(c => c.t === 'idle').perm;
+  const P = { web: true, music: 'play' }, ok = { op: 'focus', k: 'ok' };
+  feature.setFocused('netflix');
+  assert.equal(perm(ok, P, { dev: { role: 'member' } }), null);
+  assert.match(perm(ok, P, { dev: { role: 'guest' } }), /privado/);
+  assert.match(perm(ok, { ...P, web: false }, {}), /webs/);
+  assert.equal(perm({ op: 'focus', k: 'left' }, P, { dev: { role: 'guest' } }), null, 'mover el foco sí');
+  feature.setFocused('spotify');
+  assert.equal(perm(ok, P, { dev: { role: 'guest' } }), null);
+  assert.match(perm(ok, { ...P, music: 'off' }, {}), /música/);
+  assert.match(perm({ op: 'set' }, P, {}), /administrador/);
+});

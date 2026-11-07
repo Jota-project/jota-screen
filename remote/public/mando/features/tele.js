@@ -33,7 +33,7 @@ let expect = null;         // orden propia en curso ({ power } o { src }): hasta
 let quietUntil = 0;        // tras una orden propia, lo que cambie no se avisa (la tele tarda en asentarse)
 let known = null;          // último encendido conocido (sin null: una tele dormida a fondo no responde)
 let bootUntil = 0;         // recién encendida: el servidor la lleva a J-Screen (como mucho 6 s); el lanzador no cuenta
-let swapT = 0, offT = 0, wakeT = 0;
+let swapT = 0, homeT = 0, offT = 0, wakeT = 0;
 let padLabel = '';
 let home = false;          // el reposo está delante (state.amb): en J-Screen el trackpad es la cruceta del inicio (foco, A2)
 const CROSS_LABEL = 'Cruceta: desliza hacia un lado o toca una flecha para moverte, toca en el centro para elegir';
@@ -97,8 +97,8 @@ function view(v) {
 function setHome(h) {
   if (h === home) return;
   home = h; padAria();
-  const h2 = $('#hint'); h2.classList.add('swap'); clearTimeout(swapT);
-  swapT = setTimeout(() => { document.documentElement.classList.toggle('home', home); h2.classList.remove('swap'); }, 220);
+  const h2 = $('#hint'); h2.classList.add('swap'); clearTimeout(homeT);   // su propio temporizador: view() no lo pisa
+  homeT = setTimeout(() => { document.documentElement.classList.toggle('home', home); h2.classList.remove('swap'); }, 220);
 }
 
 function paint(s) {

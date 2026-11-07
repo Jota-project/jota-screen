@@ -202,7 +202,7 @@ async function noAdminOnline() { for (let i = 0; i < 50 && (await pairInfo()).ad
 
 // gestos en el trackpad con PointerEvent sintéticos (cada dispatch, un paso)
 async function padGesture(page, steps) {
-  const pad = page.getByRole('region', { name: /^Trackpad/ });
+  const pad = page.locator('#pad');
   await pad.evaluate((el, st) => {
     const b = el.getBoundingClientRect();
     for (const [type, id, x, y] of st) el.dispatchEvent(new PointerEvent(type, { pointerId: id, pointerType: 'touch', isPrimary: id === 1, bubbles: true, cancelable: true, clientX: b.left + x, clientY: b.top + y }));
@@ -218,6 +218,17 @@ async function adminScenes(theme, admin) {
   const run = async (name, fn) => { const p = await newPage({ token: admin, theme, name: T(name) }); try { await open(p); await fn(p); } finally { await takeLog(p, T(name)); await p.context().close(); } };
 
   await run('principal', p => shot(p, T('principal')));
+  // inicio por foco (A2): con el reposo delante (amb), el pad es la cruceta; tocar una flecha la manda, el centro es OK
+  await run('inicio-cruceta', async p => {
+    await inject(p, { t: 'state', title: 'Reposo', url: 'http://127.0.0.1/idle.html', host: '127.0.0.1', vol: 35, muted: false, media: -1, cdp: true, scroll: null, amb: { profile: 'day' }, tv: null });
+    await settle(p, 500); await shot(p, T('inicio-cruceta'));
+    const b = await p.getByRole('region', { name: /^Cruceta/ }).boundingBox();
+    const up = await p.locator('.cross .cl').boundingBox();
+    await padGesture(p, [['pointerdown', 1, up.x - b.x + 15, up.y - b.y + 15], ['pointerup', 1, up.x - b.x + 15, up.y - b.y + 15]]);   // flecha izquierda
+    await padGesture(p, [['pointerdown', 1, b.width / 2, b.height / 2], ['pointerup', 1, b.width / 2, b.height / 2]]);                // centro: OK
+    await padGesture(p, [['pointerdown', 1, 60, 200], ['pointermove', 1, 120, 205], ['pointermove', 1, 180, 210], ['pointerup', 1, 180, 210]]); // deslizar: derecha
+    await wait(200);
+  });
   await run('trackpad-tocando', async p => { await padGesture(p, [['pointerdown', 1, 150, 200]]); await shot(p, T('trackpad-tocando')); await padGesture(p, [['pointerup', 1, 150, 200]]); });
   // carril (TVC Diseño - Carril de desplazamiento): el dedo en la franja del borde derecho, quieto y arrastrando
   await run('carril-tocando', async p => {
