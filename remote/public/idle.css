@@ -234,3 +234,14 @@ body.night,body.cinema{--text:#808080;--clock:#7a7a7a;--clock2:#767676;--soft:#7
 .sg-c[data-size=mini] .sg-img{border-radius:calc(16 * var(--s))}
 /* bloque caducado: se funde en su sitio (solo opacidad) y el hueco espera al próximo reacomodo; con calma, igual */
 #grid .w.sg-gone{opacity:0;transition:opacity 1.2s ease}
+
+/* foco del inicio (TVC Plan - Reposo contextual A2): el widget con foco se levanta y le sale una placa detrás; los demás
+   no se mueven. `scale` (no transform: el reacomodo usa transform en .wi). Calma y movimiento reducido: solo la placa */
+.w[data-act]>.wi{position:relative;scale:1;transition:scale .2s var(--ease)}
+.w[data-act]>.wi::before{content:'';position:absolute;inset:calc(-28 * var(--s));z-index:-1;pointer-events:none;border-radius:calc(36 * var(--s));
+  background:var(--tv-veil);box-shadow:0 calc(24 * var(--s)) calc(60 * var(--s)) rgba(0,0,0,.35);opacity:0;transition:opacity .2s ease}
+.w.fx>.wi{scale:1.04}
+.w.fx>.wi::before{opacity:1}
+.w.fx.press>.wi{scale:1;transition-duration:.1s}
+.calm .w.fx>.wi{scale:1}
+@media (prefers-reduced-motion:reduce){.w.fx>.wi{scale:1}}

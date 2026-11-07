@@ -14,7 +14,16 @@ module.exports = function createIdle(deps) {
       // Live Activities (el resto del escenario se registra desde src/features/stage.js)
       { t: 'activity', perm: 'stage', quiet: true, run: m => idle.activity(m) },
       // pantalla en reposo: verla y cambiarla (cambiarla, solo el administrador)
-      { t: 'idle', perm: (m, P) => (m.op === 'set' && !P.admin ? 'Solo el administrador' : null), quiet: true, run: m => idle.run(m) },
+      // focus (A2): mover el foco del inicio y OK. OK sobre «Estabas viendo» retoma lo del dueño: no para invitados (como play_last)
+      { t: 'idle', perm: (m, P, ctx) => {
+        if (m.op === 'set' && !P.admin) return 'Solo el administrador';
+        if (m.op === 'focus' && m.k === 'ok' && idle.focused() === 'netflix') {
+          if (!P.web) return 'Abrir webs no está permitido';
+          if (ctx && ctx.dev && ctx.dev.role === 'guest') return 'Lo que se ve en Netflix es privado';
+        }
+        if (m.op === 'focus' && m.k === 'ok' && idle.focused() === 'spotify' && P.music === 'off') return 'La música no está permitida';
+        return null;
+      }, quiet: true, run: m => idle.run(m) },
     ],
     routes: [{ path: '/idle/art', run(req, res, { url }) { // carátulas de Spotify servidas desde aquí, para poder sacar sus colores
       if (!isLocalTV(req)) return send(res, 403, 'solo desde la tele');

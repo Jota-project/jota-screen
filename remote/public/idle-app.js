@@ -1,5 +1,6 @@
 // Pantalla en reposo (idle.html): reloj, tiempo, actividades, ahora suena, ambiente y reacomodos. Sin módulos:
-// onData y TVIdle quedan globales (las capturas de e2e/ los llaman).
+// onData y TVIdle quedan globales (las capturas de e2e/ los llaman). nextFocus viene de shared/focus.js.
+/* global nextFocus */
 const $ = id => document.getElementById(id);
 const B = document.body, BG = $('bg'), G = $('grid');
 const W = { hora: $('wHora'), ctx: $('wCtx'), mus: $('wMus'), nfx: $('wNfx'), s0: $('wS0'), s1: $('wS1'), s2: $('wS2') };
@@ -88,6 +89,7 @@ function fit() {
 // reacomodo coreografiado: atenuar, colocar, y que el contenido de cada widget viaje desde donde estaba (FLIP)
 function rearrange(next) {
   if (moving) return;
+  setFx(null);                                                  // los widgets van a moverse: el foco se apaga
   const calm = !!D.cfg.calm; moving = true;
   G.classList.add('leaving');
   setTimeout(() => {
@@ -431,6 +433,7 @@ function suggest() {
     if (armed && !(Number(D.cfg.rearrangeMin) > 0)) setTimeout(() => { if (sug.next) { applyNext(); rearrange(0); } }, 1300); // sin reacomodo programado: tras el fundido
   } else if (mode !== sug.mode || n !== sug.n) { ungone(); sug = { mode, n, srcs }; scene = 0; if (layout) rearrange(0); }
   else if (sug.next) { ungone(); delete sug.next; } // volvió lo que caducaba
+  W.s0.dataset.act = mode === 'dis' ? first : '';   // la tarjeta del contexto tiene acción (foco del inicio)
   if (!mode) { nfxKey = ''; return; }
   if (mode === 'nfx') nfxWidget(bl[0].items);
   else if (mode === 'dis') {
@@ -462,13 +465,40 @@ function onData(m) {
   profile(); weather(); music(); acts(); suggest();
   if (JSON.stringify(D.cfg) !== prevCfg) { setLayout(D.cfg.layout); schedule(); }
   if (!moving) place(scenes()[scene % scenes().length]);
+  if (fx && !focusables().includes(fx)) setFx(null);            // lo que tenía el foco se fue (caducó, visitas, noche)
+}
+// ── foco del inicio (TVC Plan - Reposo contextual A2): el mando manda flechas y OK; el foco salta entre los widgets con
+// acción que se ven (la tarjeta del contexto y «ahora suena») y el servidor sabe cuál tiene, para hacer el OK. Lo oculto
+// (modo visitas, noche, cine, lo que caduca) no se ve y por eso no recibe foco. Sin tocar FOCUS_MS, se apaga.
+const FOCUS_MS = 8000;
+W.mus.dataset.act = 'spotify';
+let fx = null, fxT = 0, sock = null;
+const focusables = () => [W.s0, W.mus].filter(e => e.dataset.act && !e.classList.contains('gone') && !e.classList.contains('off') &&
+  !e.classList.contains('sg-gone') && e.firstElementChild.childElementCount && +getComputedStyle(e).opacity > 0.1);
+function setFx(e) {
+  if (e === fx) return;
+  if (fx) fx.classList.remove('fx', 'press');
+  fx = e; if (e) e.classList.add('fx');
+  clearTimeout(fxT); if (e) fxT = setTimeout(() => setFx(null), FOCUS_MS);
+  if (sock && sock.readyState === 1) sock.send(JSON.stringify({ t: 'focus', src: e ? e.dataset.act : null }));
+}
+function onFocusKey(k) {
+  const list = focusables();
+  if (!list.length) { setFx(null); return; }
+  if (!fx || !list.includes(fx)) { setFx(list[0]); return; }   // el primer gesto solo enciende el foco, en lo más reciente
+  clearTimeout(fxT); fxT = setTimeout(() => setFx(null), FOCUS_MS);
+  if (k === 'ok') { fx.classList.add('press'); setTimeout(() => fx && fx.classList.remove('press'), 140); return; }
+  if (k === 'up') return;                                       // reservada para Recientes (A3)
+  const pts = list.map(e => { const r = e.firstElementChild.getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; });
+  setFx(list[nextFocus(pts, list.indexOf(fx), k)]);
 }
 /* sin servidor más de un minuto, fuera la música y las actividades: que no siga el ecualizador ni un «Listo» que no es */
 let staleT = 0;
 function stale() { staleT = 0; D.music = null; D.acts = []; music(); acts(); }
 function connect() {
-  const ws = new WebSocket('ws://' + location.host + '/idle-ws');
-  ws.onmessage = e => { clearTimeout(staleT); staleT = 0; try { const m = JSON.parse(e.data); if (m.t === 'idle') onData(m); } catch {} };
+  const ws = sock = new WebSocket('ws://' + location.host + '/idle-ws');
+  ws.onopen = () => { if (fx) fx.classList.remove('fx', 'press'); fx = null; clearTimeout(fxT); };   // el servidor empieza sin foco
+  ws.onmessage = e => { clearTimeout(staleT); staleT = 0; try { const m = JSON.parse(e.data); if (m.t === 'idle') onData(m); else if (m.t === 'focus') onFocusKey(m.k); } catch {} };
   ws.onclose = () => { if (!staleT) staleT = setTimeout(stale, 60e3); setTimeout(connect, 1500); };
 }
 // para pruebas y capturas: TVIdle.scene(n) fuerza una escena con su reacomodo; TVIdle.place(n), al momento

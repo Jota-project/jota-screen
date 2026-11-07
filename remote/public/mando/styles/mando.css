@@ -454,7 +454,8 @@ a.bt{text-decoration:none}
 :root.tvq .app2 .dot{background:var(--warn)}
 /* trackpad ↔ cruceta: la misma superficie; en la tele se desliza para moverse y se toca para elegir */
 .cross{position:absolute;inset:0 0 72px 0;pointer-events:none;opacity:0;transform:scale(.9);transition:opacity .45s ease,transform .7s var(--ease)}
-:root.tv .cross{opacity:1;transform:none;transition-delay:.12s}
+:root.tv .cross,:root.home:not(.off) .cross{opacity:1;transform:none;transition-delay:.12s}
+:root.home:not(.tv) .cross .cu{opacity:.3} /* en el inicio, arriba queda para Recientes (A3) */
 .cross i{position:absolute;width:30px;height:30px;color:var(--text-faint);transition:color .3s ease,transform .3s var(--ease)}
 .cross i svg{width:30px;height:30px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .cross .cu{left:50%;top:22px;margin-left:-15px}.cross .cd{left:50%;bottom:22px;margin-left:-15px}
@@ -464,7 +465,7 @@ a.bt{text-decoration:none}
 .cross .ok.hit{background:var(--halo);color:var(--accent-text);transform:scale(.94)}
 :root.tele .hint2{transition:opacity .4s ease,transform .6s var(--ease)}
 .hint2 .h-tv{display:none}
-:root.tv .hint2 .h-j{display:none}:root.tv .hint2 .h-tv{display:inline}
+:root.tv .hint2 .h-j,:root.home .hint2 .h-j{display:none}:root.tv .hint2 .h-tv,:root.home .hint2 .h-tv{display:inline}
 .hint2.swap{opacity:0;transform:translateY(6px)}
 /* lo que en la tele no tiene sentido se recoge (no desaparece de golpe) */
 :root.tele .nav2 .b2{transition:flex-grow .55s var(--ease),opacity .3s ease,color .2s ease}

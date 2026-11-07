@@ -59,7 +59,7 @@ const validTz = tz => { try { new Intl.DateTimeFormat('en-GB', { timeZone: tz })
  *   cdp: { call: Function, session: string | null }, nav: (url: string) => Promise<any>, state: { url: string },
  *   stageKind: () => string | null, onWatch?: () => void, onPlay?: (m: any) => void, onAmbient?: () => void, log?: (...a: any[]) => void,
  *   fetch?: typeof fetch, nfxRecent?: () => { at: number, items: any[] } | null,
- *   now?: () => number,
+ *   now?: () => number, onFocusOk?: (src: string, block: any) => any,
  * }} IdleDeps   nfxRecent: lo último que se dejó de ver en Netflix, con su título (src/features/netflix-watch.js forIdleLast)
  */
 /** @param {IdleDeps} o */
@@ -403,7 +403,8 @@ function createIdle(o) {
   wss.on('connection', ws => {
     clients.add(ws);
     ws.on('error', () => {});
-    ws.on('close', () => clients.delete(ws));
+    ws.on('close', () => { clients.delete(ws); if (!clients.size) focused = null; });
+    ws.on('message', b => { try { const m = JSON.parse(String(b)); if (m.t === 'focus') setFocused(m.src); } catch {} });
     ws.send(payload());
     o.onWatch && o.onWatch();
   });
@@ -423,6 +424,21 @@ function createIdle(o) {
     } catch { send(res, 502, ''); }
   }
 
+  // ───────── foco del inicio (TVC Plan - Reposo contextual A2): la página mueve el foco y dice dónde está; OK lo hace aquí
+  let focused = /** @type {string | null} */ (null);
+  const FOCUS_KEYS = ['up', 'down', 'left', 'right', 'ok'];
+  function setFocused(src) { focused = src === 'netflix' || src === 'spotify' ? src : null; }
+  function focus(k) {
+    if (!FOCUS_KEYS.includes(k)) return { error: 'k debe ser up, down, left, right u ok' };
+    if (!isIdle(state.url)) return { ok: 1, idle: false };
+    const s = JSON.stringify({ t: 'focus', k });
+    for (const c of clients) if (c.readyState === WebSocket.OPEN) c.send(s);
+    if (k !== 'ok' || !focused) return { ok: 1, focused };   // con el foco apagado, el primer gesto solo lo enciende
+    const src = focused, sg = wantSuggestions(), block = sg && sg.blocks.find(b => b.src === src);
+    if (!block && !(src === 'spotify' && music && !hidden('spotify'))) return { ok: 1, focused: null };
+    return Promise.resolve(o.onFocusOk ? o.onFocusOk(src, block || null) : null).then(r => ({ ok: 1, focused: src, go: src, r }));
+  }
+
   // ───────── órdenes
   function run(m) {
     const op = String(m.op || 'get');
@@ -439,7 +455,8 @@ function createIdle(o) {
       return { ok: 1, cfg, profile };
     }
     if (op === 'show') return nav(URL_IDLE);
-    return { error: 'op debe ser get, set o show' };
+    if (op === 'focus') return focus(String(m.k || ''));
+    return { error: 'op debe ser get, set, show o focus' };
   }
   function activity(m) {
     const op = String(m.op || 'set');
@@ -472,6 +489,8 @@ function createIdle(o) {
     agentContext: () => agentContextOf({ cfg, profile, idle: isIdle(state.url), music }),
     upgrade: (req, socket, head) => wss.handleUpgrade(req, socket, head, ws => wss.emit('connection', ws)),
     info: () => ({ profile, idle: isIdle(state.url), acts: acts.size }),
+    focused: () => focused,                         // qué tiene el foco en el inicio (null: nada); lo dice la página
+    setFocused,                                     // (pruebas: lo que mandaría la página por /idle-ws)
   };
 }
 

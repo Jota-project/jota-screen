@@ -185,7 +185,10 @@ const spotify = createSpotify({ cdp, cfg: CFG, log, clients: ws.clients, idle: (
 const idle = createIdle({
   PUB, SELF, file: CFG.FILES.idle, place: CFG.PLACE, cdp, nav: control.nav, state, onWatch: () => spotify.now.poll(5000).then(n => idle.setMusic(n)),
   onPlay: m => logUse({ src: 'spotify', title: m.context?.name || m.album || m.title }),
-  stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info, nfxRecent: () => { const l = netflix.last(); return l ? { at: l.at, items: nfxWatch.forIdleLast(l) } : null; },
+  stageKind: () => stage.stage.kind, onAmbient: () => broadcast(), log: log.info,
+  // OK en el inicio (A2): la tarjeta de Netflix retoma esa serie; la de Spotify (o «ahora suena») pausa o reanuda
+  onFocusOk: (src, b) => (src === 'netflix' ? netflix.play({ id: String(b.items[0].id), title: b.items[0].title })
+    : spotify.spotify({ a: b ? (b.state === 'playing' ? 'pause' : 'play') : 'playpause' })), nfxRecent: () => { const l = netflix.last(); return l ? { at: l.at, items: nfxWatch.forIdleLast(l) } : null; },
 });
 // J Gateway (voz): sin TV_GATEWAY_URL el cliente no se crea y todo se comporta como un Gateway caído
 const gw = CFG.GATEWAY_URL

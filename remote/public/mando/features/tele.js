@@ -35,9 +35,14 @@ let known = null;          // último encendido conocido (sin null: una tele dor
 let bootUntil = 0;         // recién encendida: el servidor la lleva a J-Screen (como mucho 6 s); el lanzador no cuenta
 let swapT = 0, offT = 0, wakeT = 0;
 let padLabel = '';
+let home = false;          // el reposo está delante (state.amb): en J-Screen el trackpad es la cruceta del inicio (foco, A2)
+const CROSS_LABEL = 'Cruceta: desliza hacia un lado o toca una flecha para moverte, toca en el centro para elegir';
 
 /** ¿El mando está en modo Tele? (los botones y el trackpad van a la tele) */
 export const inTv = () => mode === 'tv';
+/** ¿El trackpad es la cruceta del inicio? (reposo delante y mando en J-Screen; el gesto mueve el foco de la tele) */
+export const inHome = () => mode === 'j' && home;
+const padAria = () => $('#pad').setAttribute('aria-label', mode === 'tv' || home ? CROSS_LABEL : padLabel);
 
 /** Orden a la tele con respuesta, sin esperarla (las flechas van seguidas): si falla, la píldora lo dice. */
 export function tvRpc(o) { rpc(o).then(r => { if (r && r.error) pill('La tele no responde'); }); }
@@ -52,7 +57,9 @@ export function padGesture(dx, dy, x, y) {
     k = arrowAt(x, y, boxes) || 'ok';
   }
   const e = $(HIT[k]);
-  tvRpc({ t: 'tvkey', k }); buzz(9);
+  if (mode === 'tv') tvRpc({ t: 'tvkey', k });
+  else rpc({ t: 'idle', op: 'focus', k }).then(r => { if (r && r.error) pill(r.error); });
+  buzz(9);
   e.classList.add('hit'); setTimeout(() => e.classList.remove('hit'), 260);
 }
 
@@ -80,13 +87,22 @@ function view(v) {
     const h = $('#hint'); h.classList.add('swap'); clearTimeout(swapT);
     swapT = setTimeout(() => { r.classList.toggle('tv', mode === 'tv'); h.classList.remove('swap'); }, 220);
   }
-  $('#pad').setAttribute('aria-label', v === 'tv' ? 'Cruceta de la tele: desliza hacia un lado o toca una flecha para moverte, toca en el centro para elegir' : padLabel);
+  padAria();
   // lo que no se ve tampoco se alcanza con el teclado
   $('#offV').inert = v !== 'off'; $('main.app2').inert = v === 'off';
   for (const b of document.querySelectorAll('.j-only')) /** @type {HTMLElement} */ (b).inert = v === 'tv';
 }
 
+/** Reposo delante o no: la ayuda sale, cambia y entra, como al cambiar de modo. */
+function setHome(h) {
+  if (h === home) return;
+  home = h; padAria();
+  const h2 = $('#hint'); h2.classList.add('swap'); clearTimeout(swapT);
+  swapT = setTimeout(() => { document.documentElement.classList.toggle('home', home); h2.classList.remove('swap'); }, 220);
+}
+
 function paint(s) {
+  setHome(!!s.amb);
   const t = s.tv || null, r = document.documentElement, row = $('#srcRow');
   const wasHidden = row.hidden;
   row.hidden = !t; r.classList.toggle('tele', !!t);   // tele: hay tele por ADB (el CSS nuevo solo vale entonces)

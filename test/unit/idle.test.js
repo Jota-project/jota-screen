@@ -203,3 +203,32 @@ test('privacidad: activada de madrugada, se quita a las 6:00 de ese día; un unt
   idle.run({ op: 'set', cfg: { privacy: { on: false } } });
   assert.equal(idle.run({ op: 'set', cfg: { privacy: { on: true, until: T + 3600e3 } } }).cfg.privacy.until, T + 3600e3);
 });
+
+test('focus (A2): fuera del reposo no hace nada; con el foco apagado OK no actúa; k desconocida es error', async t => {
+  const calls = [];
+  const { idle, state } = make(t, { onFocusOk: (src, b) => { calls.push([src, b]); return { ok: 1 }; } });
+  assert.ok(idle.run({ op: 'focus', k: 'x' }).error);
+  assert.deepEqual(idle.run({ op: 'focus', k: 'ok' }), { ok: 1, idle: false });
+  state.url = idle.URL_IDLE;
+  assert.deepEqual(await idle.run({ op: 'focus', k: 'ok' }), { ok: 1, focused: null }, 'el primer gesto solo enciende el foco');
+  idle.setFocused('netflix');
+  assert.deepEqual(await idle.run({ op: 'focus', k: 'ok' }), { ok: 1, focused: null }, 'sin tarjeta de Netflix no se abre nada');
+  assert.equal(calls.length, 0);
+  idle.setFocused('evil'); assert.equal(idle.focused(), null, 'la página solo puede decir netflix, spotify o nada');
+});
+
+test('focus (A2): OK con el foco en Netflix abre la tarjeta que se ve; en «ahora suena», pausa/reanuda', async t => {
+  const calls = [];
+  const item = { id: 81234567, title: 'Dark', pos: 600, dur: 3000 };
+  const { idle, state } = make(t, { file: { suggest: { on: true } }, nfxRecent: () => ({ at: Date.now(), items: [item] }),
+    onFocusOk: (src, b) => { calls.push([src, b && b.items ? b.items[0].id : b]); return { ok: 1 }; } });
+  state.url = idle.URL_IDLE;
+  idle.setFocused('netflix');
+  const r = await idle.run({ op: 'focus', k: 'ok' });
+  assert.equal(r.go, 'netflix');
+  assert.deepEqual(calls, [['netflix', 81234567]]);
+  idle.setMusic({ track: { name: 'So What' }, artist: 'Miles Davis', playing: true });
+  idle.setFocused('spotify');
+  assert.equal((await idle.run({ op: 'focus', k: 'ok' })).go, 'spotify');
+  assert.equal(calls[1][0], 'spotify');
+});

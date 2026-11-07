@@ -6,7 +6,7 @@ import { $ } from '../core/dom.js';
 import { cfg, persist } from '../core/store.js';
 import { send } from '../core/api.js';
 import { buzz } from '../ui/haptics.js';
-import { inTv, padGesture } from './tele.js';
+import { inTv, inHome, padGesture } from './tele.js';
 
 const P = new Map();
 let ax = 0, ay = 0, sxa = 0, sya = 0, raf = 0;
@@ -140,7 +140,7 @@ function up(e) {
   if (n === 1) {
     pad.classList.remove('on');
     if (dragging) { send('b 1 0'); dragging = false; }
-    else if (inTv()) { if (ok && maxN === 1) padGesture(e.clientX - x0, e.clientY - y0, e.clientX, e.clientY); }
+    else if (inTv() || inHome()) { if (ok && maxN === 1) padGesture(e.clientX - x0, e.clientY - y0, e.clientX, e.clientY); }
     else if (ok && maxN === 1 && !caught && e.timeStamp - downT < 240 && moved < 9) { click(1, p); lastTap = e.timeStamp; }
     maxN = 0;
   } else if (n === 2 && !inTv()) {
@@ -219,7 +219,7 @@ export const trackpad = {
         return;
       }
       if (e.pointerId === haloId) haloAt(e);
-      if (inTv() && !dragging) return;                // en la tele solo cuenta el gesto al soltar
+      if ((inTv() || inHome()) && !dragging) return;  // en la cruceta (Tele o inicio) solo cuenta el gesto al soltar
       const dx = e.clientX - p.x, dy = e.clientY - p.y, dt = Math.max(1, e.timeStamp - p.t);
       p.x = e.clientX; p.y = e.clientY; p.t = e.timeStamp;
       if (P.size === 1) {
